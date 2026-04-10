@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-zip
+*.local
+.env
+.env.*
+!.env.example
