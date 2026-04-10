@@ -1,5 +1,6 @@
-// Ref: §三 — 核心数据结构定义
-// 所有接口与类型均对照 01-1-reverse-engineering-plan-v2.md §3.1-3.14
+// Ref: §三 — 核心数据结构定义 + @xyflow/react Node 类型
+// 所有接口与类型均对照 01-1-reverse-engineering-plan-v2.md §3.1-3.15
+import type { Node } from '@xyflow/react';
 
 // §3.1 通道配置与全局 API 配置
 export interface ChannelConfig {
@@ -44,7 +45,9 @@ export interface PresetPrompt {
 }
 
 // §3.4 图片节点数据
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ReactFlow Node 要求 Record<string, unknown> 兼容
 export interface ImageNodeData {
+  [key: string]: unknown;
   imageUrl?: string;
   prompt: string;
   aspectRatio: string;     // '16:9', '1:1' 等
@@ -67,6 +70,7 @@ export interface ImageNodeData {
 
 // §3.5 文本节点数据
 export interface TextNodeData {
+  [key: string]: unknown;
   text?: string;
   prompt: string;
   label: string;
@@ -87,6 +91,7 @@ export interface TextNodeData {
 
 // §3.6 视频节点数据
 export interface VideoNodeData {
+  [key: string]: unknown;
   videoUrl?: string;
   thumbnailUrl?: string;
   prompt: string;
@@ -108,6 +113,7 @@ export interface VideoNodeData {
 
 // §3.7 音频节点数据
 export interface AudioNodeData {
+  [key: string]: unknown;
   audioUrl?: string;                                // 音频 URL
   audioName?: string;                                // 文件名
   chunks?: Array<{ start: number; end: number; text: string }>;  // 断句结果
@@ -122,6 +128,7 @@ export interface AudioNodeData {
 
 // §3.8 九宫格分拆节点
 export interface GridSplitNodeData {
+  [key: string]: unknown;
   gridCount: number;        // 默认 3
   cellSize: number;         // 默认 512
   aspectRatio: string;      // 默认 '1:1'
@@ -130,6 +137,7 @@ export interface GridSplitNodeData {
 
 // §3.9 九宫格合拼节点
 export interface GridMergeNodeData {
+  [key: string]: unknown;
   gridCount: number;        // 默认 3
   cellSize: number;         // 默认 512
   aspectRatio: string;      // 默认 '1:1'
@@ -160,6 +168,7 @@ export interface CustomNodeConfig {
 }
 
 export interface UniversalNodeData {
+  [key: string]: unknown;
   label: string;
   configMode: boolean;
   config: CustomNodeConfig;
@@ -189,6 +198,7 @@ export interface GlobalTask {
 
 // §3.12 裁剪节点数据
 export interface CropNodeData {
+  [key: string]: unknown;
   sourceImageUrl?: string;  // 待裁剪的原图 URL
   onCropComplete?: (nodeId: string, croppedDataUrl: string) => void;
   onCancel?: (nodeId: string) => void;
@@ -206,6 +216,18 @@ export interface CustomNodeTemplate {
   name: string;
   config: CustomNodeConfig;
 }
+
+// §3.15 ReactFlow Node 类型别名
+export type ImageNode = Node<ImageNodeData, 'imageNode'>;
+export type PromptNode = Node<ImageNodeData, 'promptNode'>;
+export type TextNodeType = Node<TextNodeData, 'textNode'>;
+export type VideoNode = Node<VideoNodeData, 'videoNode'>;
+export type AudioNodeType = Node<AudioNodeData, 'audioNode'>;
+export type GridSplitNode = Node<GridSplitNodeData, 'gridSplitNode'>;
+export type GridMergeNodeType = Node<GridMergeNodeData, 'gridMergeNode'>;
+export type CropNodeType = Node<CropNodeData, 'cropNode'>;
+export type UniversalNodeType = Node<UniversalNodeData, 'customNode'>;
+export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNodeType | GridSplitNode | GridMergeNodeType | CropNodeType | UniversalNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {
