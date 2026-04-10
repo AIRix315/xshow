@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/setup.test.ts","./src/types.ts","./src/vite-env.d.ts","./src/components/canvas/flowcanvas.tsx","./src/stores/usesettingsstore.test.ts","./src/stores/usesettingsstore.ts"],"version":"5.7.3"}

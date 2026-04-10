@@ -47,6 +47,6 @@ describe('XShow Phase 1 — Setup Verification', () => {
     const newProject = { id: Date.now().toString(), name: '测试项目' };
     projects.push(newProject);
     expect(projects).toHaveLength(2);
-    expect(projects[1].name).toBe('测试项目');
+    expect(projects[1]!.name).toBe('测试项目');
   });
 });
