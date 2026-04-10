@@ -1,56 +1,42 @@
-// Ref: @xyflow/react ^12.10 + node-banana WorkflowCanvas.tsx + §6.1
-import { useCallback, useRef, useState } from 'react';
+// Ref: @xyflow/react ^12.10 + node-banana WorkflowCanvas.tsx + §6.1 + §6.12
+import { useCallback, useRef } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
-  type Node,
-  type Edge,
-  type OnNodesChange,
-  type OnEdgesChange,
-  type ReactFlowInstance,
   type Connection,
-  applyNodeChanges,
-  applyEdgeChanges,
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import { nodeTypes } from '@/utils/nodeFactory';
 import { createNode } from '@/utils/nodeFactory';
+import { useFlowStore } from '@/stores/useFlowStore';
 import NodeSidebar from './NodeSidebar';
+import '@xyflow/react/dist/style.css';
 
-const initialNodes: Node[] = [];
-const initialEdges: Edge[] = [];
-
-// Ref: §6.1 — 空画布初始状态 + DnD 创建节点
 function FlowCanvasInner() {
-  const [nodes, setNodes] = useState<Node[]>(initialNodes);
-  const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const nodes = useFlowStore((s) => s.nodes);
+  const edges = useFlowStore((s) => s.edges);
+  const highlightedNodeId = useFlowStore((s) => s.highlightedNodeId);
+  const onNodesChange = useFlowStore((s) => s.onNodesChange);
+  const onEdgesChange = useFlowStore((s) => s.onEdgesChange);
+  const flowAddNode = useFlowStore((s) => s.addNode);
+  const addEdge = useFlowStore((s) => s.addEdge);
+  const setHighlightedNode = useFlowStore((s) => s.setHighlightedNode);
+  const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
 
-  const onNodesChange: OnNodesChange = useCallback((changes) => {
-    setNodes((nds) => applyNodeChanges(changes, nds));
-  }, []);
-
-  const onEdgesChange: OnEdgesChange = useCallback((changes) => {
-    setEdges((eds) => applyEdgeChanges(changes, eds));
-  }, []);
-
-  const onConnect = useCallback((connection: Connection) => {
-    setEdges((eds) => [
-      ...eds,
-      {
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      addEdge({
         id: `${connection.source}-${connection.target}`,
         source: connection.source!,
         target: connection.target!,
         sourceHandle: connection.sourceHandle ?? undefined,
         targetHandle: connection.targetHandle ?? undefined,
-      },
-    ]);
-  }, []);
+      });
+    },
+    [addEdge],
+  );
 
-  // Ref: @xyflow/react DnD — 拖拽创建节点
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -62,32 +48,49 @@ function FlowCanvasInner() {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type || !reactFlowInstance.current) return;
 
-      const position = reactFlowInstance.current.screenToFlowPosition({
+      const instance = reactFlowInstance.current as { screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number } };
+      const position = instance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
 
       const newNode = createNode(type, position);
-      setNodes((nds) => [...nds, newNode]);
+      flowAddNode(newNode);
     },
-    [],
+    [flowAddNode],
   );
+
+  const onPaneClick = useCallback(() => {
+    setHighlightedNode(null);
+  }, [setHighlightedNode]);
+
+  // Ref: §6.12 — 高亮节点样式：应用到 node style 中
+  const styledNodes = nodes.map((n) => ({
+    ...n,
+    style: {
+      ...n.style,
+      ...(n.id === highlightedNodeId
+        ? { outline: '2px solid #3b82f6', outlineOffset: '2px' }
+        : {}),
+    },
+  }));
 
   return (
     <div className="flex h-full w-full">
-      <NodeSidebar reactFlowInstance={reactFlowInstance.current} />
-      <div ref={reactFlowWrapper} className="flex-1 h-full">
+      <NodeSidebar reactFlowInstance={null} />
+      <div className="flex-1 h-full">
         <ReactFlow
-          nodes={nodes}
+          nodes={styledNodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onInit={(instance) => {
+          onInit={(instance: unknown) => {
             reactFlowInstance.current = instance;
           }}
           onDragOver={onDragOver}
           onDrop={onDrop}
+          onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}
           fitView
           className="bg-[#121212]"
