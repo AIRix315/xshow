@@ -2,6 +2,8 @@
 import { useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import FlowCanvas from './components/canvas/FlowCanvas';
+import TransitPanel from './components/transit/TransitPanel';
+import SettingsPanel from './components/settings/SettingsPanel';
 
 type TabId = 'canvas' | 'transit' | 'settings';
 
@@ -40,14 +42,10 @@ function App() {
           </ReactFlowProvider>
         )}
         {activeTab === 'transit' && (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            📦 资源中转站（Phase 5 实现）
-          </div>
+          <TransitPanel />
         )}
         {activeTab === 'settings' && (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            ⚙️ 设置面板（Phase 5 实现）
-          </div>
+          <SettingsPanel />
         )}
       </div>
     </div>
