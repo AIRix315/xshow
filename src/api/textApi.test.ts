@@ -28,10 +28,10 @@ describe('textApi — generateText', () => {
     await generateText(baseParams);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const callUrl = mockFetch.mock.calls[0][0] as string;
+    const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).toBe('https://api.example.com/v1/chat/completions');
 
-    const callOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     expect(callOptions.method).toBe('POST');
     expect(callOptions.headers).toHaveProperty('Authorization', 'Bearer test-key');
   });
@@ -46,7 +46,7 @@ describe('textApi — generateText', () => {
 
     await generateText(baseParams);
 
-    const callOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(callOptions.body as string);
     expect(body.model).toBe('gpt-3.5-turbo');
     expect(body.messages).toEqual([{ role: 'user', content: '写一首诗' }]);
@@ -77,7 +77,7 @@ describe('textApi — generateText', () => {
 
     await generateText({ ...baseParams, autoSplit: true });
 
-    const callOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(callOptions.body as string);
     expect(body.messages[0].role).toBe('system');
     expect(body.response_format).toEqual({ type: 'json_object' });
@@ -145,7 +145,7 @@ describe('textApi — generateText', () => {
     });
 
     await generateText({ ...baseParams, channelUrl: 'https://api.example.com/' });
-    const callUrl = mockFetch.mock.calls[0][0] as string;
+    const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).toBe('https://api.example.com/v1/chat/completions');
   });
 });

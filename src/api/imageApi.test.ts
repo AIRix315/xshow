@@ -31,7 +31,7 @@ describe('imageApi — generateImage', () => {
     await generateImage(baseParams);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const callUrl = mockFetch.mock.calls[0][0] as string;
+    const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).toContain('https://api.example.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent');
     expect(callUrl).toContain('key=test-key');
   });
@@ -46,7 +46,7 @@ describe('imageApi — generateImage', () => {
 
     await generateImage(baseParams);
 
-    const callOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     expect(callOptions.method).toBe('POST');
     const body = JSON.parse(callOptions.body as string);
     expect(body.contents[0].role).toBe('user');
@@ -68,7 +68,7 @@ describe('imageApi — generateImage', () => {
       referenceImages: [{ mimeType: 'image/jpeg', data: 'refbase64' }],
     });
 
-    const callOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(callOptions.body as string);
     expect(body.contents[0].parts).toHaveLength(2);
     expect(body.contents[0].parts[1].inlineData).toEqual({ mimeType: 'image/jpeg', data: 'refbase64' });
@@ -125,7 +125,7 @@ describe('imageApi — generateImage', () => {
     });
 
     await generateImage({ ...baseParams, channelUrl: 'https://api.example.com/' });
-    const callUrl = mockFetch.mock.calls[0][0] as string;
+    const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).not.toContain('//v1beta');
     expect(callUrl).toContain('/v1beta');
   });
