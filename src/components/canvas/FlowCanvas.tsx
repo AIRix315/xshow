@@ -24,54 +24,38 @@ import '@xyflow/react/dist/style.css';
 /** Handle 数据类型 */
 type HandleDataType = 'image' | 'text' | 'audio' | 'video' | 'any';
 
-/** 节点类型映射到输出数据类型 */
-const NODE_OUTPUT_TYPES: Record<string, HandleDataType> = {
-  imageNode: 'image',
-  promptNode: 'text',
-  textNode: 'text',
-  videoNode: 'video',
-  audioNode: 'audio',
-  gridSplitNode: 'image',
-  gridMergeNode: 'image',
-  cropNode: 'image',
-  customNode: 'any',
-};
-
 /** 检查两个数据类型是否兼容 */
 function isDataTypeCompatible(sourceType: HandleDataType, targetType: HandleDataType): boolean {
   if (sourceType === 'any' || targetType === 'any') return true;
   return sourceType === targetType;
 }
 
-/** 从节点获取输出数据类型 */
-function getNodeOutputType(nodeType: string): HandleDataType {
-  return NODE_OUTPUT_TYPES[nodeType] || 'any';
-}
-
-/** 连接验证函数 */
-function validateConnection(connection: Connection, nodes: Node[]): boolean {
+/** 连接验证函数 - 更宽松的验证规则 */
+function validateConnection(connection: Connection, _nodes: Node[]): boolean {
   const { source, target, sourceHandle, targetHandle } = connection;
   
   // 未选择源或目标节点，拒绝连接
   if (!source || !target) return false;
   
-  // 获取源和目标节点
-  const sourceNode = nodes.find((n) => n.id === source);
-  const targetNode = nodes.find((n) => n.id === target);
+  // 跳过自连接
+  if (source === target) return false;
   
-  if (!sourceNode || !targetNode) return false;
-  
-  // 从 Handle ID 推断数据类型（简化处理：Handle id 作为类型标识）
-  const sourceDataType = (sourceHandle === 'image' || sourceHandle === 'text' || sourceHandle === 'audio' || sourceHandle === 'video')
+  // 检查 Handle ID 是否明确指定了类型
+  const explicitSourceType = sourceHandle === 'image' || sourceHandle === 'text' || sourceHandle === 'audio' || sourceHandle === 'video'
     ? sourceHandle as HandleDataType
-    : getNodeOutputType(sourceNode.type || 'customNode');
+    : null;
   
-  const targetDataType = (targetHandle === 'image' || targetHandle === 'text' || targetHandle === 'audio' || targetHandle === 'video')
+  const explicitTargetType = targetHandle === 'image' || targetHandle === 'text' || targetHandle === 'audio' || targetHandle === 'video'
     ? targetHandle as HandleDataType
-    : 'any'; // 默认接受任何类型
+    : null;
   
-  // 检查数据类型兼容性
-  return isDataTypeCompatible(sourceDataType, targetDataType);
+  // 如果两边都明确指定了类型，检查兼容性
+  if (explicitSourceType && explicitTargetType) {
+    return isDataTypeCompatible(explicitSourceType, explicitTargetType);
+  }
+  
+  // 否则允许连接（更宽松的模式）
+  return true;
 }
 
 function FlowCanvasInner() {
