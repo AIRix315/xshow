@@ -272,9 +272,16 @@ function BaseNodeWrapper({
 }: BaseNodeWrapperProps) {
   // 向后兼容：loading 属性映射到 status
   const finalStatus = loading ? 'loading' : status;
+  const statusStyle = STATUS_CONFIG[finalStatus];
 
   return (
-    <>
+    <div
+      className={`relative rounded-lg border-2 transition-all duration-200 ${
+        selected
+          ? statusStyle.border + ' shadow-lg shadow-primary/20'
+          : 'border-border'
+      } ${statusStyle.bg}`}
+    >
       {/* NodeResizer - 选中时显示调整大小手柄 */}
       <NodeResizer
         isVisible={selected}
@@ -321,7 +328,7 @@ function BaseNodeWrapper({
 
       {/* 内容区域 */}
       <div className="flex-1">{children}</div>
-    </>
+    </div>
   );
 }
 
