@@ -1,7 +1,9 @@
 // Ref: §3.12 + §6.9 — 独立裁剪节点，canvas 框选
+// Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { CropNodeType } from '@/types';
+import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
 interface CropRect {
@@ -12,6 +14,13 @@ interface CropRect {
 }
 
 function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
+  const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  // 从 Store 读取上游节点传入的源图 URL
+  const nodes = useFlowStore((s) => s.nodes);
+  const edges = useFlowStore((s) => s.edges);
+  const incomingEdge = edges.find((e) => e.target === id);
+  const sourceNode = incomingEdge ? nodes.find((n) => n.id === incomingEdge.source) : undefined;
+  const sourceImageUrl = data.sourceImageUrl ?? (sourceNode?.data?.imageUrl as string | undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sourceImage, setSourceImage] = useState<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -22,7 +31,7 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
 
   // 加载源图
   useEffect(() => {
-    if (!data.sourceImageUrl) return;
+    if (!sourceImageUrl) return;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -32,8 +41,8 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
     img.onerror = () => {
       setErrorMessage('图片来源加载失败');
     };
-    img.src = data.sourceImageUrl;
-  }, [data.sourceImageUrl]);
+    img.src = sourceImageUrl;
+  }, [sourceImageUrl]);
 
   // 绘制画布 + 裁剪框
   const drawCanvas = useCallback(() => {
@@ -140,7 +149,8 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
 
     const croppedDataUrl = cropCanvas.toDataURL('image/png');
     data.onCropComplete?.(id, croppedDataUrl);
-  }, [cropRect, sourceImage, id, data]);
+    updateNodeData(id, { sourceImageUrl: croppedDataUrl });
+  }, [cropRect, sourceImage, id, data, updateNodeData]);
 
   const handleCancel = useCallback(() => {
     data.onCancel?.(id);
@@ -148,18 +158,18 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
 
   return (
     <BaseNodeWrapper selected={!!selected} errorMessage={errorMessage} minHeight={200} minWidth={280}>
-      <Handle type="target" position={Position.Left} id="source-image" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222] hover:!bg-blue-500" />
+      <Handle type="target" position={Position.Left} id="source-image" className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222] hover:!bg-primary" />
       <div className="flex flex-col gap-2 p-2 min-w-[280px]">
-        <span className="text-[10px] text-gray-400 font-medium">图片裁剪</span>
+        <span className="text-[10px] text-text-secondary font-medium">图片裁剪</span>
 
-        {!data.sourceImageUrl && (
-          <div className="text-center text-gray-500 text-xs py-4">
+        {!sourceImageUrl && (
+          <div className="text-center text-text-muted text-xs py-4">
             请从图片节点连接到此节点
           </div>
         )}
 
-        {data.sourceImageUrl && !imageLoaded && (
-          <div className="text-center text-gray-500 text-xs py-4">
+        {sourceImageUrl && !imageLoaded && (
+          <div className="text-center text-text-muted text-xs py-4">
             加载图片中...
           </div>
         )}
@@ -172,20 +182,20 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              className="w-full border border-[#444] rounded cursor-crosshair"
+              className="w-full border border-border rounded cursor-crosshair"
               style={{ maxHeight: '250px', objectFit: 'contain' }}
             />
             <div className="flex gap-1">
               <button
                 onClick={handleCropComplete}
                 disabled={!cropRect || cropRect.width < 5 || cropRect.height < 5}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs py-1 rounded font-medium"
+                className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1 rounded font-medium"
               >
                 确认裁剪
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 bg-[#333] hover:bg-[#444] text-gray-300 text-xs py-1 rounded"
+                className="flex-1 bg-surface hover:bg-surface-hover text-text-secondary text-xs py-1 rounded"
               >
                 取消
               </button>
@@ -193,7 +203,7 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
           </>
         )}
       </div>
-      <Handle type="source" position={Position.Right} id="cropped-image" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222] hover:!bg-blue-500" />
+      <Handle type="source" position={Position.Right} id="cropped-image" className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222] hover:!bg-primary" />
     </BaseNodeWrapper>
   );
 }

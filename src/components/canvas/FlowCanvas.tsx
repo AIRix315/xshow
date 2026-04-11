@@ -1,5 +1,6 @@
-// Ref: @xyflow/react ^12.10 + node-banana WorkflowCanvas.tsx + §6.1 + §6.12
-import { useCallback, useRef } from 'react';
+// Ref: @xyflow/react ^12.10 + node-banana WorkflowCanvas.tsx + §6.1 + §6.12 + §6.15
+// Ref: §4.2 — 画布状态持久化（保存/加载）
+import { useCallback, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -10,6 +11,8 @@ import {
 import { nodeTypes } from '@/utils/nodeFactory';
 import { createNode } from '@/utils/nodeFactory';
 import { useFlowStore } from '@/stores/useFlowStore';
+import { useSettingsStore } from '@/stores/useSettingsStore';
+import { saveCanvasState, loadCanvasState } from '@/utils/canvasState';
 import NodeSidebar from './NodeSidebar';
 import '@xyflow/react/dist/style.css';
 
@@ -22,7 +25,26 @@ function FlowCanvasInner() {
   const flowAddNode = useFlowStore((s) => s.addNode);
   const addEdge = useFlowStore((s) => s.addEdge);
   const setHighlightedNode = useFlowStore((s) => s.setHighlightedNode);
+  const setNodes = useFlowStore((s) => s.setNodes);
+  const setEdges = useFlowStore((s) => s.setEdges);
+  const currentProjectId = useSettingsStore((s) => s.currentProjectId);
   const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
+
+  // 启动时加载画布状态
+  useEffect(() => {
+    let cancelled = false;
+    loadCanvasState(currentProjectId).then((state) => {
+      if (cancelled || !state) return;
+      setNodes(state.nodes);
+      setEdges(state.edges);
+    });
+    return () => { cancelled = true; };
+  }, [currentProjectId, setNodes, setEdges]);
+
+  // 节点/边变化时自动保存
+  useEffect(() => {
+    saveCanvasState(currentProjectId, nodes, edges);
+  }, [currentProjectId, nodes, edges]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -93,7 +115,7 @@ function FlowCanvasInner() {
           onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}
           fitView
-          className="bg-[#121212]"
+          className="bg-background"
         >
           <Background color="#333" gap={16} />
           <Controls className="bg-surface border-border [&>button]:bg-surface [&>button]:border-border [&>button]:text-text [&>button]:hover:bg-surface-hover" />

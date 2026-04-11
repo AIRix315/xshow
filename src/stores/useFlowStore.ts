@@ -1,4 +1,4 @@
-// Ref: Zustand v5 + flowcraft lib/store/ + §4.1 + §4.2
+// Ref: Zustand v5 + flowcraft lib/store/ + §4.1 + §4.2 — 节点数据流闭环
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges, type OnNodesChange, type OnEdgesChange, type Node, type Edge } from '@xyflow/react';
 
@@ -90,3 +90,18 @@ export const useFlowStore = create<FlowStore>()((set) => ({
     set({ nodes: [], edges: [], highlightedNodeId: null });
   },
 }));
+
+/**
+ * 获取指定节点的全部上游节点数据（按边连接关系）。
+ * 在组件中使用：const upstream = useFlowStore(useFlowStore.getState().getUpstreamNodes);
+ * 或直接调用：getUpstreamNodes(nodeId)
+ */
+export function getUpstreamNodes(nodeId: string): Array<{ edge: Edge; node: Node }> {
+  const { nodes, edges } = useFlowStore.getState();
+  const incomingEdges = edges.filter((e: Edge) => e.target === nodeId);
+  return incomingEdges.map((edge: Edge) => {
+    const sourceNode = nodes.find((n: Node) => n.id === edge.source);
+    if (!sourceNode) return null;
+    return { edge, node: sourceNode };
+  }).filter((item: { edge: Edge; node: Node } | null): item is { edge: Edge; node: Node } => item !== null);
+}

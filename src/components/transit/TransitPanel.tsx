@@ -3,20 +3,21 @@ import { useState } from 'react';
 import { useTransitResources } from '@/hooks/useTransitResources';
 import type { TransitResource } from '@/types';
 import { sendToActiveTab } from '@/utils/chromeHelpers';
+import { Tag, Image, Video, Volume2, FileText, Star, Trash2, Send, Loader2, Package } from 'lucide-react';
 
 const TYPE_FILTERS = [
-  { value: 'all' as const, label: '全部', icon: '🏷️' },
-  { value: 'image' as const, label: '图片', icon: '🖼️' },
-  { value: 'video' as const, label: '视频', icon: '🎬' },
-  { value: 'audio' as const, label: '语音', icon: '🎙️' },
-  { value: 'text' as const, label: '文本', icon: '📝' },
+  { value: 'all' as const, label: '全部', icon: Tag },
+  { value: 'image' as const, label: '图片', icon: Image },
+  { value: 'video' as const, label: '视频', icon: Video },
+  { value: 'audio' as const, label: '语音', icon: Volume2 },
+  { value: 'text' as const, label: '文本', icon: FileText },
 ];
 
-const TYPE_ICONS: Record<TransitResource['type'], string> = {
-  image: '🖼️',
-  video: '🎬',
-  audio: '🎙️',
-  text: '📝',
+const TYPE_ICONS: Record<TransitResource['type'], typeof Image> = {
+  image: Image,
+  video: Video,
+  audio: Volume2,
+  text: FileText,
 };
 
 function formatTime(ts: number): string {
@@ -45,59 +46,61 @@ function ResourceCard({ resource }: { resource: TransitResource }) {
     }
   };
 
+  const IconComponent = TYPE_ICONS[resource.type];
+
   return (
-    <div className="bg-[#2a2a2a] rounded border border-[#444] p-2 hover:border-[#555] transition-colors">
+    <div className="bg-surface rounded border border-border p-2 hover:border-border-hover transition-colors">
       <div className="flex items-start gap-2">
         {/* 预览区域 */}
         {resource.type === 'image' && (
           <img
             src={resource.url}
             alt=""
-            className="w-[60px] h-[60px] object-cover rounded flex-shrink-0 bg-[#333]"
+            className="w-[60px] h-[60px] object-cover rounded flex-shrink-0 bg-surface-hover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}
         {resource.type !== 'image' && (
-          <div className="w-[60px] h-[60px] flex items-center justify-center bg-[#333] rounded flex-shrink-0 text-2xl">
-            {TYPE_ICONS[resource.type]}
+          <div className="w-[60px] h-[60px] flex items-center justify-center bg-surface-hover rounded flex-shrink-0">
+            <IconComponent className="w-6 h-6 text-text-secondary" />
           </div>
         )}
 
         {/* 信息区域 */}
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] text-white break-all leading-tight">
+          <div className="text-[10px] text-text break-all leading-tight">
             {truncateUrl(resource.url)}
           </div>
           {resource.pageTitle && (
-            <div className="text-[9px] text-gray-500 mt-0.5 truncate">{resource.pageTitle}</div>
+            <div className="text-[9px] text-text-muted mt-0.5 truncate">{resource.pageTitle}</div>
           )}
-          <div className="text-[9px] text-gray-600 mt-0.5">{formatTime(resource.timestamp)}</div>
+          <div className="text-[9px] text-text-muted mt-0.5">{formatTime(resource.timestamp)}</div>
         </div>
       </div>
 
       {/* 操作按钮 */}
-      <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-[#444]">
+      <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-border">
         <button
           onClick={() => toggleFavorite(resource.id)}
-          className="text-sm hover:scale-110 transition-transform"
+          className="text-text-secondary hover:scale-110 transition-transform"
           title={resource.isFavorite ? '取消收藏' : '收藏'}
         >
-          {resource.isFavorite ? '⭐' : '☆'}
+          {resource.isFavorite ? <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" /> : <Star className="w-4 h-4" />}
         </button>
         <button
           onClick={() => removeResource(resource.id)}
-          className="text-[10px] text-red-400 hover:text-red-300 px-1"
+          className="text-[10px] text-error hover:text-error/80 px-1"
           title="删除"
         >
-          🗑️
+          <Trash2 className="w-4 h-4" />
         </button>
         <button
           onClick={handleSend}
           disabled={sending}
-          className="text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50 px-1"
+          className="text-[10px] text-primary hover:text-primary-hover disabled:opacity-50 px-1"
           title="发送到当前页面"
         >
-          {sending ? '⏳' : '➡️'}
+          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </button>
       </div>
     </div>
@@ -114,26 +117,27 @@ export default function TransitPanel() {
     : resources.filter((r) => r.type === typeFilter);
 
   return (
-    <div className="h-full flex flex-col bg-[#1a1a1a]">
+    <div className="h-full flex flex-col bg-background">
       {/* 类型筛选 + 操作栏 */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-3 py-2 border-b border-[#333]">
+      <div className="flex-shrink-0 flex items-center gap-1 px-3 py-2 border-b border-border">
         {TYPE_FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setTypeFilter(f.value)}
-            className={`text-[10px] px-2 py-1 rounded transition-colors ${
+            className={`text-[10px] px-2 py-1 rounded transition-colors flex items-center gap-1 ${
               typeFilter === f.value
-                ? 'bg-blue-600 text-white'
-                : 'bg-[#333] text-gray-400 hover:text-white'
+                ? 'bg-primary text-text'
+                : 'bg-surface text-text-secondary hover:text-text'
             }`}
           >
-            {f.icon} {f.label}
+            <f.icon className="w-3 h-3" />
+            {f.label}
           </button>
         ))}
         <div className="flex-1" />
         <button
           onClick={clearNonFavorites}
-          className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 border border-red-500/30 rounded"
+          className="text-[10px] text-error hover:text-error/80 px-2 py-1 border border-error/30 rounded"
         >
           清理未收藏
         </button>
@@ -142,8 +146,8 @@ export default function TransitPanel() {
       {/* 资源列表 */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {filteredResources.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-40 text-gray-600 text-sm">
-            <span className="text-3xl mb-2">📦</span>
+          <div className="flex flex-col items-center justify-center h-40 text-text-muted text-sm">
+            <Package className="w-10 h-10 mb-2" />
             暂无资源
           </div>
         )}

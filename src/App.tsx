@@ -1,6 +1,7 @@
 // Ref: §七 — 3 Tab 平级导航（AI画布 / 资源 / 设置）
 import { useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
+import { Palette, Package, Settings } from 'lucide-react';
 import FlowCanvas from './components/canvas/FlowCanvas';
 import TransitPanel from './components/transit/TransitPanel';
 import SettingsPanel from './components/settings/SettingsPanel';
@@ -15,20 +16,20 @@ function App() {
       {/* Tab bar */}
       <div className="bg-surface border-b border-border flex shadow-md relative z-20 flex-shrink-0">
         {([
-          { id: 'canvas' as TabId, label: 'AI画布', emoji: '🎨' },
-          { id: 'transit' as TabId, label: '资源', emoji: '📦' },
-          { id: 'settings' as TabId, label: '设置', emoji: '⚙️' },
+          { id: 'canvas' as TabId, label: 'AI画布', icon: Palette },
+          { id: 'transit' as TabId, label: '资源', icon: Package },
+          { id: 'settings' as TabId, label: '设置', icon: Settings },
         ]).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-4 text-base font-bold flex items-center justify-center gap-2 transition-none ${
               activeTab === tab.id
-                ? 'text-blue-500 border-b-[3px] border-blue-500 bg-surface-hover'
-                : 'text-text-secondary border-b-[3px] border-transparent hover:text-text hover:bg-[#222]'
+                ? 'text-primary border-b-[3px] border-primary bg-surface-hover'
+                : 'text-text-secondary border-b-[3px] border-transparent hover:text-text hover:bg-surface-hover'
             }`}
           >
-            <span>{tab.emoji}</span>
+            <tab.icon className="w-5 h-5" />
             {tab.label}
           </button>
         ))}

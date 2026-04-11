@@ -101,13 +101,15 @@ const handleGenerateImage = () => { ... }
 ### 3.1 通道配置与全局 API 配置
 
 ```typescript
-// 原 V1 AccountConfig: { id, name, url, key, cookies, avatar, siteName, siteUrl }
-// V2 精简：去掉 Cookie 相关字段，只保留 API 端点配置，改名为 ChannelConfig
+// V2：去掉 Cookie 相关字段，只保留 API 端点配置，增加 protocol 协议类型
+// protocol 决定 API 调用的请求/响应格式，不绑定特定供应商
+// 用户可通过切换 protocol 让同一 url+key 适配不同 API 格式
 interface ChannelConfig {
   id: string;               // 唯一标识，如 "default"
   name: string;             // 供应商名称，如 "API Studio"
   url: string;              // API 端点地址
   key: string;              // API 密钥
+  protocol: 'openai' | 'gemini' | 'custom';  // 协议类型，决定请求/响应格式
 }
 
 interface ApiConfig {
@@ -119,14 +121,21 @@ interface ApiConfig {
   textChannelId: string;            // LLM 选中的供应商 ID
   textModel: string;                // LLM 模型，换行分隔多模型
   audioChannelId: string;           // 语音选中的供应商 ID
-  audioModel: string;               // 语音模型
-  ttsVoice: string;                 // TTS 语音，预设 alloy/echo/fable/onyx/nova/shimmer
+  audioModel: string;               // 语音模型，换行分隔多模型
+  ttsVoice: string;                 // TTS 语音，用户自定义填入
   videoDurations: string;           // 视频时长选项，换行分隔
   presetPrompts: PresetPrompt[];    // 预设词
 }
 ```
 
-> **通道选择机制**：4 种 API 类型各自从 `channels[]` 中选一个供应商，选中后自动提供该供应商的 url+key。模型名独立于供应商，以多行文本自由填写，节点内可切换同类型的不同模型。
+> **通道选择机制**：4 种 API 类型各自从 `channels[]` 中选一个供应商，选中后自动提供该供应商的 url+key+protocol。模型名独立于供应商，以多行文本自由填写，节点内可切换同类型的不同模型。
+>
+> **协议分派机制**：每个通道的 `protocol` 字段决定 API 调用的请求构建和响应解析方式：
+> - `'openai'`：使用 OpenAI 兼容格式（Bearer 鉴权、`/v1/` 路径前缀、`choices` 响应结构等）
+> - `'gemini'`：使用 Google Gemini 格式（URL 参数鉴权、`/v1beta/models/{model}:generateContent`、`candidates` 响应结构等）
+> - `'custom'`：用户自定义端点配置，由万能节点覆盖
+>
+> 同一个 `url+key` 切换 `protocol` 后即可适配不同 API 格式，无需重复添加供应商。
 
 ### 3.2 资源中转站
 
@@ -242,7 +251,7 @@ interface AudioNodeData {
 }
 ```
 
-> **双模式**：(1) 听音断句 — 上传音频 → Whisper 转录 → 分句结果；(2) TTS 文本转语音 — 输入文本 → 调用语音 API → 生成音频。端点格式兼容 OpenAI `/v1/audio/speech`，也支持自定义端点。
+> **双模式**：(1) 听音断句 — 上传音频 → 语音转录 → 分句结果；(2) TTS 文本转语音 — 输入文本 → 调用语音 API → 生成音频。具体请求/响应格式由所选通道的 `protocol` 决定。
 
 ### 3.8 九宫格分拆节点
 
@@ -408,10 +417,10 @@ E:\projects\XShow\
     │   └── common/
     │       └── Toast.tsx
     ├── api/
-    │   ├── imageApi.ts                  # Gemini 图片生成
-    │   ├── textApi.ts                   # OpenAI 文本 + autoSplit
+    │   ├── imageApi.ts                  # 图片生成（协议分派: gemini/openai）
+    │   ├── textApi.ts                   # 文本生成 + autoSplit（协议分派: openai/gemini）
     │   ├── videoApi.ts                  # 视频生成 + 轮询
-    │   └── audioApi.ts                  # Whisper 断句 + TTS
+    │   └── audioApi.ts                  # 语音处理（协议分派: openai/gemini）
     └── utils/
         ├── chromeHelpers.ts             # sendToActiveTab + storage 封装
         └── nodeFactory.ts              # 节点创建 + 回调注入 + 默认尺寸
@@ -419,55 +428,117 @@ E:\projects\XShow\
 
 ## 五、API 模块核心逻辑
 
-> **通道选择机制**：所有 API 调用通过 `channels.find(c => c.id === channelId)` 获取当前供应商的 url+key，再搭配对应模型名发起请求。
+> **通道选择机制**：所有 API 调用通过 `channels.find(c => c.id === channelId)` 获取当前供应商的 url+key+protocol，再根据 `protocol` 分派到对应的请求构建和响应解析逻辑。
+>
+> **协议分派规范**：每个 API 模块根据通道的 `protocol` 字段决定请求格式，不硬编码任何供应商协议。
 
-### 5.1 imageApi.ts — Gemini 图片生成
+### 5.1 imageApi.ts — 图片生成（协议分派）
 
 ```
-端点: ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key}
-方法: POST
-请求: { contents, generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize } } }
-parts: 文本→{text}, 参考图base64→{inlineData}, 参考图URL→fetch→base64
-超时: 10 分钟
-响应: candidates[0].content.parts → inlineData.base64
+根据通道 protocol 分派：
+
+protocol='gemini':
+  端点: ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key}
+  鉴权: URL 参数 ?key=
+  请求: { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize } } }
+  parts: 文本→{text}, 参考图base64→{inlineData}
+  超时: 10 分钟
+  响应: candidates[0].content.parts → inlineData.base64
+
+protocol='openai':
+  端点: ${channel.url}/v1/images/generations
+  鉴权: Authorization: Bearer ${channel.key}
+  请求: { model, prompt, size, response_format: 'b64_json' }
+  超时: 10 分钟
+  响应: data[0].b64_json 或 data[0].url
+
+protocol='custom':
+  由万能节点覆盖，不走 imageApi
+
 下载: chrome.downloads.download / <a> download
 → 参考: node-banana /api/generate, flowcraft executors.ts
 ```
 
-### 5.2 textApi.ts — OpenAI 文本生成
+### 5.2 textApi.ts — 文本生成（协议分派）
 
 ```
-端点: ${channel.url}/v1/chat/completions
-Authorization: Bearer ${channel.key}
-方法: POST
-请求: { model, messages, temperature: 0.7, response_format? }
-autoSplit: system prompt → JSON { items: [{title, content}] } → 生成子节点
+根据通道 protocol 分派：
+
+protocol='openai':
+  端点: ${channel.url}/v1/chat/completions
+  鉴权: Authorization: Bearer ${channel.key}
+  请求: { model, messages, temperature: 0.7, response_format? }
+  响应: choices[0].message.content
+
+protocol='gemini':
+  端点: ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key}
+  鉴权: URL 参数 ?key=
+  请求: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { ... } }
+  响应: candidates[0].content.parts[0].text
+
+protocol='custom':
+  由万能节点覆盖，不走 textApi
+
+autoSplit（仅 openai 协议有效）: system prompt → JSON { items: [{title, content}] } → 生成子节点
+  请求追加: response_format: { type: 'json_object' }
 → 参考: node-banana LLMGenerateNode.tsx
 ```
 
 ### 5.3 videoApi.ts — 视频生成
 
 ```
-提交: POST ${channel.url} (FormData: model, prompt, size, seconds, input_reference, Authorization: Bearer ${channel.key})
-轮询: GET ${channel.url}/v1/videos/${taskId}，5 秒间隔，最多 720 次
-完成: video_url, thumbnail_url
+视频生成暂无可用的 Gemini 格式，当前仅支持 openai 兼容协议：
+
+protocol='openai':
+  提交: POST ${channel.url} (FormData: model, prompt, size, seconds, input_reference, Authorization: Bearer ${channel.key})
+  轮询: GET ${channel.url}/v1/videos/${taskId}，5 秒间隔，最多 720 次
+  完成: video_url, thumbnail_url
+
+protocol='gemini':
+  同 openai 格式（视频生成服务普遍采用 openai 兼容接口）
+
+protocol='custom':
+  由万能节点覆盖
+
 → 参考: node-banana GenerateVideoNode.tsx
 ```
 
-### 5.4 audioApi.ts — 语音处理（双模式）
+### 5.4 audioApi.ts — 语音处理（协议分派）
 
 ```
-模式1 - 听音断句:
-  端点: ${channel.url}/v1/audio/transcriptions
-  方法: POST (FormData: model, file, response_format: verbose_json, timestamp_granularities[]: word)
-  请求头: Authorization: Bearer ${channel.key}
-  返回: words[] → 合并为 chunks [{start, end, text}]
+根据通道 protocol 分派：
 
-模式2 - TTS 文本转语音:
-  端点: ${channel.url}/v1/audio/speech (OpenAI 格式，也支持自定义端点)
-  方法: POST { model, input: text, voice: selectedVoice }
-  请求头: Authorization: Bearer ${channel.key}
-  返回: 音频二进制流 → URL.createObjectURL
+--- 听音断句（模式1）---
+
+protocol='openai':
+  端点: ${channel.url}/v1/audio/transcriptions
+  鉴权: Authorization: Bearer ${channel.key}
+  请求: FormData (model, file, response_format: verbose_json, timestamp_granularities[]: word)
+  响应: words[] → 合并为 chunks [{start, end, text}]
+
+protocol='gemini':
+  端点: ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key}
+  鉴权: URL 参数 ?key=
+  请求: { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }] }] }
+  响应: candidates[0].content.parts[0].text → 解析为带时间戳文本或直接分行
+
+--- TTS 文本转语音（模式2）---
+
+protocol='openai':
+  端点: ${channel.url}/v1/audio/speech
+  鉴权: Authorization: Bearer ${channel.key}
+  请求: { model, input: text, voice }
+  响应: 音频二进制流 → URL.createObjectURL
+
+protocol='gemini':
+  端点: ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key}
+  请求: { contents: [{ role: 'user', parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'] } }
+  响应: candidates[0].content.parts[0].inlineData.data → base64 音频
+
+protocol='custom':
+  由万能节点覆盖
+
+→ 参考: node-banana GenerateAudioNode.tsx
 ```
 
 ### 5.5 UniversalNode — AI 驱动的 API 适配器
@@ -478,6 +549,8 @@ autoSplit: system prompt → JSON { items: [{title, content}] } → 生成子节
 异步: 提交 → taskIdPath → 轮询pollingUrl → 完成提取
 AI辅助: 描述需求 → 调文本API → 自动生成 config JSON → 用户无需手动核对参数
 → 产物反推（无开源对应）
+> 注意: UniversalNode 的 custom 协议与 ChannelConfig.protocol='custom' 互补，
+> 后者用于标准节点类型，前者用于完全自定义的 API 调用。
 ```
 
 ## 六、组件核心逻辑
@@ -648,30 +721,35 @@ CRUD: 创建(弹窗输入名称) / 切换(<select>下拉) / 删除(至少保留1
 ### 7.2 设置面板
 
 ```
+供应商管理区:
+   添加/编辑/删除供应商
+   每个供应商包含：名称 + 端点地址 + API Key + 协议类型(openai/gemini/custom)
+   默认供应商: { id: "default", name: "", url: "", key: "", protocol: "openai" }
+
 4 个 API 配置区（每个区含供应商选择 + 模型配置）:
    📝 LLM 大模型
-      供应商 <select> → 自动填入 url + key
+      供应商 <select> → 自动填入 url + key + protocol
       模型名 (多行文本，每行一个)
-      测试连接按钮
+      测试连接按钮（按供应商 protocol 分派测试端点）
    🎨 图像大模型
-      供应商 <select> → 自动填入 url + key
+      供应商 <select> → 自动填入 url + key + protocol
       模型名 (多行文本，每行一个)
-      测试连接按钮
+      测试连接按钮（按供应商 protocol 分派测试端点）
    🎬 视频大模型
-      供应商 <select> → 自动填入 url + key
+      供应商 <select> → 自动填入 url + key + protocol
       模型名 (多行文本，每行一个)
       时长选项 (多行文本，每行一个)
-      测试连接按钮
-    🎙️ 语音（断句 + TTS）
-       供应商 <select> → 自动填入 url + key
-       模型名
-       TTS 语音 <select>（预设: alloy, echo, fable, onyx, nova, shimmer）
+      测试连接按钮（按供应商 protocol 分派测试端点）
+   🎙️ 语音（断句 + TTS）
+      供应商 <select> → 自动填入 url + key + protocol
+      模型名 (多行文本，每行一个)
+      TTS 语音 (文本输入，用户自行填入语音标识，如 alloy/echo 等)
+      测试连接按钮（按供应商 protocol 分派测试端点）
 
-供应商管理:
-   添加/编辑/删除供应商（名称 + 端点地址 + API Key）
-   默认供应商: { id: "default", name: "API Studio", url: "https://apistudio.cc", key: "" }
-
-测试连接: POST /v1/chat/completions {model, messages, max_tokens:5}
+测试连接（按协议分派）:
+   protocol='openai':  POST ${channel.url}/v1/chat/completions { model, messages, max_tokens: 5 }
+   protocol='gemini':  POST ${channel.url}/v1beta/models/${model}:generateContent?key=${channel.key} { contents, generationConfig }
+   protocol='custom':  不提供测试连接（由万能节点自行定义）
 持久化: chrome.storage.local
 ```
 

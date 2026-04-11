@@ -1,33 +1,8 @@
-// Ref: §3.2 + §6.14 — 资源中转站 Zustand store
+// Ref: §3.2 + §6.14 — 资源中转站 Zustand store + 双层持久化
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import type { TransitResource } from '@/types';
-
-function createChromeStorage(): Storage | undefined {
-  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    const storage = {
-      getItem: (name: string): string | null => {
-        let result: string | null = null;
-        try {
-          chrome.storage.local.get(name, (r) => { result = r[name] ?? null; });
-        } catch { /* fallback to localStorage */ }
-        return result;
-      },
-      setItem: (name: string, value: string): void => {
-        try {
-          chrome.storage.local.set({ [name]: value });
-        } catch { /* fallback */ }
-      },
-      removeItem: (name: string): void => {
-        try {
-          chrome.storage.local.remove(name);
-        } catch { /* fallback */ }
-      },
-    };
-    return storage as unknown as Storage;
-  }
-  return undefined;
-}
+import { createPersistStorage } from '@/utils/chromeStorage';
 
 interface TransitState {
   resources: TransitResource[];
@@ -71,7 +46,7 @@ export const useTransitResources = create<TransitStore>()(
     }),
     {
       name: 'xshow-transit-resources',
-      storage: createJSONStorage(() => createChromeStorage() ?? localStorage),
+      storage: createPersistStorage(),
     }
   )
 );

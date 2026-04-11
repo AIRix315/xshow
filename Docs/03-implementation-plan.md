@@ -168,7 +168,7 @@
 
 | # | 子任务 | 参考 | 测试 |
 |---|--------|------|------|
-| 2.3.1 | `src/api/imageApi.ts` — Gemini 图片生成（§5.1 端点/请求/超时/响应格式） | §5.1 + Context7 查 Gemini API + node-banana `/api/generate/` | **先写测试**: 模拟 fetch → 验证请求格式/响应解析 |
+| 2.3.1 | `src/api/imageApi.ts` — 图片生成（协议分派: gemini/openai） | §5.1 + 根据 protocol 分派请求格式 | **先写测试**: 模拟 fetch → 验证协议分派逻辑 |
 | 2.3.2 | `ImageNode.tsx` — 提示词+模型下拉+预设词+@资源绑定+生成按钮 | node-banana `GenerateImageNode.tsx` + @xyflow/react 自定义节点文档 | 手动: 输入提示词→生成图片 |
 | 2.3.3 | 工具栏按钮：放大(onZoom)/裁剪(onCrop)/编辑(onEdit)/下载 | §6.3 + 产物 ImageNode 工具栏 | 手动: 各按钮响应 |
 | 2.3.4 | 多模型下拉切换（drawingModel split \n → 列表） | §3.4 + 产物 `.split('\n')` 模式 | 手动: 切换模型 |
@@ -179,7 +179,7 @@
 
 | # | 子任务 | 参考 | 测试 |
 |---|--------|------|------|
-| 2.4.1 | `src/api/textApi.ts` — OpenAI 文本生成 | §5.2 + Context7 查 OpenAI Chat Completions API | **先写测试**: 模拟 fetch → 验证请求/响应 |
+| 2.4.1 | `src/api/textApi.ts` — 文本生成 + autoSplit（协议分派: openai/gemini） | §5.2 + 根据 protocol 分派请求格式 | **先写测试**: 模拟 fetch → 验证协议分派逻辑 |
 | 2.4.2 | `TextNode.tsx` — 提示词+模型下拉+autoSplit+@资源绑定 | node-banana `LLMGenerateNode.tsx` | 手动: 生成文本 |
 | 2.4.3 | autoSplit 逻辑：response_format json → 解析 items → 生成子节点 + 连线 | §5.2 + §6.4 | 手动: autoSplit 生成子节点 |
 
@@ -232,9 +232,9 @@
 
 | # | 子任务 | 参考 | 测试 |
 |---|--------|------|------|
-| 3.2.1 | `src/api/audioApi.ts` — 模式1: Whisper 断句 + 模式2: TTS | §5.4 + Context7 查 OpenAI Audio API | **先写测试**: Whisper FormData/TTS POST 格式 |
+| 3.2.1 | `src/api/audioApi.ts` — 语音处理（协议分派: openai/gemini） | §5.4 + 根据 protocol 分派请求格式 | **先写测试**: 模拟 fetch → 验证协议分派逻辑 |
 | 3.2.2 | `AudioNode.tsx` — 双模式 UI（断句上传区 + TTS 文本输入） | §3.7 + §6.6 | 手动: 上传音频→断句结果; 输入文本→生成音频 |
-| 3.2.3 | Whisper words[] → chunks 合并逻辑 | §5.4 + 产物 `Be` 函数 | Vitest: words→chunks 转换正确 |
+| 3.2.3 | 音频转写文本 → chunks 合并逻辑 | §5.4 | Vitest: 文本→chunks 转换正确 |
 | 3.2.4 | 连线输入接收音频 URL | §6.6 | 手动: 连线提供音频 |
 
 ### 3.3 GridSplitNode

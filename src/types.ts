@@ -8,6 +8,7 @@ export interface ChannelConfig {
   name: string;             // 供应商名称
   url: string;              // API 端点地址
   key: string;              // API 密钥
+  protocol: 'openai' | 'gemini' | 'custom';  // 协议类型，决定请求/响应格式
 }
 
 export interface ApiConfig {
@@ -19,8 +20,8 @@ export interface ApiConfig {
   textChannelId: string;            // LLM 供应商 ID
   textModel: string;                // LLM 模型，换行分隔
   audioChannelId: string;           // 语音供应商 ID
-  audioModel: string;               // 语音模型
-  ttsVoice: string;                 // TTS 语音
+  audioModel: string;               // 语音模型，换行分隔
+  ttsVoice: string;                 // TTS 语音标识，用户自定义填入
   videoDurations: string;           // 视频时长选项，换行分隔
   presetPrompts: PresetPrompt[];    // 预设词
 }
@@ -133,6 +134,9 @@ export interface GridSplitNodeData {
   cellSize: number;         // 默认 512
   aspectRatio: string;      // 默认 '1:1'
   titlePattern: string;     // 默认 'id{num}'
+  splitResults?: string[];  // 拆图结果：N×N 个 DataURL
+  loading?: boolean;
+  errorMessage?: string;
 }
 
 // §3.9 九宫格合拼节点
@@ -141,6 +145,9 @@ export interface GridMergeNodeData {
   gridCount: number;        // 默认 3
   cellSize: number;         // 默认 512
   aspectRatio: string;      // 默认 '1:1'
+  mergedImageUrl?: string;   // 合拼结果 DataURL
+  loading?: boolean;
+  errorMessage?: string;
 }
 
 // §3.10 万能节点配置
@@ -232,23 +239,24 @@ export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioN
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {
   id: 'default',
-  name: 'API Studio',
-  url: 'https://apistudio.cc',
+  name: '',
+  url: '',
   key: '',
+  protocol: 'openai',
 };
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
   channels: [DEFAULT_CHANNEL],
   imageChannelId: 'default',
-  drawingModel: 'gemini-3.1-flash-image-preview',
+  drawingModel: '',
   videoChannelId: 'default',
   videoModel: '',
   textChannelId: 'default',
-  textModel: 'gpt-3.5-turbo',
+  textModel: '',
   audioChannelId: 'default',
-  audioModel: 'whisper-1',
-  ttsVoice: 'alloy',
-  videoDurations: '10\n15',
+  audioModel: '',
+  ttsVoice: '',
+  videoDurations: '',
   presetPrompts: [],
 };
 

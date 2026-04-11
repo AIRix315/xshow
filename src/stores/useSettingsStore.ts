@@ -1,6 +1,6 @@
-// Ref: Zustand v5 persist + flowcraft lib/store/
+// Ref: Zustand v5 persist + flowcraft lib/store/ + §7.3 — 双层持久化
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import {
   DEFAULT_API_CONFIG,
   DEFAULT_PROJECT,
@@ -13,34 +13,7 @@ import type {
   GlobalTask,
   PresetPrompt,
 } from '@/types';
-
-// Chrome storage.local adapter
-function createChromeStorage(): Storage | undefined {
-  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    const storage = {
-      getItem: (name: string): string | null => {
-        let result: string | null = null;
-        try {
-          // Synchronous fallback — persist middleware uses async getStorage
-          chrome.storage.local.get(name, (r) => { result = r[name] ?? null; });
-        } catch { /* fallback to localStorage */ }
-        return result;
-      },
-      setItem: (name: string, value: string): void => {
-        try {
-          chrome.storage.local.set({ [name]: value });
-        } catch { /* fallback */ }
-      },
-      removeItem: (name: string): void => {
-        try {
-          chrome.storage.local.remove(name);
-        } catch { /* fallback */ }
-      },
-    };
-    return storage as unknown as Storage;
-  }
-  return undefined;
-}
+import { createPersistStorage } from '@/utils/chromeStorage';
 
 interface SettingsState {
   apiConfig: ApiConfig;
@@ -185,7 +158,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'xshow-settings',
-      storage: createJSONStorage(() => createChromeStorage() ?? localStorage),
+      storage: createPersistStorage(),
     }
   )
 );

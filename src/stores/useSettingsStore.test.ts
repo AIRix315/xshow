@@ -8,17 +8,17 @@ describe('useSettingsStore', () => {
     // Reset store to default state
     useSettingsStore.setState({
       apiConfig: {
-        channels: [{ id: 'default', name: 'API Studio', url: 'https://apistudio.cc', key: '' }],
+        channels: [{ id: 'default', name: '', url: '', key: '', protocol: 'openai' }],
         imageChannelId: 'default',
-        drawingModel: 'gemini-3.1-flash-image-preview',
+        drawingModel: '',
         videoChannelId: 'default',
         videoModel: '',
         textChannelId: 'default',
-        textModel: 'gpt-3.5-turbo',
+        textModel: '',
         audioChannelId: 'default',
-        audioModel: 'whisper-1',
-        ttsVoice: 'alloy',
-        videoDurations: '10\n15',
+        audioModel: '',
+        ttsVoice: '',
+        videoDurations: '',
         presetPrompts: [],
       },
       projects: [{ id: 'default', name: '默认项目' }],
@@ -30,7 +30,7 @@ describe('useSettingsStore', () => {
 
   describe('Channel CRUD', () => {
     it('adds a channel', () => {
-      const channel: ChannelConfig = { id: 'test', name: 'Test API', url: 'https://test.api', key: 'secret' };
+      const channel: ChannelConfig = { id: 'test', name: 'Test API', url: 'https://test.api', key: 'secret', protocol: 'openai' };
       useSettingsStore.getState().addChannel(channel);
       const channels = useSettingsStore.getState().apiConfig.channels;
       expect(channels).toHaveLength(2);
@@ -44,7 +44,7 @@ describe('useSettingsStore', () => {
     });
 
     it('removes a channel', () => {
-      const channel: ChannelConfig = { id: 'to-remove', name: 'Remove Me', url: 'https://remove', key: '' };
+      const channel: ChannelConfig = { id: 'to-remove', name: 'Remove Me', url: 'https://remove', key: '', protocol: 'openai' };
       useSettingsStore.getState().addChannel(channel);
       useSettingsStore.getState().removeChannel('to-remove');
       const channels = useSettingsStore.getState().apiConfig.channels;
