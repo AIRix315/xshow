@@ -6,8 +6,10 @@ import type { UniversalNodeType, CustomNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateText } from '@/api/textApi';
+import { executeComfyWorkflow } from '@/api/comfyApi';
 import BaseNodeWrapper from './BaseNode';
 import { Save, Sparkles } from 'lucide-react';
+import type { ComfyUISubType, ComfyUINodeInfo } from '@/types';
 
 // 变量替换：{{变量名}} → 从变量映射中取值
 function replaceVariables(template: string, variables: Record<string, string>): string {
@@ -160,6 +162,7 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
     outputType: 'text',
     executionMode: 'sync',
     resultPath: '',
+    executionType: 'http',
   });
   const [loading, setLoading] = useState(data.loading ?? false);
   const [errorMessage, setErrorMessage] = useState(data.errorMessage ?? '');
@@ -214,7 +217,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     }
   }, [channels, textChannelId, textModel]);
 
-  // 执行请求（根据 executionMode 路由到同步/异步）
+  // 执行请求（根据 executionType 路由到 HTTP/ComfyUI）
   const handleExecute = useCallback(async () => {
     if (loading) return;
     setLoading(true);
@@ -225,9 +228,39 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
     const abortController = new AbortController();
     abortRef.current = abortController;
-    const variables = config.variables ?? {};
 
     try {
+      // ComfyUI 执行模式
+      if (config.executionType === 'comfyui') {
+        const channel = channels.find((c) => c.id === config.channelId);
+        if (!channel) {
+          throw new Error('未选择 ComfyUI 渠道商');
+        }
+        if (!config.model) {
+          throw new Error('请输入工作流 ID');
+        }
+
+        const result = await executeComfyWorkflow({
+          channelUrl: channel.url,
+          channelKey: channel.key,
+          subType: config.comfyuiSubType ?? 'local',
+          workflowId: config.model,
+          nodeInfoList: config.nodeInfoList,
+          onProgress: (p) => {
+            setProgress(p);
+            updateNodeData(id, { progress: p });
+          },
+          signal: abortController.signal,
+        });
+
+        setResultData(result);
+        setConfigMode(false);
+        updateNodeData(id, { resultData: result, loading: false, configMode: false, progress: 0 });
+        return;
+      }
+
+      // HTTP 执行模式（同步/异步）
+      const variables = config.variables ?? {};
       const result = config.executionMode === 'async'
         ? await executeAsync(config, variables, (p) => {
             setProgress(p);
@@ -247,7 +280,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
       setProgress(0);
       abortRef.current = null;
     }
-  }, [loading, config, id, updateNodeData]);
+  }, [loading, config, id, updateNodeData, channels]);
 
   // 停止执行
   const handleStop = useCallback(() => {
@@ -327,6 +360,14 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 <option value="sync">同步</option>
                 <option value="async">异步</option>
               </select>
+              <select
+                value={config.executionType ?? 'http'}
+                onChange={(e) => updateConfig({ executionType: e.target.value as 'http' | 'comfyui' })}
+                className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+              >
+                <option value="http">HTTP</option>
+                <option value="comfyui">ComfyUI</option>
+              </select>
             </div>
             <textarea
               value={config.headers}
@@ -395,6 +436,53 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                   onChange={(e) => updateConfig({ pollingProgressPath: e.target.value })}
                   placeholder="进度路径 (e.g. progress, 可选)"
                   className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                />
+              </div>
+            )}
+            {/* ComfyUI 配置 */}
+            {config.executionType === 'comfyui' && (
+              <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
+                <span className="text-[9px] text-green-400 font-medium">ComfyUI 配置</span>
+                <div className="flex gap-1">
+                  <select
+                    value={config.comfyuiSubType ?? 'local'}
+                    onChange={(e) => updateConfig({ comfyuiSubType: e.target.value as ComfyUISubType })}
+                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
+                  >
+                    <option value="local">本地 ComfyUI</option>
+                    <option value="cloud">ComfyUI Cloud</option>
+                    <option value="runninghub">RunningHub</option>
+                  </select>
+                  <select
+                    value={config.channelId ?? ''}
+                    onChange={(e) => updateConfig({ channelId: e.target.value })}
+                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
+                  >
+                    <option value="">选择渠道商</option>
+                    {channels.filter((c) => c.protocol === 'comfyui').map((ch) => (
+                      <option key={ch.id} value={ch.id}>{ch.name || ch.url || ch.id}</option>
+                    ))}
+                  </select>
+                </div>
+                <input
+                  value={config.model ?? ''}
+                  onChange={(e) => updateConfig({ model: e.target.value })}
+                  placeholder="工作流 ID"
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                />
+                <textarea
+                  value={JSON.stringify(config.nodeInfoList ?? [])}
+                  onChange={(e) => {
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      updateConfig({ nodeInfoList: parsed as ComfyUINodeInfo[] });
+                    } catch {
+                      // Invalid JSON, ignore
+                    }
+                  }}
+                  placeholder='节点字段映射 [{"nodeId": "5", "fieldName": "prompt", "defaultValue": "hello"}]'
+                  rows={2}
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono"
                 />
               </div>
             )}

@@ -148,4 +148,150 @@ describe('textApi — generateText', () => {
     const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).toBe('https://api.example.com/v1/chat/completions');
   });
+
+  // Gemini 协议测试
+  describe('Gemini protocol', () => {
+    const geminiParams = {
+      channelUrl: 'https://generativelanguage.googleapis.com',
+      channelKey: 'gemini-key',
+      protocol: 'gemini' as const,
+      model: 'gemini-2.0-flash',
+      messages: [{ role: 'user' as const, content: '你好' }],
+    };
+
+    it('sends POST to Gemini generateContent endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: '你好，我是 Gemini' }] } }],
+        }),
+      });
+
+      await generateText(geminiParams);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const callUrl = mockFetch.mock.calls[0]![0] as string;
+      expect(callUrl).toContain('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent');
+      expect(callUrl).toContain('key=gemini-key');
+    });
+
+    it('does not use Authorization header for Gemini (uses URL query param)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: 'response' }] } }],
+        }),
+      });
+
+      await generateText(geminiParams);
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      expect(callOptions.headers).not.toHaveProperty('Authorization');
+    });
+
+    it('sends correct body format for Gemini protocol', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: 'response' }] } }],
+        }),
+      });
+
+      await generateText(geminiParams);
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(callOptions.body as string);
+      expect(body.contents).toHaveLength(1);
+      expect(body.contents[0].role).toBe('user');
+      expect(body.contents[0].parts[0].text).toBe('你好');
+      expect(body.generationConfig.temperature).toBe(0.7);
+    });
+
+    it('converts message roles correctly for Gemini', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: 'response' }] } }],
+        }),
+      });
+
+      await generateText({
+        ...geminiParams,
+        messages: [
+          { role: 'system', content: '你是一个助手' },
+          { role: 'user', content: '你好' },
+        ],
+      });
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(callOptions.body as string);
+      expect(body.contents).toHaveLength(2);
+      // 第一条system消息转为user
+      expect(body.contents[0].role).toBe('user');
+      // 第二条user消息保持user
+      expect(body.contents[1].role).toBe('user');
+    });
+
+    it('adds system prompt at beginning when autoSplit is true in Gemini', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ items: [{ title: 'A', content: 'B' }] }) }] } }],
+        }),
+      });
+
+      await generateText({ ...geminiParams, autoSplit: true });
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(callOptions.body as string);
+      // 第一条消息应该是 system prompt
+      expect(body.contents[0].parts[0].text).toContain('内容拆分专家');
+      expect(body.generationConfig.responseMimeType).toBe('application/json');
+    });
+
+    it('returns text on successful Gemini response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: 'Gemini 生成的回答' }] } }],
+        }),
+      });
+
+      const result = await generateText(geminiParams);
+      expect(result.text).toBe('Gemini 生成的回答');
+    });
+
+    it('parses splitItems from Gemini response when autoSplit is true', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ items: [{ title: 'Part1', content: 'Content1' }, { title: 'Part2', content: 'Content2' }] }) }] } }],
+        }),
+      });
+
+      const result = await generateText({ ...geminiParams, autoSplit: true });
+      expect(result.splitItems).toHaveLength(2);
+      expect(result.splitItems![0]!.title).toBe('Part1');
+      expect(result.splitItems![1]!.content).toBe('Content2');
+    });
+
+    it('throws on Gemini HTTP error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve('Forbidden'),
+      });
+
+      await expect(generateText(geminiParams)).rejects.toThrow('文本生成失败: 403');
+    });
+
+    it('throws when Gemini response has no content', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ candidates: [] }),
+      });
+
+      await expect(generateText(geminiParams)).rejects.toThrow('文本生成失败: 无有效响应数据');
+    });
+  });
 });

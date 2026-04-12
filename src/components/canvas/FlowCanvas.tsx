@@ -1,64 +1,110 @@
 // Ref: @xyflow/react ^12.10 + node-banana WorkflowCanvas.tsx + §6.1 + §6.12 + §6.15
 // Ref: §4.2 — 画布状态持久化（保存/加载）
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
   type Connection,
-  type Node,
+  type OnConnectEnd,
 } from '@xyflow/react';
 import { nodeTypes } from '@/utils/nodeFactory';
 import { createNode } from '@/utils/nodeFactory';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { saveCanvasState, loadCanvasState } from '@/utils/canvasState';
-import NodeSidebar from './NodeSidebar';
+import FloatingActionBar from './FloatingActionBar';
+import ConnectionDropMenu from './ConnectionDropMenu';
 import '@xyflow/react/dist/style.css';
 
 // =============================================================================
-// 连接验证：数据类型兼容性检查
+// 连接验证：Handle 数据类型兼容性检查
 // =============================================================================
 
 /** Handle 数据类型 */
-type HandleDataType = 'image' | 'text' | 'audio' | 'video' | 'any';
+type HandleDataType = 'image' | 'text' | 'audio' | 'video' | 'model' | 'value' | 'any';
+
+/** 从 Handle ID 提取数据类型（参考 node-banana getHandleType） */
+function getHandleType(handleId: string | null | undefined): HandleDataType {
+  if (!handleId) return 'any';
+  // 精确匹配
+  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'input') {
+    return handleId === 'input' ? 'any' : handleId as HandleDataType;
+  }
+  // cell-* 格式 (GridSplitNode 的输出句柄，如 cell-0-0, cell-1-0)
+  if (handleId.startsWith('cell-')) return 'image';
+  // 包含匹配 (如 "source-image", "cropped-image", "video-0", "image-left")
+  if (handleId.includes('image')) return 'image';
+  if (handleId.includes('text')) return 'text';
+  if (handleId.includes('audio')) return 'audio';
+  if (handleId.includes('video')) return 'video';
+  if (handleId.includes('model')) return 'model';
+  if (handleId.includes('value')) return 'value';
+  // 特殊前缀
+  if (handleId.startsWith('output') || handleId.startsWith('rule') || handleId.startsWith('default') || handleId.startsWith('on') || handleId.startsWith('off')) return 'any';
+  return 'any';
+}
+
+/** 从 Handle ID 中提取数据类型前缀 */
+function extractHandleType(handleId: string | null): HandleDataType | null {
+  if (!handleId) return null;
+  // 精确匹配
+  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'any' || handleId === 'input') {
+    return handleId === 'input' ? 'any' : handleId as HandleDataType;
+  }
+  // 前缀匹配 (如 "video-0", "image-left", "output-1", "rule-0")
+  if (handleId.startsWith('image')) return 'image';
+  if (handleId.startsWith('text')) return 'text';
+  if (handleId.startsWith('audio')) return 'audio';
+  if (handleId.startsWith('video')) return 'video';
+  if (handleId.startsWith('model')) return 'model';
+  if (handleId.startsWith('value')) return 'value';
+  if (handleId.startsWith('output') || handleId.startsWith('rule') || handleId.startsWith('default') || handleId.startsWith('on') || handleId.startsWith('off')) return 'any';
+  return null;
+}
 
 /** 检查两个数据类型是否兼容 */
 function isDataTypeCompatible(sourceType: HandleDataType, targetType: HandleDataType): boolean {
   if (sourceType === 'any' || targetType === 'any') return true;
+  // model 输出可以连到 image 输入 (3D模型→图片展示)
+  if (sourceType === 'model' && targetType === 'image') return true;
+  // value 类型可与 text 兼容
+  if ((sourceType === 'value' && targetType === 'text') || (sourceType === 'text' && targetType === 'value')) return true;
   return sourceType === targetType;
 }
 
-/** 连接验证函数 - 更宽松的验证规则 */
-function validateConnection(connection: Connection, _nodes: Node[]): boolean {
+/** 连接验证函数 */
+function validateConnection(connection: Connection): boolean {
   const { source, target, sourceHandle, targetHandle } = connection;
   
-  // 未选择源或目标节点，拒绝连接
   if (!source || !target) return false;
-  
-  // 跳过自连接
   if (source === target) return false;
   
-  // 检查 Handle ID 是否明确指定了类型
-  const explicitSourceType = sourceHandle === 'image' || sourceHandle === 'text' || sourceHandle === 'audio' || sourceHandle === 'video'
-    ? sourceHandle as HandleDataType
-    : null;
+  const sourceType = extractHandleType(sourceHandle);
+  const targetType = extractHandleType(targetHandle);
   
-  const explicitTargetType = targetHandle === 'image' || targetHandle === 'text' || targetHandle === 'audio' || targetHandle === 'video'
-    ? targetHandle as HandleDataType
-    : null;
-  
-  // 如果两边都明确指定了类型，检查兼容性
-  if (explicitSourceType && explicitTargetType) {
-    return isDataTypeCompatible(explicitSourceType, explicitTargetType);
+  // 如果两边都识别到类型，检查兼容性
+  if (sourceType && targetType) {
+    return isDataTypeCompatible(sourceType, targetType);
   }
   
-  // 否则允许连接（更宽松的模式）
+  // 未知类型默认允许（宽松模式）
   return true;
 }
 
 function FlowCanvasInner() {
+  const [dropMenuState, setDropMenuState] = useState<{
+    position: { x: number; y: number } | null;
+    sourceHandleType: string | null;
+  }>({ position: null, sourceHandleType: null });
+  
+  // 记录连接拖拽起点的信息
+  const connectingInfo = useRef<{
+    nodeId: string;
+    handleType: string;
+    handleId: string;
+  } | null>(null);
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
   const highlightedNodeId = useFlowStore((s) => s.highlightedNodeId);
@@ -72,7 +118,6 @@ function FlowCanvasInner() {
   const currentProjectId = useSettingsStore((s) => s.currentProjectId);
   const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
 
-  // 启动时加载画布状态
   useEffect(() => {
     let cancelled = false;
     loadCanvasState(currentProjectId).then((state) => {
@@ -91,7 +136,7 @@ function FlowCanvasInner() {
   const onConnect = useCallback(
     (connection: Connection) => {
       // 连接验证：检查数据类型兼容性
-      if (!validateConnection(connection, nodes)) {
+      if (!validateConnection(connection)) {
         // 可选：可以在这里显示 toast 提示用户
         console.warn('连接验证失败：数据类型不兼容');
         return;
@@ -103,36 +148,121 @@ function FlowCanvasInner() {
         sourceHandle: connection.sourceHandle ?? undefined,
         targetHandle: connection.targetHandle ?? undefined,
       });
+      // 连接成功后清除连接信息
+      connectingInfo.current = null;
     },
-    [addEdge, nodes],
+    [addEdge, nodes]
+  );
+
+  // 连接开始时记录起点信息
+  const onConnectStart = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_event: unknown, _params: { nodeId: string | null; handleId: string | null; handleType: string | null }) => {
+      // 空回调，不需要额外记录信息
+    },
+    []
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    // 使用 nativeEvent 获取原生的 DataTransfer 对象
+    const nativeEvent = event.nativeEvent as DragEvent;
+    nativeEvent.dataTransfer && (nativeEvent.dataTransfer.dropEffect = 'move');
   }, []);
+
+  // 监听原生 DOM 事件处理拖拽（React onDrop 有时无法获取 DataTransfer）
+  useEffect(() => {
+    const handleNativeDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    document.addEventListener('dragover', handleNativeDragOver);
+    
+    const handleNativeDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const type = e.dataTransfer?.getData('application/reactflow');
+      
+      if (type && reactFlowInstance.current) {
+        const instance = reactFlowInstance.current as { screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number } };
+        const position = instance.screenToFlowPosition({
+          x: e.clientX,
+          y: e.clientY,
+        });
+        const newNode = createNode(type, position);
+        flowAddNode(newNode);
+      }
+    };
+    document.addEventListener('drop', handleNativeDrop);
+    return () => {
+      document.removeEventListener('dragover', handleNativeDragOver);
+      document.removeEventListener('drop', handleNativeDrop);
+    };
+  }, [flowAddNode]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData('application/reactflow');
-      if (!type || !reactFlowInstance.current) return;
-
-      const instance = reactFlowInstance.current as { screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number } };
-      const position = instance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      const newNode = createNode(type, position);
-      flowAddNode(newNode);
+      // React onDrop 有时无法获取 DataTransfer，依赖原生事件处理
     },
     [flowAddNode],
   );
 
+  // 用于防止 onPaneClick 立即清除 onConnectEnd 设置的菜单
+  const menuOpenedByConnectEnd = useRef(false);
+
   const onPaneClick = useCallback(() => {
+    // 如果刚通过 onConnectEnd 打开了菜单，忽略此次点击
+    if (menuOpenedByConnectEnd.current) {
+      menuOpenedByConnectEnd.current = false;
+      return;
+    }
     setHighlightedNode(null);
+    setDropMenuState({ position: null, sourceHandleType: null });
   }, [setHighlightedNode]);
+
+  // 连接拖拽结束时，如果未连接到目标节点，弹出 ConnectionDropMenu
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (event, connectionState) => {
+      // 如果连接成功（isValid 为 true），不弹菜单
+      if (connectionState.isValid) {
+        return;
+      }
+
+      // 如果没有起始节点，不弹菜单
+      if (!connectionState.fromNode) {
+        return;
+      }
+
+      // 获取鼠标位置
+      const { clientX, clientY } = event as MouseEvent;
+
+      // 从 fromHandle.id 获取 handle 类型（使用 getHandleType 从 ID 推断数据类型）
+      const fromHandleId = connectionState.fromHandle?.id || null;
+      const handleType = getHandleType(fromHandleId);
+
+      setDropMenuState({
+        position: { x: clientX, y: clientY },
+        sourceHandleType: handleType,
+      });
+      menuOpenedByConnectEnd.current = true;
+    },
+    [],
+  );
+
+  // 从 ConnectionDropMenu 选择节点后创建节点并连接
+  const handleDropMenuSelect = useCallback(
+    (nodeType: string) => {
+      if (!dropMenuState.position || !reactFlowInstance.current) {
+        setDropMenuState({ position: null, sourceHandleType: null });
+        return;
+      }
+      const instance = reactFlowInstance.current as { screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number } };
+      const position = instance.screenToFlowPosition(dropMenuState.position);
+      const newNode = createNode(nodeType, position);
+      flowAddNode(newNode);
+      setDropMenuState({ position: null, sourceHandleType: null });
+    },
+    [dropMenuState.position, flowAddNode],
+  );
 
   // Ref: §6.12 — 高亮节点样式：应用到 node style 中
   const styledNodes = nodes.map((n) => ({
@@ -146,8 +276,7 @@ function FlowCanvasInner() {
   }));
 
   return (
-    <div className="flex h-full w-full">
-      <NodeSidebar reactFlowInstance={null} />
+    <div className="flex h-full w-full relative" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <div className="flex-1 h-full">
         <ReactFlow
           nodes={styledNodes}
@@ -159,21 +288,104 @@ function FlowCanvasInner() {
             reactFlowInstance.current = instance;
           }}
           onDragOver={onDragOver}
-          onDrop={onDrop}
           onPaneClick={onPaneClick}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           nodeTypes={nodeTypes}
           fitView
-          className="bg-background"
+          deleteKeyCode={['Backspace', 'Delete']}
+          multiSelectionKeyCode="Shift"
+          selectionOnDrag={false}
+          selectionKeyCode="Shift"
+          panOnDrag={[1]}
+          selectNodesOnDrag={false}
+          nodeDragThreshold={5}
+          nodeClickDistance={5}
+          zoomOnScroll={false}
+          zoomOnPinch={true}
+          minZoom={0.1}
+          maxZoom={4}
+          className="bg-neutral-900"
+          proOptions={{ hideAttribution: true }}
+          defaultEdgeOptions={{ type: 'default', animated: false }}
         >
-          <Background color="#333" gap={16} />
-          <Controls className="bg-surface border-border [&>button]:bg-surface [&>button]:border-border [&>button]:text-text [&>button]:hover:bg-surface-hover" />
+          <Background color="#404040" gap={20} size={1} />
+          <Controls className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg [&>button]:bg-neutral-800 [&>button]:border-neutral-700 [&>button]:text-neutral-300 [&>button:hover]:bg-neutral-700 [&>button:hover]:text-neutral-100" />
           <MiniMap
-            nodeColor="#3b82f6"
-            maskColor="rgba(0, 0, 0, 0.7)"
-            className="bg-surface border-border"
+            position="top-right"
+            className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg"
+            maskColor="rgba(0, 0, 0, 0.6)"
+            pannable
+            zoomable
+            nodeColor={(node) => {
+              switch (node.type) {
+                case 'imageNode':
+                  return '#10b981';
+                case 'textNode':
+                  return '#f97316';
+                case 'videoNode':
+                  return '#9333ea';
+                case 'audioNode':
+                  return '#d946ef';
+                case 'cropNode':
+                  return '#60a5fa';
+                case 'gridSplitNode':
+                  return '#f59e0b';
+                case 'gridMergeNode':
+                  return '#f97316';
+                case 'customNode':
+                  return '#06b6d4';
+                // Input
+                case 'viewer3DNode':
+                  return '#22d3ee';
+                // Text
+                case 'promptConstructorNode':
+                  return '#fb923c';
+                // Generate
+                case 'generateAudioNode':
+                  return '#e879f9';
+                case 'generate3DNode':
+                  return '#2dd4bf';
+                // Process
+                case 'annotateNode':
+                  return '#4ade80';
+                case 'videoStitchNode':
+                  return '#a78bfa';
+                case 'videoTrimNode':
+                  return '#818cf8';
+                case 'easeCurveNode':
+                  return '#fbbf24';
+                case 'frameGrabNode':
+                  return '#f472b6';
+                case 'imageCompareNode':
+                  return '#34d399';
+                // Route
+                case 'routerNode':
+                  return '#fb7185';
+                case 'switchNode':
+                  return '#38bdf8';
+                case 'conditionalSwitchNode':
+                  return '#c084fc';
+                // Output
+                case 'outputNode':
+                  return '#a3e635';
+                case 'outputGalleryNode':
+                  return '#facc15';
+                default:
+                  return '#94a3b8';
+              }
+            }}
           />
         </ReactFlow>
       </div>
+      <FloatingActionBar />
+      <ConnectionDropMenu
+        position={dropMenuState.position}
+        sourceHandleType={dropMenuState.sourceHandleType}
+        nodes={nodes}
+        onSelect={handleDropMenuSelect}
+        onClose={() => setDropMenuState({ position: null, sourceHandleType: null })}
+      />
     </div>
   );
 }

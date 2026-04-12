@@ -157,8 +157,11 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
   }, [id, data]);
 
   return (
-    <BaseNodeWrapper selected={!!selected} errorMessage={errorMessage} minHeight={200} minWidth={280}>
-      <Handle type="target" position={Position.Left} id="source-image" className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222] hover:!bg-primary" />
+    <BaseNodeWrapper selected={!!selected} errorMessage={errorMessage} 
+      title="裁剪"
+      minHeight={200} minWidth={280}
+    >
+      <Handle type="target" position={Position.Left} id="source-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
       <div className="flex flex-col gap-2 p-2 min-w-[280px]">
         <span className="text-[10px] text-text-secondary font-medium">图片裁剪</span>
 
@@ -203,7 +206,7 @@ function CropNode({ id, data, selected }: NodeProps<CropNodeType>) {
           </>
         )}
       </div>
-      <Handle type="source" position={Position.Right} id="cropped-image" className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222] hover:!bg-primary" />
+      <Handle type="source" position={Position.Right} id="cropped-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
     </BaseNodeWrapper>
   );
 }

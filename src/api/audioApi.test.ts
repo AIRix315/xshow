@@ -6,6 +6,21 @@ import type { WhisperWord } from './audioApi';
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
+// Mock FileReader
+class MockFileReader {
+  onloadend: (() => void) | null = null;
+  result: string = '';
+  onerror: ((error: Error) => void) | null = null;
+
+  readAsDataURL(_file: File) {
+    setTimeout(() => {
+      this.result = 'data:audio/wav;base64,mocked';
+      this.onloadend?.();
+    }, 0);
+  }
+}
+globalThis.FileReader = MockFileReader as unknown as typeof FileReader;
+
 beforeEach(() => {
   mockFetch.mockReset();
 });
@@ -195,5 +210,162 @@ describe('audioApi — generateTTS', () => {
       input: 'test',
       voice: 'alloy',
     })).rejects.toThrow('TTS 生成失败: 500');
+  });
+
+  // Gemini 协议测试
+  describe('Gemini protocol', () => {
+    it('transcribeAudio uses Gemini predict endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: '这是转写的文本内容' }] } }],
+        }),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      await transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const callUrl = mockFetch.mock.calls[0]![0] as string;
+      expect(callUrl).toContain('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:predict');
+      expect(callUrl).toContain('key=gemini-key');
+    });
+
+    it('transcribeAudio Gemini does not use Authorization header', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: 'text' }] } }],
+        }),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      await transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      });
+
+      const options = mockFetch.mock.calls[0]![1] as RequestInit;
+      expect(options.headers).not.toHaveProperty('Authorization');
+    });
+
+    it('transcribeAudio Gemini sends audio as inlineData', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: '转写结果' }] } }],
+        }),
+      });
+
+      const file = new File(['audio-data'], 'test.wav', { type: 'audio/wav' });
+      await transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      });
+
+      const options = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.contents[0].parts[0].inlineData).toBeDefined();
+      expect(body.contents[0].parts[0].inlineData.mimeType).toBe('audio/wav');
+    });
+
+    it('transcribeAudio Gemini returns chunks from text parsing', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: '第一句。第二句。第三句。' }] } }],
+        }),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      const result = await transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      });
+
+      // 应该按句末标点分割成3个chunks
+      expect(result).toHaveLength(3);
+      expect(result[0]!.text).toBe('第一句');
+      expect(result[1]!.text).toBe('第二句');
+      expect(result[2]!.text).toBe('第三句');
+    });
+
+    it('transcribeAudio Gemini throws on HTTP error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve('Forbidden'),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      await expect(transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'bad-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      })).rejects.toThrow('语音断句失败: 403');
+    });
+
+    it('transcribeAudio Gemini throws when no content in response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      await expect(transcribeAudio({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        audioFile: file,
+      })).rejects.toThrow('语音断句失败: 无有效响应数据');
+    });
+
+    it('generateTTS throws error for Gemini protocol (not supported)', async () => {
+      await expect(generateTTS({
+        channelUrl: 'https://generativelanguage.googleapis.com',
+        channelKey: 'gemini-key',
+        protocol: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        input: '你好',
+        voice: 'alloy',
+      })).rejects.toThrow('Gemini 协议暂不支持 TTS 功能');
+    });
+
+    it('defaults to OpenAI protocol when protocol is not specified', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ words: [{ word: 'hello', start: 0, end: 1 }] }),
+      });
+
+      const file = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+      await transcribeAudio({
+        channelUrl: 'https://api.example.com',
+        channelKey: 'key',
+        model: 'whisper-1',
+        audioFile: file,
+        // 不指定 protocol，应该默认使用 OpenAI
+      });
+
+      const callUrl = mockFetch.mock.calls[0]![0] as string;
+      expect(callUrl).toBe('https://api.example.com/v1/audio/transcriptions');
+    });
   });
 });

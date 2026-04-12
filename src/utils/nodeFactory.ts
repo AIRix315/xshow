@@ -12,17 +12,35 @@ import type {
   UniversalNodeData,
 } from '@/types';
 
-// Ref: §6.11 — 懒加载 9 种节点组件（promptNode 映射到 ImageNode）
+// Ref: §6.11 — 懒加载节点组件
 const ImageNode = lazy(() => import('@/components/canvas/ImageNode'));
 const TextNode = lazy(() => import('@/components/canvas/TextNode'));
 const CropNode = lazy(() => import('@/components/canvas/CropNode'));
-
-// Phase 3 占位：用 Suspense fallback 包裹
 const VideoNode = lazy(() => import('@/components/canvas/VideoNode'));
 const AudioNode = lazy(() => import('@/components/canvas/AudioNode'));
 const GridSplitNode = lazy(() => import('@/components/canvas/GridSplitNode'));
 const GridMergeNode = lazy(() => import('@/components/canvas/GridMergeNode'));
 const UniversalNode = lazy(() => import('@/components/canvas/UniversalNode'));
+
+// 输入节点
+const TextInputNode = lazy(() => import('@/components/canvas/TextInputNode'));
+const VideoInputNode = lazy(() => import('@/components/canvas/VideoInputNode'));
+const ImageInputNode = lazy(() => import('@/components/canvas/ImageInputNode'));
+const Generate3DNode = lazy(() => import('@/components/canvas/Generate3DNode'));
+const GenerateAudioNode = lazy(() => import('@/components/canvas/GenerateAudioNode'));
+const PromptConstructorNode = lazy(() => import('@/components/canvas/PromptConstructorNode'));
+const AnnotateNode = lazy(() => import('@/components/canvas/AnnotateNode'));
+const ConditionalSwitchNode = lazy(() => import('@/components/canvas/ConditionalSwitchNode'));
+const EaseCurveNode = lazy(() => import('@/components/canvas/EaseCurveNode'));
+const FrameGrabNode = lazy(() => import('@/components/canvas/FrameGrabNode'));
+const ImageCompareNode = lazy(() => import('@/components/canvas/ImageCompareNode'));
+const OutputGalleryNode = lazy(() => import('@/components/canvas/OutputGalleryNode'));
+const OutputNode = lazy(() => import('@/components/canvas/OutputNode'));
+const RouterNode = lazy(() => import('@/components/canvas/RouterNode'));
+const SwitchNode = lazy(() => import('@/components/canvas/SwitchNode'));
+const VideoStitchNode = lazy(() => import('@/components/canvas/VideoStitchNode'));
+const VideoTrimNode = lazy(() => import('@/components/canvas/VideoTrimNode'));
+const Viewer3DNode = lazy(() => import('@/components/canvas/Viewer3DNode'));
 
 // ReactFlow nodeTypes 要求 ComponentType<NodeProps>，lazy 组件类型不完全匹配
 export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
@@ -35,6 +53,25 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   gridMergeNode: GridMergeNode as unknown as ComponentType<NodeProps>,
   cropNode: CropNode as unknown as ComponentType<NodeProps>,
   customNode: UniversalNode as unknown as ComponentType<NodeProps>,
+  // 输入节点
+  textInputNode: TextInputNode as unknown as ComponentType<NodeProps>,
+  videoInputNode: VideoInputNode as unknown as ComponentType<NodeProps>,
+  imageInputNode: ImageInputNode as unknown as ComponentType<NodeProps>,
+  generate3DNode: Generate3DNode as unknown as ComponentType<NodeProps>,
+  generateAudioNode: GenerateAudioNode as unknown as ComponentType<NodeProps>,
+  promptConstructorNode: PromptConstructorNode as unknown as ComponentType<NodeProps>,
+  annotateNode: AnnotateNode as unknown as ComponentType<NodeProps>,
+  conditionalSwitchNode: ConditionalSwitchNode as unknown as ComponentType<NodeProps>,
+  easeCurveNode: EaseCurveNode as unknown as ComponentType<NodeProps>,
+  frameGrabNode: FrameGrabNode as unknown as ComponentType<NodeProps>,
+  imageCompareNode: ImageCompareNode as unknown as ComponentType<NodeProps>,
+  outputGalleryNode: OutputGalleryNode as unknown as ComponentType<NodeProps>,
+  outputNode: OutputNode as unknown as ComponentType<NodeProps>,
+  routerNode: RouterNode as unknown as ComponentType<NodeProps>,
+  switchNode: SwitchNode as unknown as ComponentType<NodeProps>,
+  videoStitchNode: VideoStitchNode as unknown as ComponentType<NodeProps>,
+  videoTrimNode: VideoTrimNode as unknown as ComponentType<NodeProps>,
+  viewer3DNode: Viewer3DNode as unknown as ComponentType<NodeProps>,
 };
 
 // Ref: §6.11 — 默认尺寸
@@ -48,6 +85,25 @@ const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   gridMergeNode: { width: 300, height: 300 },
   cropNode: { width: 300, height: 300 },
   customNode: { width: 400, height: 300 },
+  // 输入节点
+  textInputNode: { width: 300, height: 200 },
+  videoInputNode: { width: 320, height: 280 },
+  imageInputNode: { width: 280, height: 280 },
+  generate3DNode: { width: 320, height: 300 },
+  generateAudioNode: { width: 320, height: 280 },
+  promptConstructorNode: { width: 320, height: 300 },
+  annotateNode: { width: 400, height: 400 },
+  conditionalSwitchNode: { width: 280, height: 320 },
+  easeCurveNode: { width: 240, height: 200 },
+  frameGrabNode: { width: 320, height: 300 },
+  imageCompareNode: { width: 320, height: 280 },
+  outputGalleryNode: { width: 300, height: 300 },
+  outputNode: { width: 240, height: 200 },
+  routerNode: { width: 200, height: 200 },
+  switchNode: { width: 200, height: 160 },
+  videoStitchNode: { width: 320, height: 300 },
+  videoTrimNode: { width: 320, height: 300 },
+  viewer3DNode: { width: 320, height: 320 },
 };
 
 // 各节点类型的默认 data
@@ -117,6 +173,7 @@ function getDefaultData(type: string): Record<string, unknown> {
           outputType: 'text' as const,
           executionMode: 'sync' as const,
           resultPath: '',
+          executionType: 'http',
         },
         loading: false,
       } as UniversalNodeData;

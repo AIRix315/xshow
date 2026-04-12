@@ -101,4 +101,57 @@ describe('useFlowStore', () => {
       expect(useFlowStore.getState().highlightedNodeId).toBeNull();
     });
   });
+
+  describe('addNodes (batch)', () => {
+    it('adds multiple nodes at once', () => {
+      const nodes = [
+        makeNode('n1', 'textNode'),
+        makeNode('n2', 'textNode'),
+        makeNode('n3', 'textNode'),
+      ];
+
+      useFlowStore.getState().addNodes(nodes);
+
+      expect(useFlowStore.getState().nodes).toHaveLength(3);
+      expect(useFlowStore.getState().nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3']);
+    });
+
+    it('appends nodes to existing nodes', () => {
+      useFlowStore.getState().addNode(makeNode('n1', 'imageNode'));
+
+      const nodes = [
+        makeNode('n2', 'textNode'),
+        makeNode('n3', 'textNode'),
+      ];
+
+      useFlowStore.getState().addNodes(nodes);
+
+      expect(useFlowStore.getState().nodes).toHaveLength(3);
+      expect(useFlowStore.getState().nodes[0]!.id).toBe('n1');
+      expect(useFlowStore.getState().nodes[1]!.id).toBe('n2');
+      expect(useFlowStore.getState().nodes[2]!.id).toBe('n3');
+    });
+
+    it('adds empty array without changing state', () => {
+      useFlowStore.getState().addNode(makeNode('n1', 'imageNode'));
+
+      useFlowStore.getState().addNodes([]);
+
+      expect(useFlowStore.getState().nodes).toHaveLength(1);
+    });
+
+    it('works with different node types', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode'),
+        makeNode('n2', 'textNode'),
+        makeNode('n3', 'videoNode'),
+        makeNode('n4', 'audioNode'),
+      ];
+
+      useFlowStore.getState().addNodes(nodes);
+
+      expect(useFlowStore.getState().nodes).toHaveLength(4);
+      expect(useFlowStore.getState().nodes.map((n) => n.type)).toEqual(['imageNode', 'textNode', 'videoNode', 'audioNode']);
+    });
+  });
 });

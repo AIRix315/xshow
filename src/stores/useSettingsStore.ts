@@ -21,6 +21,63 @@ interface SettingsState {
   currentProjectId: string;
   customNodeTemplates: CustomNodeTemplate[];
   globalTasks: GlobalTask[];
+  // 画布设置
+  canvasSettings: CanvasSettings;
+  // 系统设置
+  systemSettings: SystemSettings;
+}
+
+/** 画布设置 */
+export interface CanvasSettings {
+  fontSize: 'small' | 'medium' | 'large';
+  panMode: 'space-drag' | 'middle-drag';
+  zoomMode: 'alt-scroll' | 'ctrl-scroll';
+  showGrid: boolean;
+  snapToGrid: boolean;
+  reduceAnimations: boolean;
+  // 节点默认值
+  llmDefaultTemperature: number;
+  llmDefaultMaxTokens: number;
+  imageDefaultModel: string;
+  videoDefaultDuration: string;
+  audioDefaultSplit: boolean;
+  audioDefaultTTS: boolean;
+}
+
+/** 系统设置 */
+export interface SystemSettings {
+  theme: 'dark' | 'light';
+  showNodeModelSettings: boolean;
+  showMinimap: boolean;
+  envConfigPath: string;
+  configSavePath: string;
+  embedBase64: boolean;
+  saveDirectory: string;
+}
+
+const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
+  fontSize: 'medium',
+  panMode: 'space-drag',
+  zoomMode: 'alt-scroll',
+  showGrid: true,
+  snapToGrid: false,
+  reduceAnimations: false,
+  llmDefaultTemperature: 0.7,
+  llmDefaultMaxTokens: 4096,
+  imageDefaultModel: '',
+  videoDefaultDuration: '固定 5 秒',
+  audioDefaultSplit: true,
+  audioDefaultTTS: false,
+};
+
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  theme: 'dark',
+  showNodeModelSettings: true,
+  showMinimap: true,
+  envConfigPath: '',
+  configSavePath: '',
+  embedBase64: false,
+  saveDirectory: '',
 }
 
 interface SettingsActions {
@@ -28,7 +85,7 @@ interface SettingsActions {
   updateChannel: (id: string, patch: Partial<ChannelConfig>) => void;
   removeChannel: (id: string) => void;
   setChannelId: (type: 'image' | 'video' | 'text' | 'audio', channelId: string) => void;
-  setModel: (type: 'drawingModel' | 'videoModel' | 'textModel' | 'audioModel' | 'ttsVoice' | 'videoDurations', value: string) => void;
+  setModel: (type: 'drawingModel' | 'videoModel' | 'textModel' | 'audioModel' | 'ttsVoice' | 'videoDurations' | 'comfyuiLocalWorkflows' | 'comfyuiCloudWorkflows' | 'comfyuiRunninghubWorkflows', value: string) => void;
   addProject: (name: string) => void;
   removeProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
@@ -41,6 +98,10 @@ interface SettingsActions {
   addPresetPrompt: (prompt: PresetPrompt) => void;
   removePresetPrompt: (index: number) => void;
   updatePresetPrompt: (index: number, patch: Partial<PresetPrompt>) => void;
+  // 画布设置
+  updateCanvasSettings: (patch: Partial<CanvasSettings>) => void;
+  // 系统设置
+  updateSystemSettings: (patch: Partial<SystemSettings>) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -53,6 +114,8 @@ export const useSettingsStore = create<SettingsStore>()(
       currentProjectId: DEFAULT_PROJECT.id,
       customNodeTemplates: [],
       globalTasks: [],
+      canvasSettings: DEFAULT_CANVAS_SETTINGS,
+      systemSettings: DEFAULT_SYSTEM_SETTINGS,
 
       addChannel: (channel) =>
         set((s) => ({
@@ -154,6 +217,16 @@ export const useSettingsStore = create<SettingsStore>()(
               i === index ? { ...p, ...patch } : p
             ),
           },
+        })),
+
+      updateCanvasSettings: (patch) =>
+        set((s) => ({
+          canvasSettings: { ...s.canvasSettings, ...patch },
+        })),
+
+      updateSystemSettings: (patch) =>
+        set((s) => ({
+          systemSettings: { ...s.systemSettings, ...patch },
         })),
     }),
     {

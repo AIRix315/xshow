@@ -1,5 +1,7 @@
 // Ref: §5.4 — 语音处理双模式 (Whisper 断句 + TTS)
 
+export type AudioProtocol = 'openai' | 'gemini';
+
 export interface TranscriptChunk {
   start: number;
   end: number;
@@ -16,20 +18,42 @@ export interface WhisperWord {
 export async function transcribeAudio(params: {
   channelUrl: string;
   channelKey: string;
+  protocol?: AudioProtocol;
   model: string;
   audioFile: File;
 }): Promise<TranscriptChunk[]> {
-  const url = `${params.channelUrl.replace(/\/$/, '')}/v1/audio/transcriptions`;
+  const protocol = params.protocol ?? 'openai';
+  
+  if (protocol === 'gemini') {
+    return transcribeAudioGemini(params);
+  }
+  return transcribeAudioOpenAI(params);
+}
+
+interface TranscribeOpenAIParams {
+  channelUrl: string;
+  channelKey: string;
+  model: string;
+  audioFile: File;
+}
+
+async function transcribeAudioOpenAI({
+  channelUrl,
+  channelKey,
+  model,
+  audioFile,
+}: TranscribeOpenAIParams): Promise<TranscriptChunk[]> {
+  const url = `${channelUrl.replace(/\/$/, '')}/v1/audio/transcriptions`;
 
   const formData = new FormData();
-  formData.append('model', params.model);
-  formData.append('file', params.audioFile);
+  formData.append('model', model);
+  formData.append('file', audioFile);
   formData.append('response_format', 'verbose_json');
   formData.append('timestamp_granularities[]', 'word');
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${params.channelKey}` },
+    headers: { Authorization: `Bearer ${channelKey}` },
     body: formData,
   });
 
@@ -54,6 +78,94 @@ export async function transcribeAudio(params: {
   }
 
   return mergeWordsToChunks(words);
+}
+
+interface TranscribeGeminiParams {
+  channelUrl: string;
+  channelKey: string;
+  model: string;
+  audioFile: File;
+}
+
+async function transcribeAudioGemini({
+  channelUrl,
+  channelKey,
+  model,
+  audioFile,
+}: TranscribeGeminiParams): Promise<TranscriptChunk[]> {
+  // 将音频文件转换为 base64
+  const base64 = await fileToBase64(audioFile);
+  const mimeType = audioFile.type || 'audio/mpeg';
+
+  const url = `${channelUrl.replace(/\/$/, '')}/v1beta/models/${model}:predict?key=${channelKey}`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [{
+        inlineData: {
+          mimeType,
+          data: base64,
+        },
+      }],
+    }],
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`语音断句失败: ${response.status} - ${errorText.substring(0, 200)}`);
+  }
+
+  const json = await response.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error('语音断句失败: 无有效响应数据');
+  }
+
+  // Gemini 返回纯文本，需要简单分割
+  // 按换行和句末标点分割
+  const chunks: TranscriptChunk[] = [];
+  const sentences = text.split(/[。！？\n]+/).filter((s: string) => s.trim());
+  let currentTime = 0;
+  const avgDurationPerChar = 0.3; // 估算
+
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    if (trimmed) {
+      chunks.push({
+        start: currentTime,
+        end: currentTime + trimmed.length * avgDurationPerChar,
+        text: trimmed,
+      });
+      currentTime += trimmed.length * avgDurationPerChar;
+    }
+  }
+
+  if (chunks.length === 0 && text.trim()) {
+    chunks.push({ start: 0, end: text.length * avgDurationPerChar, text: text.trim() });
+  }
+
+  return chunks;
+}
+
+// 辅助函数：File 转 base64
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve(base64 ?? '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // 将 Whisper words 合并为断句 chunks
@@ -97,22 +209,46 @@ export function mergeWordsToChunks(words: WhisperWord[]): TranscriptChunk[] {
 export async function generateTTS(params: {
   channelUrl: string;
   channelKey: string;
+  protocol?: AudioProtocol;
   model: string;
   input: string;
   voice: string;
 }): Promise<string> {
-  const url = `${params.channelUrl.replace(/\/$/, '')}/v1/audio/speech`;
+  const protocol = params.protocol ?? 'openai';
+
+  if (protocol === 'gemini') {
+    return generateTTSGemini(params);
+  }
+  return generateTTSOpenAI(params);
+}
+
+interface TTSOpenAIParams {
+  channelUrl: string;
+  channelKey: string;
+  model: string;
+  input: string;
+  voice: string;
+}
+
+async function generateTTSOpenAI({
+  channelUrl,
+  channelKey,
+  model,
+  input,
+  voice,
+}: TTSOpenAIParams): Promise<string> {
+  const url = `${channelUrl.replace(/\/$/, '')}/v1/audio/speech`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${params.channelKey}`,
+      Authorization: `Bearer ${channelKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: params.model,
-      input: params.input,
-      voice: params.voice,
+      model: model || 'tts-1',
+      input,
+      voice: voice || 'alloy',
     }),
   });
 
@@ -124,4 +260,17 @@ export async function generateTTS(params: {
   // 返回音频二进制流，转为 Object URL
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+}
+
+// Gemini TTS（Gemini 暂不支持直接 TTS，这里抛出异常提示用户）
+interface TTSGeminiParams {
+  channelUrl: string;
+  channelKey: string;
+  model: string;
+  input: string;
+  voice: string;
+}
+
+async function generateTTSGemini(_params: TTSGeminiParams): Promise<string> {
+  throw new Error('Gemini 协议暂不支持 TTS 功能，请使用 OpenAI 兼容协议');
 }

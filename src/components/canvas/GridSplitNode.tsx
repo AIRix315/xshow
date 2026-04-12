@@ -58,97 +58,162 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
     return () => { cancelled = true; };
   }, [sourceImageUrl, gridCount, cellSize, id, updateNodeData]);
 
-  return (
-    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={220} minWidth={260}>
-      <Handle type="target" position={Position.Left} id="source-image" style={{ top: '30%' }} className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222]" />
-      {/* 辅助 target handles（接收多输入图片） */}
-      <Handle type="target" position={Position.Top} id="grid-top" className="!bg-handle-default !w-2 !h-2 !border !border-[#222]" />
-      <Handle type="target" position={Position.Bottom} id="grid-bottom" className="!bg-handle-default !w-2 !h-2 !border !border-[#222]" />
-
-      <div className="flex flex-col gap-2 p-2 min-w-[220px]">
-        <span className="text-[10px] text-text-secondary font-medium">九宫格分拆</span>
-
-        {/* 参数配置 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1 text-[10px] text-text">
-            <label className="w-12">格数:</label>
-            <input
-              type="number"
-              value={gridCount}
-              onChange={(e) => handleGridCountChange(Number(e.target.value))}
-              min={2}
-              max={5}
-              className="flex-1 bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border w-12"
-            />
-            <span className="text-text-muted">{gridCount}×{gridCount}</span>
-          </div>
-          <div className="flex items-center gap-1 text-[10px] text-text">
-            <label className="w-12">单元尺寸:</label>
-            <select
-              value={cellSize}
-              onChange={(e) => handleCellSizeChange(Number(e.target.value))}
-              className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-            >
-              <option value={256}>256px</option>
-              <option value={512}>512px</option>
-              <option value={1024}>1024px</option>
-            </select>
-          </div>
-        </div>
-
-        {/* 网格预览（显示拆图结果或占位格） */}
+  const minimalContent = (
+    <>
+      <Handle type="target" position={Position.Left} id="source-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      
+      <div className="w-full h-full p-2">
         <div
-          className="border border-border rounded p-1 bg-background"
+          className="w-full h-full grid"
           style={{
-            display: 'grid',
             gridTemplateColumns: `repeat(${gridCount}, 1fr)`,
+            gridTemplateRows: `repeat(${gridCount}, 1fr)`,
             gap: '2px',
-            aspectRatio: '1',
           }}
         >
           {Array.from({ length: gridCount * gridCount }, (_, i) => (
             <div
               key={i}
-              className="bg-surface-hover rounded flex items-center justify-center text-[8px] text-text-muted overflow-hidden"
+              className="bg-surface-hover flex items-center justify-center text-text-muted"
             >
               {splitResults[i] ? (
-                <img src={splitResults[i]} alt={`cell-${i + 1}`} className="w-full h-full object-cover rounded" />
+                <img src={splitResults[i]} alt={`cell-${i + 1}`} className="w-full h-full object-cover" />
               ) : (
-                i + 1
+                <span className="text-[10px]">{i + 1}</span>
               )}
             </div>
           ))}
         </div>
-
-        {/* 源图连接提示 */}
-        {!sourceImageUrl && (
-          <div className="text-center text-[10px] text-text-muted py-1">
-            连线图片到此节点即可分拆
-          </div>
-        )}
-        {splitResults.length > 0 && (
-          <div className="text-center text-[10px] text-green-500 py-1">
-            ✓ 已拆分为 {splitResults.length} 格
-          </div>
-        )}
       </div>
-
-      {/* 输出 handles — N×N 网格 */}
+      
       {Array.from({ length: gridCount * gridCount }, (_, idx) => {
         const row = Math.floor(idx / gridCount);
         const col = idx % gridCount;
-        const offset = (idx + 0.5) / (gridCount * gridCount);
         return (
           <Handle
             key={`cell-${row}-${col}`}
             type="source"
             position={Position.Right}
             id={`cell-${row}-${col}`}
-            style={{ top: `${10 + offset * 80}%` }}
-            className="!bg-primary !w-2 !h-2 !border !border-[#333]"
+            style={{ top: `${((idx + 1) / (gridCount * gridCount + 1)) * 100}%`, zIndex: 10 }}
+            data-handletype="image"
           />
         );
       })}
+    </>
+  );
+
+  const hoverContent = (
+    <>
+      <Handle type="target" position={Position.Left} id="source-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      
+      <div className="flex flex-col h-full">
+        <div className="flex-1 min-h-0 p-2">
+          {splitResults.length > 0 ? (
+            <div 
+              className="w-full h-full grid"
+              style={{
+                gridTemplateColumns: `repeat(${gridCount}, 1fr)`,
+                gridTemplateRows: `repeat(${gridCount}, 1fr)`,
+                gap: '2px',
+              }}
+            >
+              {splitResults.map((url, i) => (
+                <div key={i} className="bg-surface-hover flex items-center justify-center">
+                  <img src={url} alt={`cell-${i + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px] bg-[#1a1a1a] rounded">
+              {loading ? '分拆中...' : '等待分拆'}
+            </div>
+          )}
+        </div>
+        
+        <div className="p-2 pt-1 border-t border-[#333]">
+          <div className="flex items-center gap-2 text-[10px] text-text">
+            <label className="w-10 shrink-0">格数:</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={gridCount}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                if (val) {
+                  const num = Math.min(5, Math.max(2, parseInt(val, 10)));
+                  handleGridCountChange(num);
+                }
+              }}
+              onBlur={() => {
+                if (!gridCount || gridCount < 2) handleGridCountChange(2);
+                if (gridCount > 5) handleGridCountChange(5);
+              }}
+              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
+            />
+            <span className="text-text-muted">{gridCount}×{gridCount}</span>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-text mt-1">
+            <label className="w-10 shrink-0">尺寸:</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={cellSize}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                if (val) {
+                  const num = Math.min(2048, Math.max(128, parseInt(val, 10)));
+                  handleCellSizeChange(num);
+                }
+              }}
+              onBlur={() => {
+                if (!cellSize || cellSize < 128) handleCellSizeChange(256);
+                if (cellSize > 2048) handleCellSizeChange(1024);
+              }}
+              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
+            />
+          </div>
+
+          {!sourceImageUrl && (
+            <div className="text-center text-[10px] text-text-muted mt-2">
+              连线图片到此节点即可分拆
+            </div>
+          )}
+          {splitResults.length > 0 && (
+            <div className="text-center text-[10px] text-green-500 mt-2">
+              ✓ 已拆分为 {splitResults.length} 格
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {Array.from({ length: gridCount * gridCount }, (_, idx) => {
+        const row = Math.floor(idx / gridCount);
+        const col = idx % gridCount;
+        return (
+          <Handle
+            key={`cell-${row}-${col}`}
+            type="source"
+            position={Position.Right}
+            id={`cell-${row}-${col}`}
+            style={{ top: `${((idx + 1) / (gridCount * gridCount + 1)) * 100}%`, zIndex: 10 }}
+            data-handletype="image"
+          />
+        );
+      })}
+    </>
+  );
+
+  return (
+    <BaseNodeWrapper 
+      selected={!!selected} 
+      loading={loading} 
+      errorMessage={errorMessage}
+      title="分割"
+      minWidth={260}
+      hoverContent={hoverContent}
+    >
+      {minimalContent}
     </BaseNodeWrapper>
   );
 }

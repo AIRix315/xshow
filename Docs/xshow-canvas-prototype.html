@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XShow Canvas Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --color-background: #121212;
+      --color-surface: #1c1c1c;
+      --color-surface-hover: #252525;
+      --color-border: #333333;
+      --color-primary: #3b82f6;
+      --color-text: #e5e5e5;
+      --color-text-secondary: #9ca3af;
+      --color-node-bg: #262626;
+    }
+
+    .canvas-bg {
+      background-color: var(--color-background);
+      background-image: radial-gradient(circle, #404040 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    .node-container {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+    }
+
+    .node-header {
+      background-color: var(--color-node-bg);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .floating-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 6px;
+    }
+
+    .fb-btn {
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #9ca3af;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .fb-btn:hover {
+      color: #e5e5e5;
+      background-color: #252525;
+    }
+
+    .fb-btn.run-btn {
+      background-color: white;
+      color: #171717;
+      padding-left: 12px;
+      padding-right: 4px;
+    }
+
+    .fb-btn.run-btn:hover {
+      background-color: #e5e5e5;
+    }
+
+    .fb-divider {
+      width: 1px;
+      height: 20px;
+      background-color: #333;
+      margin: 0 6px;
+    }
+
+    .top-header {
+      background-color: var(--color-background);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .minimap, .controls {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+    }
+
+    .tool-btn {
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .tool-btn:hover {
+      color: var(--color-text);
+      background-color: var(--color-surface-hover);
+    }
+
+    .tool-btn.run-btn {
+      background-color: white;
+      color: #171717;
+      padding-left: 12px;
+      padding-right: 4px;
+    }
+
+    .divider {
+      width: 1px;
+      height: 20px;
+      background-color: var(--color-border);
+      margin: 0 6px;
+    }
+
+    .settings-panel {
+      position: fixed;
+      top: 44px;
+      right: 0;
+      bottom: 0;
+      width: 380px;
+      background-color: var(--color-background);
+      border-left: 1px solid var(--color-border);
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .settings-panel.open {
+      transform: translateX(0);
+    }
+
+    .tab-btn {
+      padding: 8px 14px;
+      font-size: 12px;
+      border-radius: 6px;
+      color: var(--color-text-secondary);
+    }
+
+    .tab-btn:hover {
+      color: var(--color-text);
+    }
+
+    .tab-btn.active {
+      background-color: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 500;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 8px 10px;
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      color: var(--color-text);
+      font-size: 12px;
+      outline: none;
+    }
+
+    .form-input::placeholder {
+      color: #666;
+    }
+
+    .form-select {
+      padding: 6px 10px;
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      color: var(--color-text);
+      font-size: 12px;
+      outline: none;
+    }
+
+    .setting-card {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text);
+      margin-bottom: 10px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-flex;
+      height: 18px;
+      width: 32px;
+      flex-shrink: 0;
+      cursor: pointer;
+      border-radius: 9999px;
+      transition-color: 0.2s;
+    }
+
+    .toggle-switch.on { background-color: var(--color-primary); }
+    .toggle-switch.off { background-color: var(--color-border); }
+
+    .toggle-switch .toggle-thumb {
+      pointer-events: none;
+      height: 14px;
+      width: 14px;
+      border-radius: 9999px;
+      background-color: white;
+      transition: transform 0.2s;
+    }
+
+    .toggle-switch.on .toggle-thumb { transform: translateX(14px); }
+    .toggle-switch.off .toggle-thumb { transform: translateX(2px); }
+
+    .node-sidebar {
+      position: fixed;
+      top: 44px;
+      left: 0;
+      bottom: 0;
+      width: 200px;
+      background-color: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      z-index: 40;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .node-sidebar.open { transform: translateX(0); }
+
+    .node-category-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
+      margin-bottom: 8px;
+      margin-top: 12px;
+    }
+
+    .node-item-btn {
+      display: block;
+      width: 100%;
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 12px;
+      color: var(--color-text);
+      background-color: transparent;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      margin-bottom: 4px;
+      cursor: pointer;
+    }
+
+    /* 节点悬停显示完整内容 */
+    .node-minimal-content { display: block; }
+    .node-hover-content { display: none; }
+    .node-container:hover .node-minimal-content { display: none; }
+    .node-container:hover .node-hover-content { display: block; }
+  </style>
+  <!-- 
+    TODO: 动态连线功能说明
+    1. 连接菜单 (ConnectionDropMenu): 
+       当拖拽连接线未连接到目标节点时，会自动弹出可连接节点列表菜单。
+       参考: node-banana/src/components/ConnectionDropMenu.tsx
+       实现: 使用 ReactFlow onConnectEnd 回调
+    2. 多类型 Handle:
+       节点有多个输入/输出端点 (如 image, text, video 等)
+       连接时需检查 handleType 兼容性
+  -->
+</head>
+<body class="bg-[#121212] text-[#e5e5e5] overflow-hidden">
+  <div class="h-screen flex flex-col">
+    <!-- 顶部栏 -->
+    <header class="top-header flex items-center justify-between px-4 h-11 shrink-0">
+      <div class="flex items-center gap-2">
+        <button class="flex items-center gap-2 hover:opacity-80">
+          <div class="w-6 h-6 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center font-bold text-black text-sm">X</div>
+          <h1 class="text-xl font-semibold text-[#e5e5e5]">XShow</h1>
+        </button>
+        <div class="flex items-center gap-2 ml-3 pl-3 border-l border-[#333]">
+          <span class="text-xs text-[#9ca3af]">我的项目</span>
+          <span class="text-[#555]">·</span>
+          <span class="text-xs text-[#9ca3af]">未保存</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="tool-btn" onclick="toggleSettings()">新建项目</button>
+        <button class="tool-btn" onclick="toggleSettings()">保存项目</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="tool-btn" onclick="toggleNodeSidebar()">节点</button>
+        <button class="tool-btn" onclick="toggleSettings()">设置</button>
+        <span class="text-[#555]">·</span>
+        <button class="text-[#9ca3af] hover:text-[#e5e5e5]">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75A2.25 2.25 0 0 1 4.5 4.5h15a2.25 2.25 0 0 1 2.25 2.25v10.5A2.25 2.25 0 0 1 19.5 19.5h-15a2.25 2.25 0 0 1-2.25-2.25V6.75z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 节点侧边栏 -->
+    <div class="node-sidebar" id="nodeSidebar">
+      <div class="node-category-title">Input 输入</div>
+      <button class="node-item-btn">Image 图片</button>
+      <button class="node-item-btn">Audio 音频</button>
+      <button class="node-item-btn">Video 视频</button>
+      <button class="node-item-btn">3D Viewer</button>
+      <div class="node-category-title">Text 文本</div>
+      <button class="node-item-btn">Prompt</button>
+      <button class="node-item-btn">Prompt Constructor</button>
+      <button class="node-item-btn">Array</button>
+      <div class="node-category-title">Generate 生成</div>
+      <button class="node-item-btn">Generate Image</button>
+      <button class="node-item-btn">Generate Video</button>
+      <button class="node-item-btn">Generate 3D</button>
+      <button class="node-item-btn">Generate Audio</button>
+      <button class="node-item-btn">LLM Generate</button>
+      <div class="node-category-title">Process 处理</div>
+      <button class="node-item-btn">Annotate 标注</button>
+      <button class="node-item-btn">Split Grid 九宫格</button>
+      <button class="node-item-btn">Video Stitch 视频拼接</button>
+      <button class="node-item-btn">Video Trim 视频裁剪</button>
+      <button class="node-item-btn">Ease Curve 缓动曲线</button>
+      <button class="node-item-btn">Frame Grab 帧提取</button>
+      <button class="node-item-btn">Image Compare 图片对比</button>
+      <div class="node-category-title">Route 路由</div>
+      <button class="node-item-btn">Router 路由</button>
+      <button class="node-item-btn">Switch 开关</button>
+      <button class="node-item-btn">Conditional Switch 条件路由</button>
+      <div class="node-category-title">Output 输出</div>
+      <button class="node-item-btn">Output</button>
+      <button class="node-item-btn">Output Gallery</button>
+    </div>
+
+    <!-- 画布区域 -->
+    <!-- 
+      TODO: 画布交互功能说明
+      1. 动态连线:
+         - 拖拽节点右侧 Handle 创建连接线
+         - 未连接时自动弹出 ConnectionDropMenu (见顶部 TODO 注释)
+      2. Handle 类型:
+         - 每个节点有特定类型的输入/输出 Handle
+         - 如 Image Input 只有 image 类型输出
+         - Generate Image 有 image/text 类型输入，image 类型输出
+      3. 悬停展开:
+         - 鼠标悬停节点显示完整参数
+         - 默认显示简约状态 (node-minimal-content)
+         - 悬停时显示完整参数 (node-hover-content)
+    -->
+    <div class="flex-1 relative canvas-bg overflow-hidden p-4" style="padding-left: 220px;">
+      <!-- Input: Image Input (显示图片) -->
+      <div class="absolute node-container group" style="left: 20px; top: 20px; width: 220px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Image Input</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <!-- 悬停显示完整内容 -->
+          <div class="node-hover-content">
+            <div class="h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444] cursor-pointer hover:border-[#3b82f6]">
+              点击或拖拽上传图片
+            </div>
+          </div>
+          <!-- 默认显示简约内容 -->
+          <div class="node-minimal-content h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+            无图片
+          </div>
+        </div>
+      </div>
+
+      <!-- Input: Audio Input -->
+      <div class="absolute node-container group" style="left: 260px; top: 20px; width: 220px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Audio Input</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="h-16 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444] cursor-pointer hover:border-[#3b82f6]">
+              点击或拖拽上传音频
+            </div>
+          </div>
+          <div class="node-minimal-content h-16 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+            无音频
+          </div>
+        </div>
+      </div>
+
+      <!-- Input: Video Input -->
+      <div class="absolute node-container group" style="left: 500px; top: 20px; width: 220px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Video Input</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444] cursor-pointer hover:border-[#3b82f6]">
+              点击或拖拽上传视频
+            </div>
+          </div>
+          <div class="node-minimal-content h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+            无视频
+          </div>
+        </div>
+      </div>
+
+      <!-- Input: 3D Viewer -->
+      <div class="absolute node-container group" style="left: 740px; top: 20px; width: 220px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">3D Viewer</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444] cursor-pointer hover:border-[#3b82f6]">
+              加载 .glb/.gltf 模型
+            </div>
+          </div>
+          <div class="node-minimal-content h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+            无模型
+          </div>
+        </div>
+      </div>
+
+      <!-- Text: Prompt -->
+      <div class="absolute node-container group" style="left: 20px; top: 200px; width: 240px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Prompt</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="3" placeholder="输入提示词..."></textarea>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">提示词节点</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Text: Array -->
+      <div class="absolute node-container group" style="left: 280px; top: 200px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Array</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="text-[10px] text-[#666] mb-1">数组列表</div>
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="3" placeholder="每行一个项目"></textarea>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">数组节点</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate: Generate Image (生产图片) -->
+      <div class="absolute node-container group" style="left: 20px; top: 340px; width: 260px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Generate Image</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <!-- 悬停显示完整内容 -->
+          <div class="node-hover-content space-y-2">
+            <select class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+              <option>Nano Banana Pro</option>
+              <option>Nano Banana 2</option>
+            </select>
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="2" placeholder="输入图片描述..."></textarea>
+            <div class="flex gap-1">
+              <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+                <option>1:1</option>
+                <option>16:9</option>
+                <option>9:16</option>
+              </select>
+              <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+                <option>1K</option>
+                <option>2K</option>
+                <option>4K</option>
+              </select>
+            </div>
+            <button class="w-full bg-[#3b82f6] text-white text-xs py-1.5 rounded">生成图片</button>
+          </div>
+          <!-- 默认显示简约内容 -->
+          <div class="node-minimal-content">
+            <div class="h-24 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+              等待生成
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate: Generate Video -->
+      <div class="absolute node-container group" style="left: 300px; top: 340px; width: 240px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Generate Video</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <select class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+              <option>选择模型</option>
+            </select>
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="2" placeholder="输入视频描述..."></textarea>
+            <select class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+              <option>固定 5 秒</option>
+              <option>最长 15 秒</option>
+            </select>
+            <button class="w-full bg-[#3b82f6] text-white text-xs py-1.5 rounded">生成视频</button>
+          </div>
+          <div class="node-minimal-content">
+            <div class="h-20 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+              等待生成
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate: LLM Generate -->
+      <div class="absolute node-container group" style="left: 560px; top: 340px; width: 260px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">LLM Generate</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="flex gap-1">
+              <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+                <option>Google</option>
+                <option>OpenAI</option>
+                <option>Anthropic</option>
+              </select>
+              <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+                <option>Gemini 2.5 Flash</option>
+                <option>GPT-4.1</option>
+              </select>
+            </div>
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="2" placeholder="输入文本提示..."></textarea>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">温度</span>
+              <input type="range" min="0" max="2" step="0.1" value="0.7" class="flex-1 h-1 bg-[#333] rounded accent-[#3b82f6]">
+              <span class="text-[#9ca3af] w-8">0.7</span>
+            </div>
+            <button class="w-full bg-[#3b82f6] text-white text-xs py-1.5 rounded">生成文本</button>
+          </div>
+          <div class="node-minimal-content">
+            <div class="h-20 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+              等待生成
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Split Grid -->
+      <div class="absolute node-container group" style="left: 20px; top: 560px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Split Grid</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">行列</span>
+              <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+                <option>3 x 3</option>
+                <option>2 x 2</option>
+                <option>4 x 4</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">尺寸</span>
+              <input type="number" value="512" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">九宫格分割</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Ease Curve -->
+      <div class="absolute node-container group" style="left: 240px; top: 560px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Ease Curve</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="h-16 bg-[#252525] rounded border border-[#333] flex items-center justify-center">
+              <svg width="80" height="40" viewBox="0 0 80 40">
+                <path d="M0 40 Q20 40 40 20 T80 0" fill="none" stroke="#666" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <select class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+              <option>ease-in-out</option>
+              <option>linear</option>
+              <option>custom</option>
+            </select>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">缓动曲线</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Video Stitch -->
+      <div class="absolute node-container group" style="left: 460px; top: 560px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Video Stitch</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="text-[10px] text-[#666] p-2">视频拼接</div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">视频拼接</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Video Trim -->
+      <div class="absolute node-container group" style="left: 680px; top: 560px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Video Trim</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">开始</span>
+              <input type="number" value="0" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">结束</span>
+              <input type="number" value="10" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">视频裁剪</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Frame Grab -->
+      <div class="absolute node-container group" style="left: 900px; top: 560px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Frame Grab</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-[#9ca3af]">帧位置</span>
+              <input type="number" value="0" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs rounded px-2 py-1 border border-[#333]">
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">帧提取</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Image Compare -->
+      <div class="absolute node-container group" style="left: 20px; top: 700px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Image Compare</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="flex gap-1">
+              <div class="h-16 flex-1 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-16 flex-1 bg-[#252525] rounded border border-[#333]"></div>
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">图片对比</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Process: Annotate -->
+      <div class="absolute node-container group" style="left: 240px; top: 700px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Annotate</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <textarea class="w-full bg-[#252525] text-[#e5e5e5] text-xs rounded p-2 border border-[#333] resize-none" rows="2" placeholder="标注内容..."></textarea>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">标注</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Router -->
+      <div class="absolute node-container group" style="left: 460px; top: 700px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Router</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="text-[10px] text-[#666] p-2">路由分发</div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">路由</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Switch -->
+      <div class="absolute node-container group" style="left: 680px; top: 700px; width: 180px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Switch</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="text-[10px] text-[#9ca3af] text-center py-2">条件开关</div>
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-xs text-[#e5e5e5]">启用</span>
+              <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+            </label>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">开关</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Conditional Switch -->
+      <div class="absolute node-container group" style="left: 880px; top: 700px; width: 220px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Conditional Switch</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content space-y-2">
+            <div class="bg-[#252525] rounded p-2 border border-[#333]">
+              <div class="flex items-center gap-1 mb-1">
+                <input type="text" value="Rule 1" class="flex-1 bg-[#252525] text-[#e5e5e5] text-[10px] px-1 py-0.5 rounded border border-[#333]">
+                <button class="text-[#ef4444] text-[10px]">×</button>
+              </div>
+              <select class="w-full bg-[#252525] text-[#e5e5e5] text-[10px] rounded px-1 py-0.5 border border-[#333] mb-1">
+                <option>contains</option>
+                <option>exact</option>
+                <option>starts-with</option>
+              </select>
+              <input type="text" placeholder="匹配值" class="w-full bg-[#252525] text-[#e5e5e5] text-[10px] rounded px-1 py-0.5 border border-[#333]">
+            </div>
+            <button class="text-[10px] text-[#3b82f6]">+ 添加规则</button>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">条件路由</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output: Output -->
+      <div class="absolute node-container group" style="left: 20px; top: 840px; width: 200px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Output</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="h-16 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+              输出结果
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="h-16 bg-[#252525] rounded flex items-center justify-center text-[10px] text-[#666] border border-dashed border-[#444]">
+              输出
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output: Output Gallery -->
+      <div class="absolute node-container group" style="left: 240px; top: 840px; width: 240px;">
+        <div class="node-header flex items-center justify-between px-3 py-1.5">
+          <span class="text-[10px] font-semibold uppercase text-[#9ca3af]">Output Gallery</span>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="text-[10px] text-[#666] hover:text-[#e5e5e5]">⚙</button>
+          </div>
+        </div>
+        <div class="p-2">
+          <div class="node-hover-content">
+            <div class="grid grid-cols-3 gap-1">
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+              <div class="h-12 bg-[#252525] rounded border border-[#333]"></div>
+            </div>
+          </div>
+          <div class="node-minimal-content">
+            <div class="text-[10px] text-[#666] p-2">画廊输出</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 画布控件 -->
+      <div class="absolute bottom-4 left-4 controls">
+        <button class="w-8 h-8 flex items-center justify-center border-b border-[#333] hover:bg-[#252525]">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        </button>
+        <button class="w-8 h-8 flex items-center justify-center border-b border-[#333] hover:bg-[#252525]">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 20l8-8h-5V4H9v8H4z"/></svg>
+        </button>
+        <button class="w-8 h-8 flex items-center justify-center hover:bg-[#252525]">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM9 9h6v6H9z"/></svg>
+        </button>
+      </div>
+      <div class="absolute top-4 right-4 minimap w-40 h-28 p-1">
+        <div class="w-full h-full bg-[#1c1c1c]/50 rounded relative">
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部工具条 -->
+    <div class="floating-bar">
+      <button class="fb-btn">Image</button>
+      <button class="fb-btn">Video</button>
+      <button class="fb-btn">Prompt</button>
+      <button class="fb-btn flex items-center gap-1">
+        Generate
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
+      <button class="fb-btn">Output</button>
+      <button class="fb-btn flex items-center gap-1">
+        All nodes
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
+      <div class="fb-divider"></div>
+      <button class="fb-btn">All models</button>
+      <div class="fb-divider"></div>
+      <button class="fb-btn p-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 12h4l4-8 4 8h4" />
+        </svg>
+      </button>
+      <div class="fb-divider"></div>
+      <button class="fb-btn run-btn flex items-center gap-1.5">
+        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <span>Run</span>
+      </button>
+    </div>
+
+    <!-- 侧边设置面板 -->
+    <div class="settings-panel" id="settingsPanel">
+      <div class="flex gap-1 p-3 border-b border-[#333]">
+        <button class="tab-btn active" onclick="switchTab(this, 'project')">项目</button>
+        <button class="tab-btn" onclick="switchTab(this, 'model')">模型</button>
+        <button class="tab-btn" onclick="switchTab(this, 'prompt')">提示词</button>
+        <button class="tab-btn" onclick="switchTab(this, 'canvas')">画布</button>
+        <button class="tab-btn" onclick="switchTab(this, 'system')">系统</button>
+      </div>
+
+      <!-- 项目 Tab -->
+      <div class="tab-content p-4 space-y-4" id="tab-project">
+        <div>
+          <label class="block text-xs text-[#9ca3af] mb-1">项目名称</label>
+          <input type="text" class="form-input" placeholder="输入项目名称...">
+        </div>
+        <div>
+          <label class="block text-xs text-[#9ca3af] mb-1">保存目录</label>
+          <div class="flex gap-2">
+            <input type="text" class="form-input flex-1" placeholder="选择保存目录...">
+            <button class="px-3 py-2 bg-[#1c1c1c] hover:bg-[#252525] text-[#e5e5e5] text-xs rounded border border-[#333]">浏览</button>
+          </div>
+          <p class="text-[10px] text-[#666] mt-1">不设置目录时，仅内存暂存</p>
+        </div>
+        <div class="pt-3 border-t border-[#333]">
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <div>
+              <span class="text-sm text-[#e5e5e5]">图片嵌入 Base64</span>
+              <p class="text-[10px] text-[#666]">图片直接存在流程文件中</p>
+            </div>
+            <button class="toggle-switch off" onclick="toggleSwitch(this)">
+              <span class="toggle-thumb"></span>
+            </button>
+          </label>
+        </div>
+      </div>
+
+      <!-- 模型 Tab (渠道+模型合并) -->
+      <div class="tab-content hidden p-4 space-y-4" id="tab-model">
+        <!-- 渠道商部分 -->
+        <div class="setting-card">
+          <button class="w-full flex items-center justify-between" onclick="toggleSection(this)">
+            <span class="text-sm font-medium text-[#e5e5e5]">渠道商</span>
+            <svg class="w-4 h-4 text-[#9ca3af] transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <div class="mt-3 space-y-3 section-content">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs text-[#9ca3af]">供应商管理</span>
+              <button class="text-xs text-[#3b82f6] hover:text-[#60a5fa]">+ 添加</button>
+            </div>
+            <div class="space-y-2">
+              <div class="bg-[#252525] rounded p-2 border border-[#333] space-y-1.5">
+                <div class="flex items-center gap-2">
+                  <input type="text" value="Gemini API" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="名称">
+                  <button class="text-[#ef4444] text-xs">×</button>
+                </div>
+                <input type="text" value="https://generativelanguage.googleapis.com" class="w-full bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="API 端点">
+                <input type="password" value="" class="w-full bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="API Key">
+                <div class="flex items-center gap-2">
+                  <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]">
+                    <option>协议: Gemini</option>
+                    <option>协议: OpenAI 兼容</option>
+                    <option>协议: 自定义</option>
+                  </select>
+                  <button class="text-[10px] px-2 py-1 rounded bg-[#252525] hover:bg-[#333] text-[#9ca3af] border border-[#333]">测试</button>
+                </div>
+              </div>
+              <div class="bg-[#252525] rounded p-2 border border-[#333] space-y-1.5">
+                <div class="flex items-center gap-2">
+                  <input type="text" value="OpenAI" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="名称">
+                  <button class="text-[#ef4444] text-xs">×</button>
+                </div>
+                <input type="text" value="https://api.openai.com/v1" class="w-full bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="API 端点">
+                <input type="password" value="" class="w-full bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="API Key">
+                <div class="flex items-center gap-2">
+                  <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]">
+                    <option>协议: OpenAI 兼容</option>
+                    <option>协议: Gemini</option>
+                    <option>协议: 自定义</option>
+                  </select>
+                  <button class="text-[10px] px-2 py-1 rounded bg-[#252525] hover:bg-[#333] text-[#9ca3af] border border-[#333]">测试</button>
+                </div>
+              </div>
+            </div>
+            <p class="text-[10px] text-[#666]">可通过 .env.local 配置 API Key，更安全</p>
+          </div>
+        </div>
+
+        <!-- 模型配置部分 -->
+        <div class="setting-card">
+          <button class="w-full flex items-center justify-between" onclick="toggleSection(this)">
+            <span class="text-sm font-medium text-[#e5e5e5]">模型配置</span>
+            <svg class="w-4 h-4 text-[#9ca3af] transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <div class="mt-3 space-y-3 section-content">
+            <p class="text-xs text-[#9ca3af]">每个类型选择渠道商并手动输入模型名称</p>
+            <div class="space-y-3">
+              <div>
+                <div class="card-title text-xs mb-1">文本模型 (LLM)</div>
+                <select class="form-select w-full mb-2">
+                  <option value="">-- 选择渠道商 --</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <textarea class="form-input text-xs" rows="2" placeholder="gemini-2.0-flash&#10;gpt-4o"></textarea>
+              </div>
+              <div>
+                <div class="card-title text-xs mb-1">图片模型</div>
+                <select class="form-select w-full mb-2">
+                  <option value="">-- 选择渠道商 --</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <textarea class="form-input text-xs" rows="2" placeholder="imagen-3.0-generate-002&#10;dall-e-3"></textarea>
+              </div>
+              <div>
+                <div class="card-title text-xs mb-1">视频模型</div>
+                <select class="form-select w-full mb-2">
+                  <option value="">-- 选择渠道商 --</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <textarea class="form-input text-xs" rows="2" placeholder="kling-1.5&#10;runway-gen3"></textarea>
+              </div>
+              <div>
+                <div class="card-title text-xs mb-1">音频/TTS 模型</div>
+                <select class="form-select w-full mb-2">
+                  <option value="">-- 选择渠道商 --</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <textarea class="form-input text-xs" rows="2" placeholder="tts-1&#10;whisper-1"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 提示词 Tab -->
+      <div class="tab-content hidden p-4 space-y-3" id="tab-prompt">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-[#e5e5e5]">预设提示词</span>
+          <button class="text-xs text-[#3b82f6] hover:text-[#60a5fa]">+ 添加</button>
+        </div>
+        <p class="text-xs text-[#9ca3af] mb-3">管理预设提示词，可用于图片生成和宫格处理</p>
+        
+        <div class="setting-card space-y-2">
+          <div class="flex items-center justify-between">
+            <input type="text" value="风景画" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="标题">
+            <select class="ml-2 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]">
+              <option>图片</option>
+              <option>文本</option>
+              <option>视频</option>
+              <option>通用</option>
+            </select>
+            <button class="text-[#ef4444] text-xs ml-2">×</button>
+          </div>
+          <textarea class="form-input text-xs" rows="3" placeholder="输入提示词内容...">mountain, sunset, golden hour, dramatic clouds, wide angle</textarea>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-[10px] text-[#9ca3af]">启用</span>
+            <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+          </label>
+        </div>
+
+        <div class="setting-card space-y-2">
+          <div class="flex items-center justify-between">
+            <input type="text" value="人物肖像" class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]" placeholder="标题">
+            <select class="ml-2 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]">
+              <option>图片</option>
+              <option>文本</option>
+              <option>视频</option>
+              <option>通用</option>
+            </select>
+            <button class="text-[#ef4444] text-xs ml-2">×</button>
+          </div>
+          <textarea class="form-input text-xs" rows="3" placeholder="输入提示词内容...">portrait, studio lighting, professional, detailed face</textarea>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-[10px] text-[#9ca3af]">启用</span>
+            <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+          </label>
+        </div>
+
+        <div class="pt-3 border-t border-[#333]">
+          <div class="setting-card">
+            <div class="card-title mb-2">宫格处理预设</div>
+            <p class="text-[10px] text-[#666] mb-2">用于九宫格切割和合成的提示词模板</p>
+            <textarea class="form-input text-xs" rows="4" placeholder="输入用于宫格处理的提示词...">{{prompt}}, split into 3x3 grid, equal parts</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- 画布 Tab (画布+节点合并) -->
+      <div class="tab-content hidden p-4 space-y-4" id="tab-canvas">
+        <!-- 画布设置部分 -->
+        <div class="setting-card">
+          <button class="w-full flex items-center justify-between" onclick="toggleSection(this)">
+            <span class="text-sm font-medium text-[#e5e5e5]">画布设置</span>
+            <svg class="w-4 h-4 text-[#9ca3af] transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <div class="mt-3 space-y-3 section-content">
+            <div>
+              <div class="card-title text-xs mb-1">字体大小</div>
+              <div class="flex gap-1 p-0.5 bg-[#252525] rounded-md">
+                <button class="flex-1 px-2 py-1.5 text-xs rounded text-[#9ca3af]">小</button>
+                <button class="flex-1 px-2 py-1.5 text-xs rounded bg-[#333] text-[#e5e5e5]">中</button>
+                <button class="flex-1 px-2 py-1.5 text-xs rounded text-[#9ca3af]">大</button>
+              </div>
+            </div>
+            <div>
+              <div class="card-title text-xs mb-1">平移模式</div>
+              <div class="flex gap-1 p-0.5 bg-[#252525] rounded-md">
+                <button class="flex-1 px-2 py-1.5 text-xs rounded bg-[#333] text-[#e5e5e5]">空格 + 拖拽</button>
+                <button class="flex-1 px-2 py-1.5 text-xs rounded text-[#9ca3af]">中键拖拽</button>
+              </div>
+            </div>
+            <div>
+              <div class="card-title text-xs mb-1">缩放模式</div>
+              <div class="flex gap-1 p-0.5 bg-[#252525] rounded-md">
+                <button class="flex-1 px-2 py-1.5 text-xs rounded bg-[#333] text-[#e5e5e5]">Alt + 滚轮</button>
+                <button class="flex-1 px-2 py-1.5 text-xs rounded text-[#9ca3af]">Ctrl + 滚轮</button>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <div class="card-title text-xs">显示选项</div>
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs text-[#e5e5e5]">显示网格</span>
+                <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+              </label>
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs text-[#e5e5e5]">对齐到网格</span>
+                <button class="toggle-switch off" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+              </label>
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs text-[#e5e5e5]">减少动画</span>
+                <button class="toggle-switch off" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 节点默认值部分 -->
+        <div class="setting-card">
+          <button class="w-full flex items-center justify-between" onclick="toggleSection(this)">
+            <span class="text-sm font-medium text-[#e5e5e5]">节点默认值</span>
+            <svg class="w-4 h-4 text-[#9ca3af] transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <div class="mt-3 space-y-3 section-content">
+            <div>
+              <div class="card-title text-xs mb-1">LLM 默认模型</div>
+              <select class="form-select w-full mb-2">
+                <option value="">-- 选择模型 --</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                <option value="gpt-4o">gpt-4o</option>
+              </select>
+              <div class="flex items-center gap-2 mb-2">
+                <label class="text-[10px] text-[#9ca3af] w-12">温度</label>
+                <input type="range" min="0" max="2" step="0.1" value="0.7" class="flex-1 h-1 bg-[#333] rounded accent-[#3b82f6]">
+                <span class="text-[10px] text-[#9ca3af] w-8">0.7</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-[10px] text-[#9ca3af] w-12">Token</label>
+                <input type="range" min="256" max="8192" step="256" value="4096" class="flex-1 h-1 bg-[#333] rounded accent-[#3b82f6]">
+                <span class="text-[10px] text-[#9ca3af] w-12 text-right">4096</span>
+              </div>
+            </div>
+            <div>
+              <div class="card-title text-xs mb-1">图片 默认模型</div>
+              <select class="form-select w-full">
+                <option value="">-- 选择模型 --</option>
+                <option value="imagen-3">imagen-3.0-generate-002</option>
+              </select>
+            </div>
+            <div>
+              <div class="card-title text-xs mb-1">视频 默认模型</div>
+              <select class="form-select w-full mb-2">
+                <option value="">-- 选择模型 --</option>
+              </select>
+              <div class="flex items-center gap-2">
+                <label class="text-[10px] text-[#9ca3af] w-12">时长</label>
+                <select class="flex-1 bg-[#252525] text-[#e5e5e5] text-xs px-2 py-1 rounded border border-[#333]">
+                  <option>固定 5 秒</option>
+                  <option>固定 10 秒</option>
+                  <option>最长 15 秒</option>
+                  <option>可配置</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <div class="card-title text-xs mb-1">音频 默认模型</div>
+              <select class="form-select w-full mb-2">
+                <option value="">-- 选择模型 --</option>
+              </select>
+              <div class="flex gap-4">
+                <label class="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" class="w-3 h-3" checked>
+                  <span class="text-[10px] text-[#e5e5e5]">语音分割</span>
+                </label>
+                <label class="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" class="w-3 h-3">
+                  <span class="text-[10px] text-[#e5e5e5]">TTS</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 系统 Tab -->
+      <div class="tab-content hidden p-4 space-y-4" id="tab-system">
+        <div class="setting-card">
+          <div class="card-title">主题</div>
+          <div class="flex gap-2">
+            <button class="flex-1 px-3 py-2 text-xs rounded border border-[#333] bg-[#252525] text-[#e5e5e5]">深色 Dark</button>
+            <button class="flex-1 px-3 py-2 text-xs rounded border border-[#333] text-[#9ca3af]">浅色 Light</button>
+          </div>
+        </div>
+        <div class="setting-card space-y-3">
+          <label class="flex items-center justify-between cursor-pointer">
+            <div>
+              <span class="text-sm text-[#e5e5e5]">节点显示模型设置</span>
+              <p class="text-[10px] text-[#666]">在节点中显示模型选择和参数配置</p>
+            </div>
+            <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+          </label>
+          <label class="flex items-center justify-between cursor-pointer">
+            <div>
+              <span class="text-sm text-[#e5e5e5]">显示小地图</span>
+              <p class="text-[10px] text-[#666]">画布右上角显示节点概览</p>
+            </div>
+            <button class="toggle-switch on" onclick="toggleSwitch(this)"><span class="toggle-thumb"></span></button>
+          </label>
+        </div>
+        <div class="setting-card">
+          <div class="card-title">.env 配置文件路径</div>
+          <div class="flex gap-2">
+            <input type="text" class="form-input flex-1" placeholder="选择 .env 配置保存目录...">
+            <button class="px-3 py-2 bg-[#1c1c1c] hover:bg-[#252525] text-[#e5e5e5] text-xs rounded border border-[#333]">浏览</button>
+          </div>
+          <p class="text-[10px] text-[#666] mt-1">API Key 等配置保存为 .env 文件</p>
+        </div>
+        <div class="setting-card">
+          <div class="card-title">配置保存路径</div>
+          <div class="flex gap-2">
+            <input type="text" class="form-input flex-1" placeholder="选择配置保存目录...">
+            <button class="px-3 py-2 bg-[#1c1c1c] hover:bg-[#252525] text-[#e5e5e5] text-xs rounded border border-[#333]">浏览</button>
+          </div>
+          <p class="text-[10px] text-[#666] mt-1">独立保存模型和渠道配置，升级不丢失</p>
+        </div>
+      </div>
+
+      <div class="mt-auto p-4 border-t border-[#333] bg-[#121212]">
+        <div class="flex justify-end gap-2">
+          <button class="px-4 py-2 text-sm text-[#9ca3af] hover:text-[#e5e5e5]" onclick="toggleSettings()">关闭</button>
+          <button class="px-4 py-2 text-sm bg-white text-black rounded hover:bg-gray-200">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleSettings() {
+        document.getElementById('settingsPanel').classList.toggle('open');
+      }
+      function toggleNodeSidebar() {
+        document.getElementById('nodeSidebar').classList.toggle('open');
+      }
+      function switchTab(btn, tabName) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+      }
+      function toggleSwitch(el) {
+        if (el.classList.contains('on')) {
+          el.classList.remove('on');
+          el.classList.add('off');
+        } else {
+          el.classList.remove('off');
+          el.classList.add('on');
+        }
+      }
+      function toggleSection(btn) {
+        const card = btn.closest('.setting-card');
+        const content = card.querySelector('.section-content');
+        const arrow = btn.querySelector('svg');
+        if (content.style.display === 'none') {
+          content.style.display = 'block';
+          arrow.style.transform = 'rotate(90deg)';
+        } else {
+          content.style.display = 'none';
+          arrow.style.transform = 'rotate(0deg)';
+        }
+      }
+    </script>
+  </div>
+</body>
+</html>

@@ -12,6 +12,7 @@ interface FlowActions {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   addNode: (node: Node) => void;
+  addNodes: (nodes: Node[]) => void;
   removeNode: (id: string) => void;
   updateNodeData: (id: string, patch: Record<string, unknown>) => void;
   addEdge: (edge: Edge) => void;
@@ -44,6 +45,12 @@ export const useFlowStore = create<FlowStore>()((set) => ({
   addNode: (node) => {
     set((state) => ({
       nodes: [...state.nodes, node],
+    }));
+  },
+
+  addNodes: (nodes) => {
+    set((state) => ({
+      nodes: [...state.nodes, ...nodes],
     }));
   },
 

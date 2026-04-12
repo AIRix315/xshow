@@ -3,12 +3,15 @@
 import type { Node } from '@xyflow/react';
 
 // §3.1 通道配置与全局 API 配置
+export type ComfyUISubType = 'local' | 'cloud' | 'runninghub';
+
 export interface ChannelConfig {
   id: string;               // 唯一标识
   name: string;             // 供应商名称
   url: string;              // API 端点地址
   key: string;              // API 密钥
-  protocol: 'openai' | 'gemini' | 'custom';  // 协议类型，决定请求/响应格式
+  protocol: 'openai' | 'gemini' | 'anthropic' | 'custom' | 'comfyui';  // 协议类型
+  comfyuiSubType?: ComfyUISubType;  // 仅 protocol='comfyui' 时有效
 }
 
 export interface ApiConfig {
@@ -24,6 +27,10 @@ export interface ApiConfig {
   ttsVoice: string;                 // TTS 语音标识，用户自定义填入
   videoDurations: string;           // 视频时长选项，换行分隔
   presetPrompts: PresetPrompt[];    // 预设词
+  // ComfyUI 工作流列表
+  comfyuiLocalWorkflows: string;
+  comfyuiCloudWorkflows: string;
+  comfyuiRunninghubWorkflows: string;
 }
 
 // §3.2 资源中转站
@@ -172,6 +179,20 @@ export interface CustomNodeConfig {
   pollingResultDataPath?: string;
   rawTextOutput?: boolean;
   variables?: Record<string, string>;
+  // ComfyUI 执行配置
+  executionType?: 'http' | 'comfyui';
+  channelId?: string;
+  comfyuiSubType?: ComfyUISubType;
+  nodeInfoList?: ComfyUINodeInfo[];
+  model?: string;
+}
+
+// ComfyUI 节点字段映射
+export interface ComfyUINodeInfo {
+  nodeId: string;
+  fieldName: string;
+  fieldType?: 'STRING' | 'NUMBER' | 'IMAGE';
+  defaultValue?: string;
 }
 
 export interface UniversalNodeData {
@@ -211,7 +232,27 @@ export interface CropNodeData {
   onCancel?: (nodeId: string) => void;
 }
 
-// §3.13 画布项目
+// §3.13 输入节点数据
+export interface TextInputNodeData { [key: string]: unknown; text?: string; filename?: string; }
+export interface VideoInputNodeData { [key: string]: unknown; videoUrl?: string; filename?: string; }
+export interface ImageInputNodeData { [key: string]: unknown; imageUrl?: string; filename?: string; isOptional?: boolean; dimensions?: { width: number; height: number }; }
+export interface Generate3DNodeData { [key: string]: unknown; prompt?: string; modelUrl?: string; progress?: number; }
+export interface GenerateAudioNodeData { [key: string]: unknown; text?: string; voice?: string; }
+export interface PromptConstructorNodeData { [key: string]: unknown; parts?: Array<{ id: string; text: string; enabled: boolean }>; }
+export interface AnnotateNodeData { [key: string]: unknown; inputImageUrl?: string; annotations?: Array<{ id: string; type: 'text' | 'rect' | 'arrow' | 'circle'; x: number; y: number; width?: number; height?: number; endX?: number; endY?: number; text?: string; fontSize: number; color: string }>; fontSize?: number; color?: string; annotationText?: string; }
+export interface ConditionalSwitchNodeData { [key: string]: unknown; rules?: Array<{ id: string; name: string; operator: string; value: string; outputIndex: number }>; }
+export interface EaseCurveNodeData { [key: string]: unknown; curveType?: string; }
+export interface FrameGrabNodeData { [key: string]: unknown; inputVideoUrl?: string; framePosition?: number; resultImageUrl?: string; }
+export interface ImageCompareNodeData { [key: string]: unknown; imageLeft?: string; imageRight?: string; mode?: string; }
+export interface OutputGalleryNodeData { [key: string]: unknown; items?: Array<{ type: string }>; columns?: number; }
+export interface OutputNodeData { [key: string]: unknown; inputImageUrl?: string; inputVideoUrl?: string; inputAudioUrl?: string; inputValue?: string; label?: string; }
+export interface RouterNodeData { [key: string]: unknown; outputCount?: number; inputValue?: unknown; }
+export interface SwitchNodeData { [key: string]: unknown; enabled?: boolean; }
+export interface VideoStitchNodeData { [key: string]: unknown; videoUrls?: string[]; resultUrl?: string; }
+export interface VideoTrimNodeData { [key: string]: unknown; inputVideoUrl?: string; startTime?: number; endTime?: number; resultUrl?: string; }
+export interface Viewer3DNodeData { [key: string]: unknown; modelUrl?: string; }
+
+// §3.14 画布项目
 export interface Project {
   id: string;          // 默认 "default"
   name: string;        // 项目名
@@ -234,7 +275,26 @@ export type GridSplitNode = Node<GridSplitNodeData, 'gridSplitNode'>;
 export type GridMergeNodeType = Node<GridMergeNodeData, 'gridMergeNode'>;
 export type CropNodeType = Node<CropNodeData, 'cropNode'>;
 export type UniversalNodeType = Node<UniversalNodeData, 'customNode'>;
-export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNodeType | GridSplitNode | GridMergeNodeType | CropNodeType | UniversalNodeType;
+export type TextInputNodeType = Node<TextInputNodeData, 'textInputNode'>;
+export type VideoInputNodeType = Node<VideoInputNodeData, 'videoInputNode'>;
+export type ImageInputNodeType = Node<ImageInputNodeData, 'imageInputNode'>;
+export type ImageInputNode = ImageInputNodeType;
+export type Generate3DNodeType = Node<Generate3DNodeData, 'generate3DNode'>;
+export type GenerateAudioNodeType = Node<GenerateAudioNodeData, 'generateAudioNode'>;
+export type PromptConstructorNodeType = Node<PromptConstructorNodeData, 'promptConstructorNode'>;
+export type AnnotateNodeType = Node<AnnotateNodeData, 'annotateNode'>;
+export type ConditionalSwitchNodeType = Node<ConditionalSwitchNodeData, 'conditionalSwitchNode'>;
+export type EaseCurveNodeType = Node<EaseCurveNodeData, 'easeCurveNode'>;
+export type FrameGrabNodeType = Node<FrameGrabNodeData, 'frameGrabNode'>;
+export type ImageCompareNodeType = Node<ImageCompareNodeData, 'imageCompareNode'>;
+export type OutputGalleryNodeType = Node<OutputGalleryNodeData, 'outputGalleryNode'>;
+export type OutputNodeType = Node<OutputNodeData, 'outputNode'>;
+export type RouterNodeType = Node<RouterNodeData, 'routerNode'>;
+export type SwitchNodeType = Node<SwitchNodeData, 'switchNode'>;
+export type VideoStitchNodeType = Node<VideoStitchNodeData, 'videoStitchNode'>;
+export type VideoTrimNodeType = Node<VideoTrimNodeData, 'videoTrimNode'>;
+export type Viewer3DNodeType = Node<Viewer3DNodeData, 'viewer3DNode'>;
+export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNodeType | GridSplitNode | GridMergeNodeType | CropNodeType | UniversalNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | Generate3DNodeType | GenerateAudioNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType | Viewer3DNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {
@@ -258,6 +318,9 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   ttsVoice: '',
   videoDurations: '',
   presetPrompts: [],
+  comfyuiLocalWorkflows: '',
+  comfyuiCloudWorkflows: '',
+  comfyuiRunninghubWorkflows: '',
 };
 
 export const DEFAULT_PROJECT: Project = {

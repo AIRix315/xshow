@@ -6,6 +6,21 @@ import { generateImage } from './imageApi';
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
+// Mock FileReader
+class MockFileReader {
+  onloadend: (() => void) | null = null;
+  result: string = '';
+  onerror: ((error: Error) => void) | null = null;
+
+  readAsDataURL(_blob: Blob) {
+    setTimeout(() => {
+      this.result = 'data:image/png;base64,mocked';
+      this.onloadend?.();
+    }, 0);
+  }
+}
+globalThis.FileReader = MockFileReader as unknown as typeof FileReader;
+
 beforeEach(() => {
   mockFetch.mockReset();
 });
@@ -128,5 +143,121 @@ describe('imageApi — generateImage', () => {
     const callUrl = mockFetch.mock.calls[0]![0] as string;
     expect(callUrl).not.toContain('//v1beta');
     expect(callUrl).toContain('/v1beta');
+  });
+
+  // OpenAI 协议测试
+  describe('OpenAI protocol', () => {
+    const openaiParams = {
+      channelUrl: 'https://api.openai.com',
+      channelKey: 'sk-openai-key',
+      protocol: 'openai' as const,
+      model: 'dall-e-3',
+      prompt: '一只可爱的猫',
+      aspectRatio: '1:1',
+      imageSize: '1K',
+    };
+
+    it('sends POST to OpenAI images/generations endpoint', async () => {
+      // Mock first fetch (images/generations), then mock fetch for downloading image
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['image-data'], { type: 'image/png' })),
+        });
+
+      await generateImage(openaiParams);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const callUrl = mockFetch.mock.calls[0]![0] as string;
+      expect(callUrl).toBe('https://api.openai.com/v1/images/generations');
+    });
+
+    it('uses Bearer token in Authorization header for OpenAI', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['image-data'], { type: 'image/png' })),
+        });
+
+      await generateImage(openaiParams);
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      expect(callOptions.headers).toHaveProperty('Authorization', 'Bearer sk-openai-key');
+    });
+
+    it('sends correct body format for OpenAI protocol', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['image-data'], { type: 'image/png' })),
+        });
+
+      await generateImage(openaiParams);
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(callOptions.body as string);
+      expect(body.model).toBe('dall-e-3');
+      expect(body.prompt).toBe('一只可爱的猫');
+      expect(body.size).toBe('1024x1024'); // 1K maps to 1024x1024
+      expect(body.quality).toBe('standard');
+      expect(body.n).toBe(1);
+    });
+
+    it('maps imageSize 2K to 1792x1024', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['image-data'], { type: 'image/png' })),
+        });
+
+      await generateImage({ ...openaiParams, imageSize: '2K' });
+
+      const callOptions = mockFetch.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(callOptions.body as string);
+      expect(body.size).toBe('1792x1024');
+    });
+
+    it('throws on OpenAI HTTP error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve('Invalid request'),
+      });
+
+      await expect(generateImage({ ...openaiParams })).rejects.toThrow('图片生成失败: 400');
+    });
+
+    it('throws when OpenAI response has no image data', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [] }),
+      });
+
+      await expect(generateImage({ ...openaiParams })).rejects.toThrow('图片生成失败: 无有效响应数据');
+    });
   });
 });

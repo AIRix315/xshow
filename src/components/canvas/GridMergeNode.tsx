@@ -14,7 +14,8 @@ function GridMergeNodeComponent({ id, data, selected }: NodeProps<GridMergeNodeT
   const [cellSize, setCellSize] = useState(data.cellSize ?? 512);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [mergedUrl, setMergedUrl] = useState<string | undefined>(undefined);
+  // mergedUrl 用于存储合拼结果（默认状态不显示，仅 hover 参数面板显示）
+  const [mergedUrl, setMergedUrl] = useState<string | undefined>(data.mergedImageUrl);
 
   // 从 Store 读取所有上游节点的图片数据
   const upstream = getUpstreamNodes(id);
@@ -101,76 +102,118 @@ function GridMergeNodeComponent({ id, data, selected }: NodeProps<GridMergeNodeT
 
   const inputCount = gridCount * gridCount;
 
-  return (
-    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={260} minWidth={280}>
-      <Handle type="target" position={Position.Left} id="merge-main" style={{ top: '50%' }} className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222]" />
-
-      <div className="flex flex-col gap-2 p-2 min-w-[240px]">
-        <span className="text-[10px] text-text-secondary font-medium">九宫格合拼</span>
-
-        {/* 参数 */}
-        <div className="flex gap-1 items-center text-[10px] text-text">
-          <label className="text-text-secondary">格数:</label>
-          <input
-            type="number"
-            value={gridCount}
-            onChange={(e) => handleGridCountChange(Number(e.target.value))}
-            min={2}
-            max={5}
-            className="w-10 bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-          />
-          <span className="text-text-muted">{gridCount}×{gridCount}</span>
-          <label className="text-text-secondary ml-2">尺寸:</label>
-          <select
-            value={cellSize}
-            onChange={(e) => handleCellSizeChange(Number(e.target.value))}
-            className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-          >
-            <option value={256}>256</option>
-            <option value={512}>512</option>
-            <option value={1024}>1024</option>
-          </select>
-        </div>
-
-        {/* 网格输入槽位 */}
+  const minimalContent = (
+    <>
+      <Handle type="target" position={Position.Left} id="merge-main" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      
+      <div className="w-full h-full p-2">
         <div
-          className="border border-border rounded p-1 bg-background"
+          className="w-full h-full grid"
           style={{
-            display: 'grid',
             gridTemplateColumns: `repeat(${gridCount}, 1fr)`,
+            gridTemplateRows: `repeat(${gridCount}, 1fr)`,
             gap: '2px',
           }}
         >
           {Array.from({ length: inputCount }, (_, i) => (
             <div
               key={i}
-              className={`rounded flex items-center justify-center text-[8px] aspect-square overflow-hidden ${
-                cellImages[i] ? 'border border-primary/50' : 'bg-surface-hover border border-border'
-              }`}
-              style={{ minHeight: '24px' }}
+              className={`flex items-center justify-center ${cellImages[i] ? '' : 'bg-surface-hover'}`}
             >
               {cellImages[i] ? (
                 <img src={cellImages[i]} alt={`cell-${i + 1}`} className="w-full h-full object-cover" />
               ) : (
-                i + 1
+                <span className="text-[10px] text-text-muted">{i + 1}</span>
               )}
             </div>
           ))}
         </div>
+      </div>
+      
+      <Handle type="source" position={Position.Right} id="merge-output" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+    </>
+  );
 
-        {/* 合拼结果预览 */}
-        {mergedUrl && !loading && (
-          <div className="relative">
-            <img src={mergedUrl} alt="合拼结果" className="w-full rounded border border-border" style={{ maxHeight: '200px', objectFit: 'contain' }} />
+  const hoverContent = (
+    <>
+      <Handle type="target" position={Position.Left} id="merge-main" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      
+      <div className="flex flex-col h-full">
+        <div className="flex-1 min-h-0 p-2">
+          {mergedUrl && !loading ? (
+            <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
+              <img src={mergedUrl} alt="合拼结果" className="max-w-full max-h-full object-contain" />
+            </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px] bg-[#1a1a1a] rounded">
+              {loading ? '合拼中...' : '等待合拼'}
+            </div>
+          )}
+        </div>
+        
+        <div className="p-2 pt-1 border-t border-[#333]">
+          <div className="flex items-center gap-2 text-[10px] text-text">
+            <label className="w-10 shrink-0">格数:</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={gridCount}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                if (val) {
+                  const num = Math.min(5, Math.max(2, parseInt(val, 10)));
+                  handleGridCountChange(num);
+                }
+              }}
+              onBlur={() => {
+                if (!gridCount || gridCount < 2) handleGridCountChange(2);
+                if (gridCount > 5) handleGridCountChange(5);
+              }}
+              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
+            />
+            <span className="text-text-muted">{gridCount}×{gridCount}</span>
           </div>
-        )}
+          <div className="flex items-center gap-2 text-[10px] text-text mt-1">
+            <label className="w-10 shrink-0">尺寸:</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={cellSize}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                if (val) {
+                  const num = Math.min(2048, Math.max(128, parseInt(val, 10)));
+                  handleCellSizeChange(num);
+                }
+              }}
+              onBlur={() => {
+                if (!cellSize || cellSize < 128) handleCellSizeChange(256);
+                if (cellSize > 2048) handleCellSizeChange(1024);
+              }}
+              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
+            />
+          </div>
 
-        <div className="text-center text-[10px] text-text-muted">
-          {hasImages ? `已连接 ${cellImages.filter(Boolean).length}/${inputCount} 格` : `从左侧连线 ${inputCount} 张子图到此节点`}
+          <div className="text-center text-[10px] text-text-muted mt-2">
+            {hasImages ? `已连接 ${cellImages.filter(Boolean).length}/${inputCount} 格` : `从左侧连线 ${inputCount} 张子图到此节点`}
+          </div>
         </div>
       </div>
+      
+      <Handle type="source" position={Position.Right} id="merge-output" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+    </>
+  );
 
-      <Handle type="source" position={Position.Right} id="merge-output" className="!bg-handle-default !w-3 !h-3 !border-2 !border-[#222]" />
+  return (
+<BaseNodeWrapper
+      selected={!!selected} 
+      loading={loading} 
+      errorMessage={errorMessage}
+      title="合并"
+      minWidth={260}
+      hoverContent={hoverContent}
+    >
+      {minimalContent}
     </BaseNodeWrapper>
   );
 }
