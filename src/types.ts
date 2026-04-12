@@ -52,10 +52,15 @@ export interface PresetPrompt {
   enabled: boolean;
 }
 
-// §3.4 图片节点数据
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ReactFlow Node 要求 Record<string, unknown> 兼容
-export interface ImageNodeData {
-  [key: string]: unknown;
+// §3.4 节点基础数据 (Ref: node-banana BaseNodeData)
+export interface BaseNodeData extends Record<string, unknown> {
+  label?: string;
+  loading?: boolean;
+  errorMessage?: string;
+}
+
+// §3.5 图片节点数据
+export interface ImageNodeData extends BaseNodeData {
   imageUrl?: string;
   prompt: string;
   aspectRatio: string;     // '16:9', '1:1' 等
@@ -77,8 +82,7 @@ export interface ImageNodeData {
 }
 
 // §3.5 文本节点数据
-export interface TextNodeData {
-  [key: string]: unknown;
+export interface TextNodeData extends BaseNodeData {
   text?: string;
   prompt: string;
   label: string;
@@ -98,15 +102,14 @@ export interface TextNodeData {
 }
 
 // §3.6 视频节点数据
-export interface VideoNodeData {
-  [key: string]: unknown;
+export interface VideoNodeData extends BaseNodeData {
   videoUrl?: string;
   thumbnailUrl?: string;
   prompt: string;
-  size: string;             // '1280x720'
+  size: string;
   selectedModel?: string;
   videoModel: string;
-  videoDurations: string;   // 换行分隔
+  videoDurations: string;
   selectedSeconds?: string;
   selectedContextResources: TransitResource[];
   loading: boolean;
@@ -120,41 +123,34 @@ export interface VideoNodeData {
 }
 
 // §3.7 音频节点数据
-export interface AudioNodeData {
-  [key: string]: unknown;
-  audioUrl?: string;                                // 音频 URL
-  audioName?: string;                                // 文件名
-  chunks?: Array<{ start: number; end: number; text: string }>;  // 断句结果
-  ttsText?: string;                                  // TTS 输入文本
-  selectedModel?: string;                             // 当前选中模型
+export interface AudioNodeData extends BaseNodeData {
+  audioUrl?: string;
+  audioName?: string;
+  chunks?: Array<{ start: number; end: number; text: string }>;
+  ttsText?: string;
+  selectedModel?: string;
   loading: boolean;
   errorMessage?: string;
-  onGenerateAudio?: (nodeId: string) => void;        // 听音断句
-  onGenerateTTS?: (nodeId: string) => void;           // 文本转语音
+  onGenerateAudio?: (nodeId: string) => void;
+  onGenerateTTS?: (nodeId: string) => void;
   onShowToast?: (msg: string) => void;
 }
 
 // §3.8 九宫格分拆节点
-export interface GridSplitNodeData {
-  [key: string]: unknown;
-  gridCount: number;        // 默认 3
-  cellSize: number;         // 默认 512
-  aspectRatio: string;      // 默认 '1:1'
-  titlePattern: string;     // 默认 'id{num}'
-  splitResults?: string[];  // 拆图结果：N×N 个 DataURL
-  loading?: boolean;
-  errorMessage?: string;
+export interface GridSplitNodeData extends BaseNodeData {
+  gridCount: number;
+  cellSize: number;
+  aspectRatio: string;
+  titlePattern: string;
+  splitResults?: string[];
 }
 
 // §3.9 九宫格合拼节点
-export interface GridMergeNodeData {
-  [key: string]: unknown;
-  gridCount: number;        // 默认 3
-  cellSize: number;         // 默认 512
-  aspectRatio: string;      // 默认 '1:1'
-  mergedImageUrl?: string;   // 合拼结果 DataURL
-  loading?: boolean;
-  errorMessage?: string;
+export interface GridMergeNodeData extends BaseNodeData {
+  gridCount: number;
+  cellSize: number;
+  aspectRatio: string;
+  mergedImageUrl?: string;
 }
 
 // §3.10 万能节点配置
@@ -195,8 +191,7 @@ export interface ComfyUINodeInfo {
   defaultValue?: string;
 }
 
-export interface UniversalNodeData {
-  [key: string]: unknown;
+export interface UniversalNodeData extends BaseNodeData {
   label: string;
   configMode: boolean;
   config: CustomNodeConfig;
@@ -225,32 +220,31 @@ export interface GlobalTask {
 }
 
 // §3.12 裁剪节点数据
-export interface CropNodeData {
-  [key: string]: unknown;
-  sourceImageUrl?: string;  // 待裁剪的原图 URL
+export interface CropNodeData extends BaseNodeData {
+  sourceImageUrl?: string;
   onCropComplete?: (nodeId: string, croppedDataUrl: string) => void;
   onCancel?: (nodeId: string) => void;
 }
 
 // §3.13 输入节点数据
-export interface TextInputNodeData { [key: string]: unknown; text?: string; filename?: string; }
-export interface VideoInputNodeData { [key: string]: unknown; videoUrl?: string; filename?: string; }
-export interface ImageInputNodeData { [key: string]: unknown; imageUrl?: string; filename?: string; isOptional?: boolean; dimensions?: { width: number; height: number }; }
-export interface Generate3DNodeData { [key: string]: unknown; prompt?: string; modelUrl?: string; progress?: number; }
-export interface GenerateAudioNodeData { [key: string]: unknown; text?: string; voice?: string; }
-export interface PromptConstructorNodeData { [key: string]: unknown; parts?: Array<{ id: string; text: string; enabled: boolean }>; }
-export interface AnnotateNodeData { [key: string]: unknown; inputImageUrl?: string; annotations?: Array<{ id: string; type: 'text' | 'rect' | 'arrow' | 'circle'; x: number; y: number; width?: number; height?: number; endX?: number; endY?: number; text?: string; fontSize: number; color: string }>; fontSize?: number; color?: string; annotationText?: string; }
-export interface ConditionalSwitchNodeData { [key: string]: unknown; rules?: Array<{ id: string; name: string; operator: string; value: string; outputIndex: number }>; }
-export interface EaseCurveNodeData { [key: string]: unknown; curveType?: string; }
-export interface FrameGrabNodeData { [key: string]: unknown; inputVideoUrl?: string; framePosition?: number; resultImageUrl?: string; }
-export interface ImageCompareNodeData { [key: string]: unknown; imageLeft?: string; imageRight?: string; mode?: string; }
-export interface OutputGalleryNodeData { [key: string]: unknown; items?: Array<{ type: string }>; columns?: number; }
-export interface OutputNodeData { [key: string]: unknown; inputImageUrl?: string; inputVideoUrl?: string; inputAudioUrl?: string; inputValue?: string; label?: string; }
-export interface RouterNodeData { [key: string]: unknown; outputCount?: number; inputValue?: unknown; }
-export interface SwitchNodeData { [key: string]: unknown; enabled?: boolean; }
-export interface VideoStitchNodeData { [key: string]: unknown; videoUrls?: string[]; resultUrl?: string; }
-export interface VideoTrimNodeData { [key: string]: unknown; inputVideoUrl?: string; startTime?: number; endTime?: number; resultUrl?: string; }
-export interface Viewer3DNodeData { [key: string]: unknown; modelUrl?: string; }
+export interface TextInputNodeData extends BaseNodeData { text?: string; filename?: string; }
+export interface VideoInputNodeData extends BaseNodeData { videoUrl?: string; filename?: string; }
+export interface ImageInputNodeData extends BaseNodeData { imageUrl?: string; filename?: string; isOptional?: boolean; dimensions?: { width: number; height: number }; }
+export interface Generate3DNodeData extends BaseNodeData { prompt?: string; modelUrl?: string; progress?: number; }
+export interface GenerateAudioNodeData extends BaseNodeData { text?: string; voice?: string; }
+export interface PromptConstructorNodeData extends BaseNodeData { parts?: Array<{ id: string; text: string; enabled: boolean }>; }
+export interface AnnotateNodeData extends BaseNodeData { inputImageUrl?: string; annotations?: Array<{ id: string; type: 'text' | 'rect' | 'arrow' | 'circle'; x: number; y: number; width?: number; height?: number; endX?: number; endY?: number; text?: string; fontSize: number; color: string }>; fontSize?: number; color?: string; annotationText?: string; }
+export interface ConditionalSwitchNodeData extends BaseNodeData { rules?: Array<{ id: string; name: string; operator: string; value: string; outputIndex: number }>; }
+export interface EaseCurveNodeData extends BaseNodeData { curveType?: string; }
+export interface FrameGrabNodeData extends BaseNodeData { inputVideoUrl?: string; framePosition?: number; resultImageUrl?: string; }
+export interface ImageCompareNodeData extends BaseNodeData { imageLeft?: string; imageRight?: string; mode?: string; }
+export interface OutputGalleryNodeData extends BaseNodeData { items?: Array<{ type: string }>; columns?: number; }
+export interface OutputNodeData extends BaseNodeData { inputImageUrl?: string; inputVideoUrl?: string; inputAudioUrl?: string; inputValue?: string; label?: string; }
+export interface RouterNodeData extends BaseNodeData { outputCount?: number; inputValue?: unknown; }
+export interface SwitchNodeData extends BaseNodeData { enabled?: boolean; }
+export interface VideoStitchNodeData extends BaseNodeData { videoUrls?: string[]; resultUrl?: string; }
+export interface VideoTrimNodeData extends BaseNodeData { inputVideoUrl?: string; startTime?: number; endTime?: number; resultUrl?: string; }
+export interface Viewer3DNodeData extends BaseNodeData { modelUrl?: string; }
 
 // §3.14 画布项目
 export interface Project {
