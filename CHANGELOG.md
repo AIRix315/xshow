@@ -2,6 +2,23 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.0.9] - 2026-04-13
+
+### 修复
+- **ComfyUI 工作流扫描失败**：目录参数 `default/workflows/` 修正为 `workflows`（API 路径相对于用户根目录而非文件系统绝对路径）
+- **ComfyUI 工作流文件读取 404**：列表返回的路径是相对于 `workflows/` 子目录的，读取时需加 `workflows/` 前缀；目录分隔符 URL 编码为 `%2F`
+- **ComfyUI 输出图片 URL 拼接错误**：`output.images` 为 `{filename, subfolder, type}` 对象，旧代码直接拼字符串产生 `[object Object]` 导致 404，改为正确提取属性
+- **ComfyUI 图片上传 FormData 序列化失败**：`extensionFetch` 代理无法序列化 `FormData`，改为直连 `fetch`（ComfyUI 已启用 CORS）
+
+### 改进
+- 工作流扫描启用递归模式（`recurse=true`），支持子目录（Backup、RHAPI 等）
+- 移除 `hasProblematicChars` 过滤器（URL 编码后中文、`&`、`[]` 等字符均可正常读取）
+- 连接测试成功后显示工作流文件数量
+- 扫描提示文案更新为正确的 ComfyUI 操作说明
+
+### 测试
+- 新增 `comfyApi.e2e.test.ts`：11 个纯逻辑测试 + 5 个 ComfyUI 集成测试（`COMFY_E2E=1` 启用）
+
 ## [0.0.8] - 2026-04-12
 
 ### 新功能

@@ -4,7 +4,8 @@ import { useState, useCallback } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import type { CanvasSettings } from '@/stores/useSettingsStore';
 import type { ChannelConfig, PresetPrompt } from '@/types';
-import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow } from 'lucide-react';
+import { testComfyConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
+import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2 } from 'lucide-react';
 
 type SettingsTab = 'project' | 'model' | 'prompt' | 'canvas' | 'system';
 type ApiType = 'text' | 'image' | 'video' | 'audio';
@@ -108,20 +109,12 @@ function ChannelSection() {
               </div>
               <input value={ch.url} onChange={(e) => updateChannel(ch.id, { url: e.target.value })} placeholder="API 端点地址" className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border focus:border-primary outline-none" />
               <input type="password" value={ch.key} onChange={(e) => updateChannel(ch.id, { key: e.target.value })} placeholder="API Key" className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border focus:border-primary outline-none" />
-              <select value={ch.protocol} onChange={(e) => updateChannel(ch.id, { protocol: e.target.value as 'openai' | 'gemini' | 'anthropic' | 'custom' | 'comfyui' })} className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border">
+              <select value={ch.protocol} onChange={(e) => updateChannel(ch.id, { protocol: e.target.value as 'openai' | 'gemini' | 'anthropic' | 'custom' })} className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border">
                 <option value="openai">协议: OpenAI 兼容</option>
                 <option value="gemini">协议: Gemini</option>
                 <option value="anthropic">协议: Anthropic</option>
                 <option value="custom">协议: 自定义</option>
-                <option value="comfyui">协议: ComfyUI</option>
               </select>
-              {ch.protocol === 'comfyui' && (
-                <select value={ch.comfyuiSubType ?? 'local'} onChange={(e) => updateChannel(ch.id, { comfyuiSubType: e.target.value as 'local' | 'cloud' | 'runninghub' })} className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border">
-                  <option value="local">类型: 本地 ComfyUI</option>
-                  <option value="cloud">类型: ComfyUI Cloud</option>
-                  <option value="runninghub">类型: RunningHub</option>
-                </select>
-              )}
             </div>
           ))}
           <button onClick={handleAdd} className="w-full text-[10px] py-1.5 rounded border border-dashed border-border text-text-secondary hover:text-text hover:border-primary bg-surface-hover">+ 添加供应商</button>
@@ -132,44 +125,354 @@ function ChannelSection() {
 }
 
 // =============================================================================
-// ComfyUI 工作流配置区段
+// ComfyUI 独立配置区段
 // =============================================================================
 
 function ComfyWorkflowSection() {
   const [expanded, setExpanded] = useState(false);
-  const apiConfig = useSettingsStore((s) => s.apiConfig);
-  const setModel = useSettingsStore((s) => s.setModel);
+  const [testingLocal, setTestingLocal] = useState(false);
+  const [testingCloud, setTestingCloud] = useState(false);
+  const [testingRH, setTestingRH] = useState(false);
+  const [testingRHApp, setTestingRHApp] = useState(false);
+  const [testResultLocal, setTestResultLocal] = useState<ComfyConnectionTestResult | null>(null);
+  const [testResultCloud, setTestResultCloud] = useState<ComfyConnectionTestResult | null>(null);
+  const [testResultRH, setTestResultRH] = useState<ComfyConnectionTestResult | null>(null);
+  const [testResultRHApp, setTestResultRHApp] = useState<ComfyConnectionTestResult | null>(null);
+  const [workflows, setWorkflows] = useState<string[]>([]);
+  const [scanningWorkflows, setScanningWorkflows] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
+  const [workflowJson, setWorkflowJson] = useState<string | null>(null);
+  const [loadingJson, setLoadingJson] = useState(false);
+  const [wfListExpanded, setWfListExpanded] = useState(true);
+  const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
+  const updateComfyuiConfig = useSettingsStore((s) => s.updateComfyuiConfig);
+  const addRunninghubApp = useSettingsStore((s) => s.addRunninghubApp);
+  const removeRunninghubApp = useSettingsStore((s) => s.removeRunninghubApp);
 
-  const workflowFields: Array<{
-    key: 'local' | 'cloud' | 'runninghub';
-    label: string;
-    field: 'comfyuiLocalWorkflows' | 'comfyuiCloudWorkflows' | 'comfyuiRunninghubWorkflows';
-  }> = [
-    { key: 'local', label: '本地 ComfyUI', field: 'comfyuiLocalWorkflows' },
-    { key: 'cloud', label: 'ComfyUI Cloud', field: 'comfyuiCloudWorkflows' },
-    { key: 'runninghub', label: 'RunningHub', field: 'comfyuiRunninghubWorkflows' },
-  ];
+  // 扫描工作流（独立于连接测试）
+  const handleScanWorkflows = useCallback(async () => {
+    const url = comfyuiConfig.localUrl;
+    if (!url) {
+      setScanError('请先填写 ComfyUI 地址');
+      return;
+    }
+    
+    setScanningWorkflows(true);
+    setScanError(null);
+    
+    try {
+      const list = await fetchComfyWorkflows(url);
+      setWorkflows(list);
+      updateComfyuiConfig({ localWorkflows: list });
+      
+      if (list.length === 0) {
+        setScanError('未找到 API 格式工作流。请在 ComfyUI 中启用 Dev 模式后，使用"Save (API Format)"保存工作流');
+      }
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : '扫描失败，请确认 ComfyUI 服务已启动');
+    } finally {
+      setScanningWorkflows(false);
+    }
+  }, [comfyuiConfig.localUrl, updateComfyuiConfig]);
+
+  // 测试本地 ComfyUI 连接
+  const handleTestLocal = useCallback(async () => {
+    setTestingLocal(true);
+    setTestResultLocal(null);
+    const url = comfyuiConfig.localUrl ?? '';
+    const result = await testComfyConnection('local', url, '');
+    setTestResultLocal(result);
+    setTestingLocal(false);
+  }, [comfyuiConfig.localUrl]);
+
+  // 测试 Cloud ComfyUI
+  const handleTestCloud = useCallback(async () => {
+    setTestingCloud(true);
+    setTestResultCloud(null);
+    const url = comfyuiConfig.cloudUrl ?? '';
+    const result = await testComfyConnection('cloud', url, '');
+    setTestResultCloud(result);
+    setTestingCloud(false);
+  }, [comfyuiConfig.cloudUrl]);
+
+  // 测试 RunningHub Workflow
+  const handleTestRH = useCallback(async () => {
+    setTestingRH(true);
+    setTestResultRH(null);
+    const result = await testComfyConnection('runninghub', '', comfyuiConfig.runninghubApiKey ?? '');
+    setTestResultRH(result);
+    setTestingRH(false);
+  }, [comfyuiConfig.runninghubApiKey]);
+
+  // 测试 RunningHub APP
+  const handleTestRHApp = useCallback(async () => {
+    setTestingRHApp(true);
+    setTestResultRHApp(null);
+    const result = await testComfyConnection('runninghubApp', '', comfyuiConfig.runninghubApiKey ?? '');
+    setTestResultRHApp(result);
+    setTestingRHApp(false);
+  }, [comfyuiConfig.runninghubApiKey]);
+
+  // 添加 APP
+  const handleAddApp = useCallback(() => {
+    const name = prompt('APP 名称：');
+    if (!name) return;
+    const id = prompt('APP ID：');
+    if (!id) return;
+    const quickCreateCode = prompt('quickCreateCode（可选）：') || undefined;
+    addRunninghubApp({ id, name, quickCreateCode });
+  }, [addRunninghubApp]);
+
+  // 点击工作流项预览 JSON
+  const handleSelectWorkflow = useCallback(async (wfPath: string) => {
+    const url = comfyuiConfig.localUrl || comfyuiConfig.cloudUrl;
+    if (!url) return;
+
+    if (selectedWorkflow === wfPath) {
+      setSelectedWorkflow(null);
+      setWorkflowJson(null);
+      return;
+    }
+
+    setSelectedWorkflow(wfPath);
+    setLoadingJson(true);
+    const json = await fetchComfyWorkflowJson(url, wfPath + '.json');
+    setWorkflowJson(json);
+    setLoadingJson(false);
+  }, [comfyuiConfig.localUrl, comfyuiConfig.cloudUrl, selectedWorkflow]);
 
   return (
     <div className="bg-surface rounded-lg border border-border p-3">
       <button onClick={() => setExpanded((e) => !e)} className="w-full flex items-center justify-between text-sm font-medium text-text">
-        <span className="flex items-center gap-2"><Workflow className="w-4 h-4" />ComfyUI 工作流</span>
+        <span className="flex items-center gap-2"><Workflow className="w-4 h-4" />ComfyUI 配置</span>
         {expanded ? <ChevronUp className="w-4 h-4 text-text-secondary" /> : <ChevronDown className="w-4 h-4 text-text-secondary" />}
       </button>
       {expanded && (
-        <div className="mt-3 space-y-3">
-          {workflowFields.map((wf) => (
-            <div key={wf.key}>
-              <label className="text-[9px] text-text-secondary mb-1 block">{wf.label}（每行一个工作流 JSON 或 ID）</label>
-              <textarea
-                value={apiConfig[wf.field] as string ?? ''}
-                onChange={(e) => setModel(wf.field, e.target.value)}
-                placeholder={`${wf.label} 工作流`}
-                rows={3}
-                className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono focus:border-primary outline-none"
-              />
+        <div className="mt-3 space-y-4">
+          {/* ===== 本地 ComfyUI ===== */}
+          <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-green-400 font-medium">本地 ComfyUI</label>
+              <button
+                onClick={handleTestLocal}
+                disabled={testingLocal || !comfyuiConfig.localUrl}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border disabled:opacity-50 flex items-center gap-1"
+              >
+                {testingLocal ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                测试
+              </button>
             </div>
-          ))}
+            <input
+              value={comfyuiConfig.localUrl ?? ''}
+              onChange={(e) => updateComfyuiConfig({ localUrl: e.target.value })}
+              placeholder="http://127.0.0.1:8188"
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
+            />
+            {testResultLocal && (
+              <div className={`text-[9px] p-1.5 rounded ${testResultLocal.ok ? 'bg-green-500/10 text-green-400' : 'bg-error/10 text-error'}`}>
+                {testResultLocal.message}
+                {testResultLocal.ok && (
+                  <div className="mt-1 text-[8px] text-text-secondary">
+                    工作流目录：<span className="font-mono">user/default/workflows/</span>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* 扫描工作流按钮 */}
+            <div className="pt-1.5 mt-1.5 border-t border-[#444]">
+              <button
+                onClick={handleScanWorkflows}
+                disabled={scanningWorkflows || !comfyuiConfig.localUrl}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border disabled:opacity-50 flex items-center gap-1"
+              >
+                {scanningWorkflows ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderOpen className="w-3 h-3" />}
+                扫描工作流
+              </button>
+              {scanError && (
+                <div className="text-[8px] text-error bg-error/10 rounded p-1.5 mt-1">
+                  {scanError}
+                </div>
+              )}
+              {workflows.length > 0 && !scanError && (
+                <div className="text-[8px] text-green-400 bg-green-500/10 rounded p-1.5 mt-1">
+                  找到 {workflows.length} 个 API 格式工作流
+                </div>
+              )}
+            </div>
+            
+            {/* 工作流列表 */}
+            {workflows.length > 0 && (
+              <div className="space-y-1 border-t border-[#444] pt-1.5 mt-1.5">
+                <button
+                  onClick={() => setWfListExpanded((e) => !e)}
+                  className="w-full flex items-center justify-between"
+                >
+                  <span className="text-[9px] text-text-secondary font-medium">
+                    工作流文件 ({workflows.length})
+                  </span>
+                  <span className="text-[8px] text-text-muted">（需 API 格式：ComfyUI 启用 Dev 模式 → Save (API Format)，含子目录）</span>
+                  {wfListExpanded ? <ChevronUp className="w-3 h-3 text-text-secondary" /> : <ChevronDown className="w-3 h-3 text-text-secondary" />}
+                </button>
+                {wfListExpanded && (
+                  <>
+                    <div className="max-h-40 overflow-y-auto bg-surface-hover rounded p-1.5 space-y-0.5">
+                      {workflows.map((w, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleSelectWorkflow(w)}
+                          className={`w-full text-left text-[9px] truncate font-mono px-1 py-0.5 rounded transition-colors ${
+                            selectedWorkflow === w ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-surface hover:text-text'
+                          }`}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </div>
+                    {loadingJson && (
+                      <div className="text-[9px] text-text-secondary flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> 加载工作流 JSON...
+                      </div>
+                    )}
+                    {workflowJson && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[9px] text-text-secondary font-medium truncate max-w-[200px]">
+                            {selectedWorkflow}
+                          </label>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(workflowJson); }}
+                            className="text-[8px] px-1.5 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border"
+                          >
+                            复制 JSON
+                          </button>
+                        </div>
+                        <pre className="text-[8px] text-text-secondary bg-[#111] rounded p-1.5 max-h-32 overflow-auto font-mono whitespace-pre-wrap break-all">
+                          {workflowJson.length > 2000 ? workflowJson.slice(0, 2000) + '…' : workflowJson}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== ComfyUI Cloud ===== */}
+          <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-blue-400 font-medium">ComfyUI Cloud</label>
+              <button
+                onClick={handleTestCloud}
+                disabled={testingCloud || !comfyuiConfig.cloudUrl}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border disabled:opacity-50 flex items-center gap-1"
+              >
+                {testingCloud ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                测试
+              </button>
+            </div>
+            <input
+              value={comfyuiConfig.cloudUrl ?? ''}
+              onChange={(e) => updateComfyuiConfig({ cloudUrl: e.target.value })}
+              placeholder="Cloud API 地址"
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
+            />
+            {testResultCloud && (
+              <div className={`text-[9px] p-1.5 rounded ${testResultCloud.ok ? 'bg-green-500/10 text-green-400' : 'bg-error/10 text-error'}`}>
+                {testResultCloud.message}
+              </div>
+            )}
+          </div>
+
+          {/* ===== RunningHub Workflow ===== */}
+          <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-orange-400 font-medium">RunningHub Workflow</label>
+              <button
+                onClick={handleTestRH}
+                disabled={testingRH || !comfyuiConfig.runninghubApiKey}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border disabled:opacity-50 flex items-center gap-1"
+              >
+                {testingRH ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                测试
+              </button>
+            </div>
+            <input
+              type="password"
+              value={comfyuiConfig.runninghubApiKey ?? ''}
+              onChange={(e) => updateComfyuiConfig({ runninghubApiKey: e.target.value })}
+              placeholder="RunningHub API Key"
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
+            />
+            <textarea
+              value={(comfyuiConfig.runninghubWorkflows ?? []).join('\n')}
+              onChange={(e) => updateComfyuiConfig({ runninghubWorkflows: e.target.value.split('\n').filter(Boolean) })}
+              placeholder="Workflow ID 列表（每行一个）"
+              rows={2}
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono focus:border-primary outline-none"
+            />
+            {testResultRH && (
+              <div className={`text-[9px] p-1.5 rounded ${testResultRH.ok ? 'bg-green-500/10 text-green-400' : 'bg-error/10 text-error'}`}>
+                {testResultRH.message}
+              </div>
+            )}
+          </div>
+
+          {/* ===== RunningHub APP ===== */}
+          <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-purple-400 font-medium">RunningHub APP</label>
+              <button
+                onClick={handleTestRHApp}
+                disabled={testingRHApp || !comfyuiConfig.runninghubApiKey}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border disabled:opacity-50 flex items-center gap-1"
+              >
+                {testingRHApp ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                测试
+              </button>
+            </div>
+            <input
+              type="password"
+              value={comfyuiConfig.runninghubApiKey ?? ''}
+              onChange={(e) => updateComfyuiConfig({ runninghubApiKey: e.target.value })}
+              placeholder="RunningHub API Key（共用）"
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
+            />
+            <div className="flex items-center justify-between">
+              <label className="text-[9px] text-text-secondary">APP 列表</label>
+              <button
+                onClick={handleAddApp}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border"
+              >
+                + 添加 APP
+              </button>
+            </div>
+            {(comfyuiConfig.runninghubApps ?? []).length > 0 ? (
+              <div className="space-y-1 max-h-32 overflow-y-auto bg-surface-hover rounded p-1.5">
+                {(comfyuiConfig.runninghubApps ?? []).map((app) => (
+                  <div key={app.id} className="flex items-center gap-1 text-[9px]">
+                    <span className="flex-1 truncate font-mono text-text-secondary">
+                      {app.name} ({app.id}){app.quickCreateCode ? ` [${app.quickCreateCode}]` : ''}
+                    </span>
+                    <button
+                      onClick={() => removeRunninghubApp(app.id)}
+                      className="text-error hover:text-error/80 px-1"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[9px] text-text-muted italic">暂无 APP，请点击添加</div>
+            )}
+            {testResultRHApp && (
+              <div className={`text-[9px] p-1.5 rounded ${testResultRHApp.ok ? 'bg-green-500/10 text-green-400' : 'bg-error/10 text-error'}`}>
+                {testResultRHApp.message}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
