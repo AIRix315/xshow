@@ -68,24 +68,25 @@ function getSourceOutput(
   const nodeType = sourceNode.type;
 
   switch (nodeType) {
-    // 输入节点
+    // 输入节点（Input 后缀）
     case 'imageInputNode':
       return { type: 'image', value: (data.imageUrl as string) || null };
     case 'videoInputNode':
       return { type: 'video', value: (data.videoUrl as string) || null };
+    case 'audioInputNode':
+      return { type: 'audio', value: (data.audioUrl as string) || null };
     case 'textInputNode':
       return { type: 'text', value: (data.text as string) || null };
 
-    // 生成节点
+    // 生成节点（无后缀）
     case 'imageNode':
-    case 'promptNode':
       return { type: 'image', value: (data.imageUrl as string) || null };
     case 'videoNode':
       return { type: 'video', value: (data.videoUrl as string) || null };
     case 'audioNode':
-    case 'generateAudioNode':
       return { type: 'audio', value: (data.audioUrl as string) || null };
     case 'textNode':
+    case 'promptNode':
       return { type: 'text', value: (data.text as string) || null };
 
     // 处理节点
@@ -102,23 +103,42 @@ function getSourceOutput(
     case 'gridMergeNode':
       return { type: 'image', value: (data.mergedImageUrl as string) || null };
 
-    // 万能节点
-    case 'customNode': {
+    // 万能节点（omniNode）
+    case 'omniNode': {
       const config = data.config as UniversalNodeData['config'] | undefined;
       const outputType = config?.outputType || 'text';
-      if (outputType === 'text') {
-        return { type: 'text', value: (data.textOutput as string) || null };
-      }
-      // image/video/audio 输出
       const outputUrl = data.outputUrl as string | undefined;
-      if (outputType === 'image') return { type: 'image', value: outputUrl || null };
-      if (outputType === 'video') return { type: 'video', value: outputUrl || null };
-      if (outputType === 'audio') return { type: 'audio', value: outputUrl || null };
-      return { type: 'text', value: (data.textOutput as string) || null };
+      const textOutput = data.textOutput as string | undefined;
+      
+      // 智能推断：如果 outputUrl 存在，优先使用并推断类型
+      if (outputUrl) {
+        // 先按显式 outputType 判断
+        if (outputType !== 'text') {
+          if (outputType === 'image') return { type: 'image', value: outputUrl };
+          if (outputType === 'video') return { type: 'video', value: outputUrl };
+          if (outputType === 'audio') return { type: 'audio', value: outputUrl };
+        }
+        // 未指定类型或 text 类型时，根据 URL 推断
+        const lower = outputUrl.toLowerCase();
+        if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return { type: 'video', value: outputUrl };
+        if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return { type: 'audio', value: outputUrl };
+        if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return { type: 'image', value: outputUrl };
+        // ComfyUI view 端点返回图片
+        if (lower.includes('/view?') || lower.includes('/view?filename=')) return { type: 'image', value: outputUrl };
+        // 默认当作图片
+        return { type: 'image', value: outputUrl };
+      }
+      
+      // 文本输出
+      if (textOutput) {
+        return { type: 'text', value: textOutput };
+      }
+      
+      return { type: 'text', value: null };
     }
 
     // 3D 节点
-    case 'generate3DNode':
+    case 'd3Node':
     case 'viewer3DNode':
       return { type: '3d', value: (data.modelUrl as string) || null };
 
