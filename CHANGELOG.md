@@ -2,6 +2,37 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.1] - 2026-04-14
+
+### 节点命名体系统一
+
+- **命名规范对齐 node-banana**：统一采用"功能优先"命名，`Input` 后缀表示输入节点，无后缀表示生成节点
+- **新增文档**：`Docs/05-Node-Instruction.md` - 节点指导手册，含命名规范、分类体系、数据流图、开发指南
+
+| 旧类型 | 新类型 | 说明 |
+|--------|--------|------|
+| `generateAudioNode` | `audioNode` | TTS 音频生成 |
+| `audioNode` (旧) | `audioInputNode` | 音频输入上传 |
+| `generate3DNode` | `d3Node` | 3D 模型生成 |
+| `customNode` | `omniNode` | 万能节点 |
+| `promptNode` | 共用 `TextNode` 组件 | 提示词节点 |
+
+### 修改文件
+
+- `src/types.ts` - 类型定义更新，新增兼容别名
+- `src/utils/nodeFactory.ts` - nodeTypes 映射、NODE_DEFAULTS、getDefaultData
+- `src/store/execution/index.ts` - nodeExecutors 注册表
+- `src/utils/connectedInputs.ts` - getSourceOutput 类型映射
+- `src/components/canvas/NodeSidebar.tsx` - UI 节点分类
+- `src/components/canvas/TextInputNode.tsx` - 新增手动输入模式
+- `src/utils/connectedInputs.test.ts` - 测试用例更新
+
+### 质量保证
+
+- TypeScript 编译通过
+- 195 个单元测试通过
+- 生产构建成功
+
 ## [0.1.0] - 2026-04-14
 
 ### 架构重构
