@@ -11,9 +11,6 @@ import BaseNodeWrapper from './BaseNode';
 import ProviderModelSelector from './ProviderModelSelector';
 
 function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
-  const nodeType = (data as { type?: string }).type;
-  const isPromptNode = nodeType === 'promptNode';
-  
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
 
   // 直接从 data 读取业务数据
@@ -185,7 +182,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
       selected={!!selected} 
       loading={loading} 
       errorMessage={errorMessage}
-      title={isPromptNode ? '提示词' : '生成图片'}
+      title="生成图片"
       minWidth={280}
       hoverContent={fullContent}
     >

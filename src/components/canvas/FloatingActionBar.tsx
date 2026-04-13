@@ -1,4 +1,5 @@
 // Ref: node-banana FloatingActionBar.tsx + XShow node types
+// Ref: XShow 全局执行引擎集成
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -15,6 +16,7 @@ import {
   Play,
   Square,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 
 // 节点类型定义
@@ -26,7 +28,7 @@ type NodeType =
   | 'gridSplitNode'
   | 'gridMergeNode'
   | 'cropNode'
-  | 'universalNode';
+  | 'customNode';
 
 // 节点分类
 const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; icon: string }[] }[] = [
@@ -55,7 +57,7 @@ const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; 
   {
     label: 'Custom',
     nodes: [
-      { type: 'universalNode', label: 'Universal', icon: 'custom' },
+      { type: 'customNode', label: '万能节点', icon: 'custom' },
     ],
   },
 ];
@@ -273,7 +275,21 @@ function AllNodesMenu() {
 }
 
 export default function FloatingActionBar() {
-  const [isRunning, setIsRunning] = useState(false);
+  const isRunning = useFlowStore((s) => s.isRunning);
+  const currentNodeIds = useFlowStore((s) => s.currentNodeIds);
+  const executeWorkflow = useFlowStore((s) => s.executeWorkflow);
+  const stopWorkflow = useFlowStore((s) => s.stopWorkflow);
+
+  // 获取正在执行的节点数量
+  const runningNodeCount = currentNodeIds.length;
+
+  const handleRunClick = useCallback(() => {
+    if (isRunning) {
+      stopWorkflow();
+    } else {
+      executeWorkflow();
+    }
+  }, [isRunning, executeWorkflow, stopWorkflow]);
 
   return (
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50">
@@ -298,17 +314,26 @@ export default function FloatingActionBar() {
 
         {/* 执行按钮 */}
         <button
-          onClick={() => setIsRunning(!isRunning)}
+          onClick={handleRunClick}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded transition-colors ${
             isRunning
-              ? 'bg-white text-neutral-900 hover:bg-neutral-200'
+              ? 'bg-red-500 text-white hover:bg-red-600'
               : 'bg-white text-neutral-900 hover:bg-neutral-200'
           }`}
         >
           {isRunning ? (
             <>
-              <Square className="w-3 h-3" />
-              <span>Stop</span>
+              {runningNodeCount > 1 ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{runningNodeCount} nodes</span>
+                </>
+              ) : (
+                <>
+                  <Square className="w-3 h-3" />
+                  <span>Stop</span>
+                </>
+              )}
             </>
           ) : (
             <>

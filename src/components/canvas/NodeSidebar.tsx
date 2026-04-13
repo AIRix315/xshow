@@ -13,12 +13,13 @@ import {
 } from 'lucide-react';
 
 // 按 node-banana 分类组织
+// 命名规范：Input 后缀 = 输入节点，无后缀 = 生成节点
 const NODE_CATEGORIES = [
   {
     title: 'Input 输入',
     items: [
       { type: 'imageInputNode', label: '图片', icon: Image },
-      { type: 'audioNode', label: '音频', icon: Mic },
+      { type: 'audioInputNode', label: '音频', icon: Mic },
       { type: 'videoInputNode', label: '视频', icon: Video },
       { type: 'viewer3DNode', label: '3D', icon: Box },
       { type: 'textInputNode', label: '文本', icon: FileText },
@@ -36,8 +37,8 @@ const NODE_CATEGORIES = [
     items: [
       { type: 'imageNode', label: '生成图片', icon: Wand2 },
       { type: 'videoNode', label: '生成视频', icon: Film },
-      { type: 'generate3DNode', label: '生成3D', icon: Box },
-      { type: 'generateAudioNode', label: '生成音频', icon: Volume2 },
+      { type: 'd3Node', label: '生成3D', icon: Box },
+      { type: 'audioNode', label: '生成音频', icon: Volume2 },
       { type: 'textNode', label: '生成文本', icon: Bot },
     ],
   },
@@ -72,7 +73,7 @@ const NODE_CATEGORIES = [
   {
     title: 'Custom 自定义',
     items: [
-      { type: 'customNode', label: '万能节点', icon: Settings },
+      { type: 'omniNode', label: '万能节点', icon: Settings },
     ],
   },
 ] as const;

@@ -18,6 +18,103 @@ function replaceVariables(template: string, variables: Record<string, string>): 
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] ?? '');
 }
 
+// 根据 URL 推断媒体类型
+function guessMediaType(url: string): 'image' | 'video' | 'audio' | 'unknown' {
+  const lower = url.toLowerCase();
+  if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
+  if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
+  // ComfyUI view 端点
+  if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
+  return 'unknown';
+}
+
+// 输出预览组件
+function OutputPreview({
+  loading,
+  errorMessage,
+  outputUrl,
+  textOutput,
+  outputType,
+}: {
+  loading: boolean;
+  errorMessage: string;
+  outputUrl?: string;
+  textOutput?: string;
+  outputType: string;
+}) {
+  if (loading) {
+    return (
+      <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+        <div className="flex items-center gap-2 text-neutral-500">
+          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <span className="text-[10px]">执行中...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+        <span className="text-[10px] text-error px-2 text-center">{errorMessage}</span>
+      </div>
+    );
+  }
+
+  // 智能判断：如果有 outputUrl，根据 URL 或 outputType 渲染
+  if (outputUrl) {
+    const mediaType = outputType !== 'text' ? outputType : guessMediaType(outputUrl);
+    
+    if (mediaType === 'image' || outputType === 'image') {
+      return (
+        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+          <img
+            src={outputUrl}
+            alt="生成结果"
+            className="max-w-full max-h-[200px] object-contain"
+          />
+        </div>
+      );
+    }
+    if (mediaType === 'video' || outputType === 'video') {
+      return (
+        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+          <video src={outputUrl} controls className="max-w-full max-h-[200px]" />
+        </div>
+      );
+    }
+    if (mediaType === 'audio' || outputType === 'audio') {
+      return (
+        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded p-2">
+          <audio src={outputUrl} controls className="w-full max-w-[280px]" />
+        </div>
+      );
+    }
+  }
+
+  // 文本输出
+  if (textOutput) {
+    return (
+      <div className="min-h-[100px] flex-1 bg-[#1a1a1a] rounded">
+        <div className="bg-surface text-text text-[10px] rounded p-1.5 border border-border max-h-[120px] overflow-y-auto whitespace-pre-wrap break-all font-mono w-full">
+          {textOutput}
+        </div>
+      </div>
+    );
+  }
+
+  // 无内容
+  return (
+    <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+      <span className="text-[10px] text-text-muted">运行配置</span>
+    </div>
+  );
+}
+
 // 从 JSON 对象中按路径提取值 (e.g. "data.results.0.url")
 function extractByPath(obj: unknown, path: string): unknown {
   const parts = path.split('.');
@@ -172,9 +269,12 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   };
   const loading = data.loading ?? false;
   const errorMessage = data.errorMessage ?? '';
-  const resultData = data.resultData ?? '';
   const progress = data.progress ?? 0;
   const nodeValues = (data.nodeValues ?? {}) as Record<string, Record<string, unknown>>;
+  
+  // 输出数据（根据 outputType 标准化）
+  const outputUrl = data.outputUrl;
+  const textOutput = data.textOutput;
 
   // UI 状态保留 useState
   const abortRef = useRef<AbortController | null>(null);
@@ -387,10 +487,12 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           signal: abortController.signal,
         });
 
-        // 根据 outputType 写入标准化输出字段
-        if (config.outputType === 'text') {
+        // ComfyUI 返回的通常是媒体 URL，智能判断
+        const isMediaUrl = result.includes('/view?') || 
+          /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(result);
+        
+        if (config.outputType === 'text' && !isMediaUrl) {
           updateNodeData(id, {
-            resultData: result,
             textOutput: result,
             outputUrl: undefined,
             outputUrls: undefined,
@@ -399,8 +501,8 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             progress: 0
           });
         } else {
+          // 图片/视频/音频，或 ComfyUI 返回的媒体 URL
           updateNodeData(id, {
-            resultData: result,
             outputUrl: result,
             textOutput: undefined,
             outputUrls: undefined,
@@ -420,10 +522,12 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           }, abortController.signal)
         : await executeSync(config, variables);
 
-      // 根据 outputType 写入标准化输出字段
-      if (config.outputType === 'text') {
+      // 智能判断：如果返回的是媒体 URL，写入 outputUrl
+      const isMediaUrl = result.includes('/view?') || 
+        /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(result);
+      
+      if (config.outputType === 'text' && !isMediaUrl) {
         updateNodeData(id, {
-          resultData: result,
           textOutput: result,
           outputUrl: undefined,
           outputUrls: undefined,
@@ -433,7 +537,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         });
       } else {
         updateNodeData(id, {
-          resultData: result,
           outputUrl: result,
           textOutput: undefined,
           outputUrls: undefined,
@@ -715,21 +818,16 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         {/* 运行模式 */}
         {!configMode && (
           <>
-            <button
-              onClick={handleExecute}
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-xs py-1.5 rounded font-medium"
-            >
-              {loading ? '执行中...' : '▶ 执行'}
-            </button>
-            {loading && (
-              <button
-                onClick={handleStop}
-                className="w-full bg-error hover:bg-error/80 text-text text-xs py-1.5 rounded font-medium"
-              >
-                ⏹ 停止
-              </button>
-            )}
+            {/* 输出预览区 */}
+            <OutputPreview
+              loading={loading}
+              errorMessage={errorMessage}
+              outputUrl={outputUrl}
+              textOutput={textOutput}
+              outputType={config.outputType}
+            />
+            
+            {/* 进度条 */}
             {loading && progress > 0 && (
               <div className="w-full bg-surface rounded-full h-1.5">
                 <div
@@ -738,13 +836,27 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 />
               </div>
             )}
-            {resultData && (
-              <div className="bg-surface text-text text-[10px] rounded p-1.5 border border-border max-h-[120px] overflow-y-auto whitespace-pre-wrap break-all font-mono">
-                {resultData}
-              </div>
-            )}
           </>
         )}
+        
+        {/* 底部按钮区 - 始终显示 */}
+        <div className="flex gap-1 mt-1 pt-1 border-t border-border">
+          <button
+            onClick={handleExecute}
+            disabled={loading}
+            className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1 rounded font-medium"
+          >
+            {loading ? '执行中...' : '▶ 执行'}
+          </button>
+          {loading && (
+            <button
+              onClick={handleStop}
+              className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1 rounded font-medium"
+            >
+              ⏹ 停止
+            </button>
+          )}
+        </div>
       </div>
       <Handle
         type="source"
