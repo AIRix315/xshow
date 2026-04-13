@@ -1,7 +1,16 @@
 // Ref: §4.1 — useFlowStore 测试
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useFlowStore } from './useFlowStore';
 import type { Node, Edge } from '@xyflow/react';
+
+// Mock execution engine
+vi.mock('@/utils/executionEngine', () => ({
+  executeCanvas: vi.fn(),
+}));
+
+vi.mock('@/store/execution', () => ({
+  getNodeExecutor: vi.fn(),
+}));
 
 // 创建测试用节点
 function makeNode(id: string, type: string): Node {
@@ -152,6 +161,102 @@ describe('useFlowStore', () => {
 
       expect(useFlowStore.getState().nodes).toHaveLength(4);
       expect(useFlowStore.getState().nodes.map((n) => n.type)).toEqual(['imageNode', 'textNode', 'videoNode', 'audioNode']);
+    });
+  });
+
+  describe('executeWorkflow', () => {
+    it('sets isRunning to true during execution', async () => {
+      const { executeCanvas } = await import('@/utils/executionEngine');
+      vi.mocked(executeCanvas).mockImplementation(async () => {});
+
+      const n1 = makeNode('n1', 'imageNode');
+      const n2 = makeNode('n2', 'outputNode');
+      useFlowStore.setState({ nodes: [n1, n2], edges: [], isRunning: false });
+
+      // 执行工作流
+      await useFlowStore.getState().executeWorkflow();
+
+      // 执行完成后 should be false
+      expect(useFlowStore.getState().isRunning).toBe(false);
+    });
+
+    it('calls executeCanvas with nodes and edges', async () => {
+      const { executeCanvas } = await import('@/utils/executionEngine');
+      vi.mocked(executeCanvas).mockResolvedValue(undefined);
+
+      const n1 = makeNode('n1', 'imageNode');
+      const n2 = makeNode('n2', 'outputNode');
+      const edge: Edge = { id: 'e1', source: 'n1', target: 'n2' };
+      useFlowStore.setState({ nodes: [n1, n2], edges: [edge] });
+
+      await useFlowStore.getState().executeWorkflow();
+
+      expect(executeCanvas).toHaveBeenCalledWith(
+        [n1, n2],
+        [edge],
+        expect.objectContaining({
+          executeNode: expect.any(Function),
+          onNodeStart: expect.any(Function),
+          onNodeComplete: expect.any(Function),
+          onNodeError: expect.any(Function),
+        }),
+        expect.any(AbortSignal)
+      );
+    });
+
+    it('updates currentNodeIds during execution', async () => {
+      const { executeCanvas } = await import('@/utils/executionEngine');
+      vi.mocked(executeCanvas).mockImplementation(async (_nodes, _edges, callbacks) => {
+        // Simulate node execution
+        if (callbacks?.onNodeStart) callbacks.onNodeStart('n1');
+        if (callbacks?.onNodeComplete) callbacks.onNodeComplete('n1');
+      });
+
+      const n1 = makeNode('n1', 'imageNode');
+      useFlowStore.setState({ nodes: [n1], edges: [] });
+
+      await useFlowStore.getState().executeWorkflow();
+
+      // currentNodeIds should be empty after execution
+      expect(useFlowStore.getState().currentNodeIds).toEqual([]);
+    });
+  });
+
+  describe('stopWorkflow', () => {
+    it('aborts running workflow', async () => {
+      const { executeCanvas } = await import('@/utils/executionEngine');
+      vi.mocked(executeCanvas).mockImplementation(async () => {
+        // Simulate a task that can be aborted
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+      });
+
+      const n1 = makeNode('n1', 'imageNode');
+      useFlowStore.setState({ nodes: [n1], edges: [], isRunning: false });
+
+      // 启动执行
+      useFlowStore.getState().executeWorkflow();
+
+      // isRunning should be true after starting
+      expect(useFlowStore.getState().isRunning).toBe(true);
+
+      // 停止执行
+      useFlowStore.getState().stopWorkflow();
+
+      expect(useFlowStore.getState().isRunning).toBe(false);
+      expect(useFlowStore.getState().currentNodeIds).toEqual([]);
+    });
+
+    it('creates AbortController on executeWorkflow', async () => {
+      const { executeCanvas } = await import('@/utils/executionEngine');
+      vi.mocked(executeCanvas).mockImplementation(async () => {});
+
+      const n1 = makeNode('n1', 'imageNode');
+      useFlowStore.setState({ nodes: [n1], edges: [] });
+
+      useFlowStore.getState().executeWorkflow();
+
+      // _abortController should be set
+      expect(useFlowStore.getState()._abortController).not.toBeNull();
     });
   });
 });

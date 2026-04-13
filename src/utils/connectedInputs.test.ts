@@ -58,7 +58,7 @@ describe('connectedInputs', () => {
 
     it('extracts audio from audioNode', () => {
       const nodes = [
-        makeNode('n1', 'audioNode', { audioUrl: 'https://example.com/audio.mp3' }),
+        makeNode('n1', 'audioInputNode', { audioUrl: 'https://example.com/audio.mp3' }),
         makeNode('n2', 'outputNode'),
       ];
       const edges = [makeEdge('e1', 'n1', 'n2', 'audio')];
@@ -184,9 +184,9 @@ describe('connectedInputs', () => {
       expect(result.images[0]).toBe('https://example.com/merged.png');
     });
 
-    it('extracts output from universal/customNode (image type)', () => {
+    it('extracts output from omniNode (image type)', () => {
       const nodes = [
-        makeNode('n1', 'customNode', {
+        makeNode('n1', 'omniNode', {
           outputUrl: 'https://example.com/custom.png',
           config: { outputType: 'image' },
         }),
@@ -200,9 +200,70 @@ describe('connectedInputs', () => {
       expect(result.images[0]).toBe('https://example.com/custom.png');
     });
 
-    it('extracts text output from universal/customNode (text type)', () => {
+    it('infers omniNode image from URL extension', () => {
       const nodes = [
-        makeNode('n1', 'customNode', {
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/output.jpg',
+          config: { outputType: 'text' }, // 即使配置是 text，URL 扩展名优先
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/output.jpg');
+    });
+
+    it('infers omniNode video from URL', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/video.mp4',
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.videos).toHaveLength(1);
+      expect(result.videos[0]).toBe('https://example.com/video.mp4');
+    });
+
+    it('infers omniNode audio from URL', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/audio.mp3',
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.audio).toHaveLength(1);
+      expect(result.audio[0]).toBe('https://example.com/audio.mp3');
+    });
+
+    it('recognizes ComfyUI view endpoint as image', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'http://localhost:8188/view?filename=output.png&subfolder=&type=output',
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('http://localhost:8188/view?filename=output.png&subfolder=&type=output');
+    });
+
+    it('extracts text output from omniNode (text type)', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
           textOutput: 'Custom API response',
           config: { outputType: 'text' },
         }),
