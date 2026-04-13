@@ -9,3 +9,4 @@ nul
 test-results
 playwright-report
 .playwright-mcp
+*.tsbuildinfo
