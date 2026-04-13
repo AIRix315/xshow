@@ -185,7 +185,9 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
 
   // ComfyUI 专用 state（初始化时自动加载第一个工作流）
-  const firstLocalWorkflow = (config.comfyuiSubType === 'local' && comfyuiConfig.localWorkflows.length > 0)
+  // 注意：config.comfyuiSubType 可能为 undefined，需用 ?? 'local' 回退
+  const subType = config.comfyuiSubType ?? 'local';
+  const firstLocalWorkflow = (subType === 'local' && comfyuiConfig.localWorkflows.length > 0)
     ? comfyuiConfig.localWorkflows[0]!
     : '';
   const [selectedWorkflow, setSelectedWorkflow] = useState(firstLocalWorkflow);
@@ -212,7 +214,7 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
 
     if (!workflowName) return;
 
-    const url = config.comfyuiSubType === 'cloud' ? comfyuiConfig.cloudUrl : comfyuiConfig.localUrl;
+    const url = subType === 'cloud' ? comfyuiConfig.cloudUrl : comfyuiConfig.localUrl;
     if (!url) return;
 
     const jsonStr = await fetchComfyWorkflowJson(url, workflowName);
@@ -518,7 +520,14 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             {/* ========== 模式选择（首位） ========== */}
             <select
               value={config.executionType ?? 'http'}
-              onChange={(e) => updateConfig({ executionType: e.target.value as 'http' | 'comfyui' })}
+              onChange={(e) => {
+                const newType = e.target.value as 'http' | 'comfyui';
+                updateConfig({
+                  executionType: newType,
+                  // 切换到 ComfyUI 模式时自动设置默认子类型为 local
+                  ...(newType === 'comfyui' && !config.comfyuiSubType ? { comfyuiSubType: 'local' } : {}),
+                });
+              }}
               className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
             >
               <option value="http">HTTP</option>
@@ -633,7 +642,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
               <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
                 <span className="text-[9px] text-green-400 font-medium">ComfyUI</span>
                 <select
-                  value={config.comfyuiSubType ?? 'local'}
+                  value={subType}
                   onChange={(e) => {
                     updateConfig({ comfyuiSubType: e.target.value as ComfyUISubType });
                     setSelectedWorkflow('');
@@ -649,7 +658,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 </select>
 
                 {/* 本地/Cloud: 工作流下拉 */}
-                {(config.comfyuiSubType === 'local' || config.comfyuiSubType === 'cloud') && (
+                {(subType === 'local' || subType === 'cloud') && (
                   <>
                     <select
                       value={selectedWorkflow}
@@ -657,7 +666,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                       className="w-full bg-surface text-text text-[9px] rounded px-1 py-0.5 border border-border"
                     >
                       <option value="">— 选择工作流 —</option>
-                      {(config.comfyuiSubType === 'local' ? comfyuiConfig.localWorkflows : comfyuiConfig.cloudWorkflows).map((w) => (
+                        {(subType === 'local' ? comfyuiConfig.localWorkflows : comfyuiConfig.cloudWorkflows).map((w) => (
                         <option key={w} value={w}>{w}</option>
                       ))}
                     </select>
@@ -689,7 +698,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 )}
 
                 {/* RunningHub: 工作流 ID */}
-                {(config.comfyuiSubType === 'runninghub' || config.comfyuiSubType === 'runninghubApp') && (
+                {(subType === 'runninghub' || subType === 'runninghubApp') && (
                   <>
                     <input
                       value={config.workflowId ?? ''}
@@ -697,7 +706,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                       placeholder="工作流 ID"
                       className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
                     />
-                    {config.comfyuiSubType === 'runninghubApp' && (
+                    {subType === 'runninghubApp' && (
                       <input
                         value={config.runninghubAppId ?? ''}
                         onChange={(e) => updateConfig({ runninghubAppId: e.target.value })}
