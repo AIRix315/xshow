@@ -5,3 +5,6 @@ dist-zip
 .env
 .env.*
 !.env.example
+nul
+test-results
+playwright-report

@@ -53,6 +53,7 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   gridMergeNode: GridMergeNode as unknown as ComponentType<NodeProps>,
   cropNode: CropNode as unknown as ComponentType<NodeProps>,
   customNode: UniversalNode as unknown as ComponentType<NodeProps>,
+  universalNode: UniversalNode as unknown as ComponentType<NodeProps>,
   // 输入节点
   textInputNode: TextInputNode as unknown as ComponentType<NodeProps>,
   videoInputNode: VideoInputNode as unknown as ComponentType<NodeProps>,
@@ -85,6 +86,7 @@ const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   gridMergeNode: { width: 300, height: 300 },
   cropNode: { width: 300, height: 300 },
   customNode: { width: 400, height: 300 },
+  universalNode: { width: 400, height: 300 },
   // 输入节点
   textInputNode: { width: 300, height: 200 },
   videoInputNode: { width: 320, height: 280 },
@@ -161,6 +163,7 @@ function getDefaultData(type: string): Record<string, unknown> {
       } as GridMergeNodeData;
     case 'cropNode':
       return {} as CropNodeData;
+    case 'universalNode':
     case 'customNode':
       return {
         label: '万能节点',

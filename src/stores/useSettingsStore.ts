@@ -12,6 +12,8 @@ import type {
   CustomNodeTemplate,
   GlobalTask,
   PresetPrompt,
+  ComfyUIConfig,
+  RunningHubApp,
 } from '@/types';
 import { createPersistStorage } from '@/utils/chromeStorage';
 
@@ -25,6 +27,8 @@ interface SettingsState {
   canvasSettings: CanvasSettings;
   // 系统设置
   systemSettings: SystemSettings;
+  // ComfyUI 配置
+  comfyuiConfig: ComfyUIConfig;
 }
 
 /** 画布设置 */
@@ -78,7 +82,17 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   configSavePath: '',
   embedBase64: false,
   saveDirectory: '',
-}
+};
+
+const DEFAULT_COMFYUI_CONFIG: ComfyUIConfig = {
+  localUrl: 'http://127.0.0.1:8188',
+  localWorkflows: [],
+  cloudUrl: '',
+  cloudWorkflows: [],
+  runninghubApiKey: '',
+  runninghubWorkflows: [],
+  runninghubApps: [],
+};
 
 interface SettingsActions {
   addChannel: (channel: ChannelConfig) => void;
@@ -102,6 +116,10 @@ interface SettingsActions {
   updateCanvasSettings: (patch: Partial<CanvasSettings>) => void;
   // 系统设置
   updateSystemSettings: (patch: Partial<SystemSettings>) => void;
+  // ComfyUI 配置
+  updateComfyuiConfig: (patch: Partial<ComfyUIConfig>) => void;
+  addRunninghubApp: (app: RunningHubApp) => void;
+  removeRunninghubApp: (id: string) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -116,6 +134,7 @@ export const useSettingsStore = create<SettingsStore>()(
       globalTasks: [],
       canvasSettings: DEFAULT_CANVAS_SETTINGS,
       systemSettings: DEFAULT_SYSTEM_SETTINGS,
+      comfyuiConfig: DEFAULT_COMFYUI_CONFIG,
 
       addChannel: (channel) =>
         set((s) => ({
@@ -227,6 +246,27 @@ export const useSettingsStore = create<SettingsStore>()(
       updateSystemSettings: (patch) =>
         set((s) => ({
           systemSettings: { ...s.systemSettings, ...patch },
+        })),
+
+      updateComfyuiConfig: (patch) =>
+        set((s) => ({
+          comfyuiConfig: { ...s.comfyuiConfig, ...patch },
+        })),
+
+      addRunninghubApp: (app) =>
+        set((s) => ({
+          comfyuiConfig: {
+            ...s.comfyuiConfig,
+            runninghubApps: [...s.comfyuiConfig.runninghubApps, app],
+          },
+        })),
+
+      removeRunninghubApp: (id) =>
+        set((s) => ({
+          comfyuiConfig: {
+            ...s.comfyuiConfig,
+            runninghubApps: s.comfyuiConfig.runninghubApps.filter((a) => a.id !== id),
+          },
         })),
     }),
     {

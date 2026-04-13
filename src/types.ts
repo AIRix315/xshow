@@ -3,7 +3,30 @@
 import type { Node } from '@xyflow/react';
 
 // §3.1 通道配置与全局 API 配置
-export type ComfyUISubType = 'local' | 'cloud' | 'runninghub';
+export type ComfyUISubType = 'local' | 'cloud' | 'runninghub' | 'runninghubApp';
+
+// ComfyUI 独立配置（与渠道商框架分离）
+export interface ComfyUIConfig {
+  // 本地 ComfyUI
+  localUrl: string;              // 本地 ComfyUI 地址（如 http://127.0.0.1:8188）
+  localWorkflows: string[];      // 本地检测到的 API 格式工作流列表
+
+  // ComfyUI Cloud
+  cloudUrl: string;              // Cloud API 地址
+  cloudWorkflows: string[];       // Cloud 检测到的 API 格式工作流列表
+
+  // RunningHub（共用一个 API Key）
+  runninghubApiKey: string;      // RunningHub API Key
+  runninghubWorkflows: string[];  // 工作流 ID 列表
+  runninghubApps: RunningHubApp[]; // APP 列表
+}
+
+// RunningHub APP 配置
+export interface RunningHubApp {
+  id: string;         // webappId
+  name: string;       // 显示名称
+  quickCreateCode?: string;  // quickCreateCode（可选）
+}
 
 export interface ChannelConfig {
   id: string;               // 唯一标识
@@ -177,10 +200,16 @@ export interface CustomNodeConfig {
   variables?: Record<string, string>;
   // ComfyUI 执行配置
   executionType?: 'http' | 'comfyui';
-  channelId?: string;
   comfyuiSubType?: ComfyUISubType;
+  // 工作流标识
+  workflowId?: string;           // RunningHub workflowId
+  workflowJson?: string;         // 本地/Cloud 工作流 JSON
+  workflowName?: string;          // 工作流显示名称
+  // RunningHub APP 模式
+  runninghubAppId?: string;       // webappId
+  runninghubQuickCreateCode?: string;  // quickCreateCode
+  // 节点字段映射
   nodeInfoList?: ComfyUINodeInfo[];
-  model?: string;
 }
 
 // ComfyUI 节点字段映射
@@ -197,7 +226,11 @@ export interface UniversalNodeData extends BaseNodeData {
   config: CustomNodeConfig;
   loading: boolean;
   progress?: number;
-  resultData?: string;
+  resultData?: string;       // 原始返回数据（兼容）
+  // 标准化输出字段（供下游节点读取）
+  outputUrl?: string;        // image/video/audio 单输出 URL
+  outputUrls?: string[];     // 多图/多输出 URL 数组
+  textOutput?: string;       // 文本输出
   errorMessage?: string;
   onAIAssist?: (desc: string, config: CustomNodeConfig) => Promise<string>;
   onGenerateCustom?: (nodeId: string) => void;
@@ -238,7 +271,15 @@ export interface ConditionalSwitchNodeData extends BaseNodeData { rules?: Array<
 export interface EaseCurveNodeData extends BaseNodeData { curveType?: string; }
 export interface FrameGrabNodeData extends BaseNodeData { inputVideoUrl?: string; framePosition?: number; resultImageUrl?: string; }
 export interface ImageCompareNodeData extends BaseNodeData { imageLeft?: string; imageRight?: string; mode?: string; }
-export interface OutputGalleryNodeData extends BaseNodeData { items?: Array<{ type: string }>; columns?: number; }
+export interface OutputGalleryNodeData extends BaseNodeData {
+  items?: Array<{ type: 'image' | 'video' | 'audio' | 'text'; url?: string; content?: string }>;
+  columns?: number;
+  // 上游数据输入字段
+  inputImages?: string[];
+  inputVideos?: string[];
+  inputAudio?: string[];
+  inputText?: string;
+}
 export interface OutputNodeData extends BaseNodeData { inputImageUrl?: string; inputVideoUrl?: string; inputAudioUrl?: string; inputValue?: string; label?: string; }
 export interface RouterNodeData extends BaseNodeData { outputCount?: number; inputValue?: unknown; }
 export interface SwitchNodeData extends BaseNodeData { enabled?: boolean; }

@@ -276,7 +276,7 @@ function FlowCanvasInner() {
   }));
 
   return (
-    <div className="flex h-full w-full relative" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div className="flex h-full w-full relative" onDragOver={(e) => e.preventDefault()} onDrop={onDrop} data-testid="flow-canvas">
       <div className="flex-1 h-full">
         <ReactFlow
           nodes={styledNodes}

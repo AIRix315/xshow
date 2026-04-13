@@ -1,12 +1,13 @@
 // Ref: §6.10 + 产物反推 — 万能节点 (AI 驱动 API 适配器)
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
-import { memo, useState, useCallback, useRef } from 'react';
+import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { UniversalNodeType, CustomNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateText } from '@/api/textApi';
-import { executeComfyWorkflow } from '@/api/comfyApi';
+import { executeComfyWorkflow, parseWorkflowNodes, fetchComfyWorkflowJson, uploadImageToComfyUI } from '@/api/comfyApi';
+import { getConnectedInputs } from '@/utils/connectedInputs';
 import BaseNodeWrapper from './BaseNode';
 import { Save, Sparkles } from 'lucide-react';
 import type { ComfyUISubType, ComfyUINodeInfo } from '@/types';
@@ -152,6 +153,8 @@ async function executeAsync(
 }
 
 function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeType>) {
+  const nodes = useFlowStore((s) => s.nodes);
+  const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const [configMode, setConfigMode] = useState(data.configMode ?? true);
   const [config, setConfig] = useState<CustomNodeConfig>(data.config ?? {
@@ -170,16 +173,105 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   const [progress, setProgress] = useState(data.progress ?? 0);
   const abortRef = useRef<AbortController | null>(null);
 
+  // 从上游节点读取数据
+  const upstreamData = useMemo(() => {
+    return getConnectedInputs(id, nodes, edges);
+  }, [id, nodes, edges]);
+
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const textChannelId = useSettingsStore((s) => s.apiConfig.textChannelId);
   const textModel = useSettingsStore((s) => s.apiConfig.textModel);
   const addTemplate = useSettingsStore((s) => s.addTemplate);
+  const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
+
+  // ComfyUI 专用 state（初始化时自动加载第一个工作流）
+  const firstLocalWorkflow = (config.comfyuiSubType === 'local' && comfyuiConfig.localWorkflows.length > 0)
+    ? comfyuiConfig.localWorkflows[0]!
+    : '';
+  const [selectedWorkflow, setSelectedWorkflow] = useState(firstLocalWorkflow);
+  const [parsedNodes, setParsedNodes] = useState<ReturnType<typeof parseWorkflowNodes>>([]);
+  const [nodeValues, setNodeValues] = useState<Record<string, Record<string, unknown>>>({});
+
+  // 初始化时如果已有 selectedWorkflow，加载节点
+  useEffect(() => {
+    if (selectedWorkflow && !parsedNodes.length) {
+      handleSelectWorkflow(selectedWorkflow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateConfig = useCallback((patch: Partial<CustomNodeConfig>) => {
     setConfig((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // AI 辅助：描述需求 → 自动填充 config
+  // 选择工作流后解析节点
+  const handleSelectWorkflow = useCallback(async (workflowName: string) => {
+    setSelectedWorkflow(workflowName);
+    setParsedNodes([]);
+    setNodeValues({});
+
+    if (!workflowName) return;
+
+    const url = config.comfyuiSubType === 'cloud' ? comfyuiConfig.cloudUrl : comfyuiConfig.localUrl;
+    if (!url) return;
+
+    const jsonStr = await fetchComfyWorkflowJson(url, workflowName);
+    if (!jsonStr) {
+      setErrorMessage(`读取工作流 "${workflowName}" 失败`);
+      return;
+    }
+
+    const nodes = parseWorkflowNodes(jsonStr);
+    setParsedNodes(nodes);
+
+    // 只初始化用户可编辑的字段（排除节点引用）
+    // 节点引用格式：["节点ID", 输出索引]，用户不应修改
+    const values: Record<string, Record<string, unknown>> = {};
+    for (const node of nodes) {
+      values[node.nodeId] = {};
+      for (const [field, fieldInfo] of Object.entries(node.inputs)) {
+        const val = fieldInfo?.value;
+        // 跳过节点引用（数组格式：[" nodeId", index]）
+        if (Array.isArray(val)) {
+          continue;  // 不添加到 nodeValues，不会被替换
+        }
+        // 只保留用户可编辑的简单值
+        if (val !== undefined && val !== null) {
+          const nv = values[node.nodeId];
+          if (nv) nv[field] = val;
+        }
+      }
+    }
+    setNodeValues(values);
+    setConfig((prev) => ({ ...prev, workflowJson: jsonStr }));
+  }, [config.comfyuiSubType, comfyuiConfig.localUrl, comfyuiConfig.cloudUrl]);
+
+  // 节点字段值变化
+  const handleNodeValueChange = useCallback((nodeId: string, field: string, value: unknown) => {
+    setNodeValues((prev) => ({
+      ...prev,
+      [nodeId]: { ...prev[nodeId], [field]: value },
+    }));
+  }, []);
+
+  // 从 nodeValues 生成 nodeInfoList
+  // 只包含用户显式修改过的字段，避免空值替换工作流原始值
+  const generateNodeInfoList = useCallback((): ComfyUINodeInfo[] => {
+    const list: ComfyUINodeInfo[] = [];
+    for (const [nodeId, fields] of Object.entries(nodeValues)) {
+      for (const [fieldName, value] of Object.entries(fields)) {
+        // 只有非空值才加入替换列表
+        // 空字符串会破坏 ComfyUI 节点 ID 引用（如 ["3"]）
+        const strValue = String(value ?? '');
+        if (strValue.trim() !== '') {
+          list.push({ nodeId, fieldName, defaultValue: strValue });
+        }
+      }
+    }
+    return list;
+  }, [nodeValues]);
+
+  // AI 辅助
   const handleAIAssist = useCallback(async () => {
     const channel = channels.find((c) => c.id === textChannelId);
     if (!channel) {
@@ -217,7 +309,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     }
   }, [channels, textChannelId, textModel]);
 
-  // 执行请求（根据 executionType 路由到 HTTP/ComfyUI）
+  // 执行请求
   const handleExecute = useCallback(async () => {
     if (loading) return;
     setLoading(true);
@@ -232,20 +324,75 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     try {
       // ComfyUI 执行模式
       if (config.executionType === 'comfyui') {
-        const channel = channels.find((c) => c.id === config.channelId);
-        if (!channel) {
-          throw new Error('未选择 ComfyUI 渠道商');
+        const subType = config.comfyuiSubType ?? 'local';
+        const currentComfyConfig = useSettingsStore.getState().comfyuiConfig;
+
+        const getChannelConfig = () => {
+          switch (subType) {
+            case 'local':
+              return { url: currentComfyConfig.localUrl, key: '' };
+            case 'cloud':
+              return { url: currentComfyConfig.cloudUrl, key: '' };
+            case 'runninghub':
+              return { url: '', key: currentComfyConfig.runninghubApiKey };
+            case 'runninghubApp':
+              return { url: '', key: currentComfyConfig.runninghubApiKey };
+            default:
+              return { url: '', key: '' };
+          }
+        };
+
+        const { url, key } = getChannelConfig();
+
+        if ((subType === 'local' || subType === 'cloud') && !config.workflowJson) {
+          throw new Error('请先选择工作流');
         }
-        if (!config.model) {
+        if ((subType === 'runninghub' || subType === 'runninghubApp') && !config.workflowId) {
           throw new Error('请输入工作流 ID');
         }
 
+        // 生成 nodeInfoList（保留工作流默认值）
+        const processedNodeInfoList = Object.keys(nodeValues).length > 0 
+          ? generateNodeInfoList() 
+          : [...(config.nodeInfoList ?? [])];
+        
+        // 图生图场景：如有上游图片且有 IMAGE 类型字段，上传到 ComfyUI
+        // 注意：只有当 upstreamData.images 有内容时才处理
+        if (subType === 'local' && url && upstreamData.images.length > 0) {
+          // 找到所有声明为 IMAGE 类型的字段
+          const imageFields = processedNodeInfoList.filter(n => n.fieldType === 'IMAGE');
+          
+          for (let i = 0; i < Math.min(imageFields.length, upstreamData.images.length); i++) {
+            const field = imageFields[i];
+            const imageUrl = upstreamData.images[i];
+            
+            if (field && imageUrl) {
+              try {
+                // 上传图片到 ComfyUI
+                const comfyFilename = await uploadImageToComfyUI(url, imageUrl, abortController.signal);
+                // 替换字段值为 ComfyUI 文件名
+                const fieldIndex = processedNodeInfoList.findIndex(n => n.nodeId === field.nodeId && n.fieldName === field.fieldName);
+                if (fieldIndex >= 0) {
+                  processedNodeInfoList[fieldIndex] = {
+                    ...processedNodeInfoList[fieldIndex]!,
+                    defaultValue: comfyFilename,
+                  };
+                }
+              } catch (uploadErr) {
+                console.error('[UniversalNode] 上传图片失败:', uploadErr);
+                throw new Error(`上传图片到 ComfyUI 失败: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`);
+              }
+            }
+          }
+        }
+
         const result = await executeComfyWorkflow({
-          channelUrl: channel.url,
-          channelKey: channel.key,
-          subType: config.comfyuiSubType ?? 'local',
-          workflowId: config.model,
-          nodeInfoList: config.nodeInfoList,
+          channelUrl: url,
+          channelKey: key,
+          subType,
+          workflowId: config.workflowId,
+          workflowJson: config.workflowJson,
+          nodeInfoList: processedNodeInfoList,
           onProgress: (p) => {
             setProgress(p);
             updateNodeData(id, { progress: p });
@@ -255,11 +402,33 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
         setResultData(result);
         setConfigMode(false);
-        updateNodeData(id, { resultData: result, loading: false, configMode: false, progress: 0 });
+        // 根据 outputType 写入标准化输出字段
+        if (config.outputType === 'text') {
+          updateNodeData(id, {
+            resultData: result,
+            textOutput: result,
+            outputUrl: undefined,
+            outputUrls: undefined,
+            loading: false,
+            configMode: false,
+            progress: 0
+          });
+        } else {
+          // image/video/audio
+          updateNodeData(id, {
+            resultData: result,
+            outputUrl: result,
+            textOutput: undefined,
+            outputUrls: undefined,
+            loading: false,
+            configMode: false,
+            progress: 0
+          });
+        }
         return;
       }
 
-      // HTTP 执行模式（同步/异步）
+      // HTTP 执行模式
       const variables = config.variables ?? {};
       const result = config.executionMode === 'async'
         ? await executeAsync(config, variables, (p) => {
@@ -269,7 +438,29 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         : await executeSync(config, variables);
       setResultData(result);
       setConfigMode(false);
-      updateNodeData(id, { resultData: result, loading: false, configMode: false, progress: 0 });
+      // 根据 outputType 写入标准化输出字段
+      if (config.outputType === 'text') {
+        updateNodeData(id, {
+          resultData: result,
+          textOutput: result,
+          outputUrl: undefined,
+          outputUrls: undefined,
+          loading: false,
+          configMode: false,
+          progress: 0
+        });
+      } else {
+        // image/video/audio
+        updateNodeData(id, {
+          resultData: result,
+          outputUrl: result,
+          textOutput: undefined,
+          outputUrls: undefined,
+          loading: false,
+          configMode: false,
+          progress: 0
+        });
+      }
     } catch (err) {
       if (abortController.signal.aborted) return;
       const msg = err instanceof Error ? err.message : '执行失败';
@@ -280,9 +471,8 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
       setProgress(0);
       abortRef.current = null;
     }
-  }, [loading, config, id, updateNodeData, channels]);
+  }, [loading, config, id, updateNodeData, nodeValues, generateNodeInfoList, upstreamData]);
 
-  // 停止执行
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     setLoading(false);
@@ -290,7 +480,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     updateNodeData(id, { loading: false, progress: 0 });
   }, [id, updateNodeData]);
 
-  // 保存模板
   const handleSaveTemplate = useCallback(() => {
     const name = prompt('模板名称：');
     if (!name) return;
@@ -303,9 +492,9 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360}>
-      <Handle type="target" position={Position.Left} id="custom-input" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]" />
+      <Handle type="target" position={Position.Left} id="custom-input" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]" data-handletype="any" />
       <div className="flex flex-col gap-2 p-2 min-w-[320px]">
-        {/* 标题 + 模式切换 */}
+        {/* 标题 + 配置/运行切换 */}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-text-secondary font-medium">{data.label || '万能节点'}</span>
           <div className="flex gap-1">
@@ -324,168 +513,204 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           </div>
         </div>
 
-        {/* 配置模式 */}
         {configMode && (
           <>
-            <input
-              value={config.apiUrl}
-              onChange={(e) => updateConfig({ apiUrl: e.target.value })}
-              placeholder="API URL"
-              className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-            />
-            <div className="flex gap-1">
-              <select
-                value={config.method}
-                onChange={(e) => updateConfig({ method: e.target.value })}
-                className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-              >
-                {['GET', 'POST', 'PUT', 'DELETE'].map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <select
-                value={config.outputType}
-                onChange={(e) => updateConfig({ outputType: e.target.value as CustomNodeConfig['outputType'] })}
-                className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-              >
-                {['text', 'image', 'video', 'audio'].map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <select
-                value={config.executionMode}
-                onChange={(e) => updateConfig({ executionMode: e.target.value as 'sync' | 'async' })}
-                className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-              >
-                <option value="sync">同步</option>
-                <option value="async">异步</option>
-              </select>
-              <select
-                value={config.executionType ?? 'http'}
-                onChange={(e) => updateConfig({ executionType: e.target.value as 'http' | 'comfyui' })}
-                className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
-              >
-                <option value="http">HTTP</option>
-                <option value="comfyui">ComfyUI</option>
-              </select>
-            </div>
-            <textarea
-              value={config.headers}
-              onChange={(e) => updateConfig({ headers: e.target.value })}
-              placeholder='Headers JSON (e.g. {"Authorization": "Bearer ..."})'
-              className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono"
-              rows={2}
-            />
-            <textarea
-              value={config.body}
-              onChange={(e) => updateConfig({ body: e.target.value })}
-              placeholder="Body (支持 {{变量名}} )"
-              className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono"
-              rows={2}
-            />
-            <input
-              value={config.resultPath}
-              onChange={(e) => updateConfig({ resultPath: e.target.value })}
-              placeholder="结果路径 (e.g. data.results.0.url)"
-              className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-            />
-            {/* 异步模式配置 */}
-            {config.executionMode === 'async' && (
-              <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
-                <span className="text-[9px] text-blue-400 font-medium">异步轮询配置</span>
+            {/* ========== 模式选择（首位） ========== */}
+            <select
+              value={config.executionType ?? 'http'}
+              onChange={(e) => updateConfig({ executionType: e.target.value as 'http' | 'comfyui' })}
+              className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
+            >
+              <option value="http">HTTP</option>
+              <option value="comfyui">ComfyUI</option>
+            </select>
+
+            {/* ========== HTTP 模式 ========== */}
+            {config.executionType === 'http' && (
+              <>
                 <input
-                  value={config.taskIdPath ?? ''}
-                  onChange={(e) => updateConfig({ taskIdPath: e.target.value })}
-                  placeholder="Task ID 路径 (e.g. id)"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                />
-                <input
-                  value={config.pollingUrl ?? ''}
-                  onChange={(e) => updateConfig({ pollingUrl: e.target.value })}
-                  placeholder="轮询 URL (留空则用 提交URL/taskId)"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                />
-                <input
-                  value={config.pollingResultPath ?? ''}
-                  onChange={(e) => updateConfig({ pollingResultPath: e.target.value })}
-                  placeholder="状态路径 (e.g. status)"
+                  value={config.apiUrl}
+                  onChange={(e) => updateConfig({ apiUrl: e.target.value })}
+                  placeholder="API URL"
                   className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
                 />
                 <div className="flex gap-1">
-                  <input
-                    value={config.pollingCompletedValue ?? ''}
-                    onChange={(e) => updateConfig({ pollingCompletedValue: e.target.value })}
-                    placeholder="完成值 (e.g. completed)"
-                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                  />
-                  <input
-                    value={config.pollingFailedValue ?? ''}
-                    onChange={(e) => updateConfig({ pollingFailedValue: e.target.value })}
-                    placeholder="失败值 (e.g. failed)"
-                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                  />
-                </div>
-                <input
-                  value={config.pollingResultDataPath ?? ''}
-                  onChange={(e) => updateConfig({ pollingResultDataPath: e.target.value })}
-                  placeholder="结果数据路径 (留空则用结果路径)"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                />
-                <input
-                  value={config.pollingProgressPath ?? ''}
-                  onChange={(e) => updateConfig({ pollingProgressPath: e.target.value })}
-                  placeholder="进度路径 (e.g. progress, 可选)"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                />
-              </div>
-            )}
-            {/* ComfyUI 配置 */}
-            {config.executionType === 'comfyui' && (
-              <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
-                <span className="text-[9px] text-green-400 font-medium">ComfyUI 配置</span>
-                <div className="flex gap-1">
                   <select
-                    value={config.comfyuiSubType ?? 'local'}
-                    onChange={(e) => updateConfig({ comfyuiSubType: e.target.value as ComfyUISubType })}
-                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
+                    value={config.method}
+                    onChange={(e) => updateConfig({ method: e.target.value })}
+                    className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
                   >
-                    <option value="local">本地 ComfyUI</option>
-                    <option value="cloud">ComfyUI Cloud</option>
-                    <option value="runninghub">RunningHub</option>
-                  </select>
-                  <select
-                    value={config.channelId ?? ''}
-                    onChange={(e) => updateConfig({ channelId: e.target.value })}
-                    className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
-                  >
-                    <option value="">选择渠道商</option>
-                    {channels.filter((c) => c.protocol === 'comfyui').map((ch) => (
-                      <option key={ch.id} value={ch.id}>{ch.name || ch.url || ch.id}</option>
+                    {['GET', 'POST', 'PUT', 'DELETE'].map((m) => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
+                  <select
+                    value={config.outputType}
+                    onChange={(e) => updateConfig({ outputType: e.target.value as CustomNodeConfig['outputType'] })}
+                    className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+                  >
+                    {['text', 'image', 'video', 'audio'].map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={config.executionMode}
+                    onChange={(e) => updateConfig({ executionMode: e.target.value as 'sync' | 'async' })}
+                    className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+                  >
+                    <option value="sync">同步</option>
+                    <option value="async">异步</option>
+                  </select>
                 </div>
-                <input
-                  value={config.model ?? ''}
-                  onChange={(e) => updateConfig({ model: e.target.value })}
-                  placeholder="工作流 ID"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                <textarea
+                  value={config.headers}
+                  onChange={(e) => updateConfig({ headers: e.target.value })}
+                  placeholder='Headers JSON (e.g. {"Authorization": "Bearer ..."})'
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono"
+                  rows={2}
                 />
                 <textarea
-                  value={JSON.stringify(config.nodeInfoList ?? [])}
-                  onChange={(e) => {
-                    try {
-                      const parsed = JSON.parse(e.target.value);
-                      updateConfig({ nodeInfoList: parsed as ComfyUINodeInfo[] });
-                    } catch {
-                      // Invalid JSON, ignore
-                    }
-                  }}
-                  placeholder='节点字段映射 [{"nodeId": "5", "fieldName": "prompt", "defaultValue": "hello"}]'
-                  rows={2}
+                  value={config.body}
+                  onChange={(e) => updateConfig({ body: e.target.value })}
+                  placeholder="Body (支持 {{变量名}} )"
                   className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono"
+                  rows={2}
                 />
+                <input
+                  value={config.resultPath}
+                  onChange={(e) => updateConfig({ resultPath: e.target.value })}
+                  placeholder="结果路径 (e.g. data.results.0.url)"
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                />
+                {config.executionMode === 'async' && (
+                  <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
+                    <span className="text-[9px] text-blue-400 font-medium">异步轮询配置</span>
+                    <input
+                      value={config.taskIdPath ?? ''}
+                      onChange={(e) => updateConfig({ taskIdPath: e.target.value })}
+                      placeholder="Task ID 路径 (e.g. id)"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                    />
+                    <input
+                      value={config.pollingUrl ?? ''}
+                      onChange={(e) => updateConfig({ pollingUrl: e.target.value })}
+                      placeholder="轮询 URL (留空则用 提交URL/taskId)"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                    />
+                    <input
+                      value={config.pollingResultPath ?? ''}
+                      onChange={(e) => updateConfig({ pollingResultPath: e.target.value })}
+                      placeholder="状态路径 (e.g. status)"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                    />
+                    <div className="flex gap-1">
+                      <input
+                        value={config.pollingCompletedValue ?? ''}
+                        onChange={(e) => updateConfig({ pollingCompletedValue: e.target.value })}
+                        placeholder="完成值 (e.g. completed)"
+                        className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                      />
+                      <input
+                        value={config.pollingFailedValue ?? ''}
+                        onChange={(e) => updateConfig({ pollingFailedValue: e.target.value })}
+                        placeholder="失败值 (e.g. failed)"
+                        className="flex-1 bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <input
+                      value={config.pollingResultDataPath ?? ''}
+                      onChange={(e) => updateConfig({ pollingResultDataPath: e.target.value })}
+                      placeholder="结果数据路径 (留空则用结果路径)"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ========== ComfyUI 模式 ========== */}
+            {config.executionType === 'comfyui' && (
+              <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
+                <span className="text-[9px] text-green-400 font-medium">ComfyUI</span>
+                <select
+                  value={config.comfyuiSubType ?? 'local'}
+                  onChange={(e) => {
+                    updateConfig({ comfyuiSubType: e.target.value as ComfyUISubType });
+                    setSelectedWorkflow('');
+                    setParsedNodes([]);
+                    setNodeValues({});
+                  }}
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
+                >
+                  <option value="local">本地 ComfyUI</option>
+                  <option value="cloud">ComfyUI Cloud</option>
+                  <option value="runninghub">RunningHub</option>
+                  <option value="runninghubApp">RunningHub APP</option>
+                </select>
+
+                {/* 本地/Cloud: 工作流下拉 */}
+                {(config.comfyuiSubType === 'local' || config.comfyuiSubType === 'cloud') && (
+                  <>
+                    <select
+                      value={selectedWorkflow}
+                      onChange={(e) => handleSelectWorkflow(e.target.value)}
+                      className="w-full bg-surface text-text text-[9px] rounded px-1 py-0.5 border border-border"
+                    >
+                      <option value="">— 选择工作流 —</option>
+                      {(config.comfyuiSubType === 'local' ? comfyuiConfig.localWorkflows : comfyuiConfig.cloudWorkflows).map((w) => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+
+                    {/* 节点参数（可调节） */}
+                    {parsedNodes.length > 0 && (
+                      <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto bg-[#111] rounded p-1">
+                        {parsedNodes.map((node) => (
+                          <div key={node.nodeId} className="flex flex-col gap-0.5 p-1 bg-surface rounded">
+                            <span className="text-[8px] text-primary font-mono">[{node.nodeId}] {node.classType}</span>
+                            {Object.entries(node.inputs)
+                              .filter(([, fieldInfo]) => !Array.isArray(fieldInfo?.value))
+                              .slice(0, 8)
+                              .map(([field]) => (
+                              <div key={field} className="flex items-center gap-1">
+                                <span className="text-[7px] text-text-muted w-12 truncate shrink-0">{field}</span>
+                                <input
+                                  value={String(nodeValues[node.nodeId]?.[field] ?? '')}
+                                  onChange={(e) => handleNodeValueChange(node.nodeId, field, e.target.value)}
+                                  className="flex-1 bg-surface-hover text-text text-[8px] rounded px-1 py-0.5 border border-border outline-none min-w-0"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* RunningHub: 工作流 ID */}
+                {(config.comfyuiSubType === 'runninghub' || config.comfyuiSubType === 'runninghubApp') && (
+                  <>
+                    <input
+                      value={config.workflowId ?? ''}
+                      onChange={(e) => updateConfig({ workflowId: e.target.value })}
+                      placeholder="工作流 ID"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                    />
+                    {config.comfyuiSubType === 'runninghubApp' && (
+                      <input
+                        value={config.runninghubAppId ?? ''}
+                        onChange={(e) => updateConfig({ runninghubAppId: e.target.value })}
+                        placeholder="WebAPP ID (可选)"
+                        className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                      />
+                    )}
+                  </>
+                )}
               </div>
             )}
+
+            {/* AI 辅助 + 保存模板 */}
             <div className="flex gap-1">
               <button
                 onClick={handleAIAssist}
@@ -539,7 +764,13 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           </>
         )}
       </div>
-      <Handle type="source" position={Position.Right} id="custom-output" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]" />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="custom-output"
+        className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]"
+        data-handletype={config.outputType || 'text'}
+      />
     </BaseNodeWrapper>
   );
 }

@@ -106,6 +106,7 @@ function NodeSidebar({ open, onClose }: NodeSidebarProps) {
 
       {/* 侧边栏面板 - fixed overlay，top: 44px 不覆盖顶部栏，对标原型 */}
       <div
+        data-testid="node-sidebar"
         className={`fixed top-11 left-0 bottom-0 w-[200px] z-50 bg-surface border-r border-border flex flex-col transition-transform duration-250 ease-in-out ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -126,6 +127,7 @@ function NodeSidebar({ open, onClose }: NodeSidebarProps) {
               {category.items.map(({ type, label, icon: Icon }) => (
                 <div
                   key={`${type}-${label}`}
+                  data-testid={`add-node-${type}`}
                   draggable
                   onDragStart={(e) => onDragStart(e, type)}
                   className="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-text bg-transparent hover:bg-surface-hover border border-transparent hover:border-border rounded-md cursor-grab active:cursor-grabbing transition-colors mb-0.5"
