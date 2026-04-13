@@ -19,45 +19,106 @@ import {
   Loader2,
 } from 'lucide-react';
 
-// 节点类型定义
+// 节点类型定义 - 对齐 NodeSidebar.tsx
+// 命名规范：Input 后缀 = 输入节点，无后缀 = 生成节点
 type NodeType =
+  // Input 输入
+  | 'imageInputNode'
+  | 'videoInputNode'
+  | 'audioInputNode'
+  | 'textInputNode'
+  | 'viewer3DNode'
+  // Text 文本
+  | 'promptNode'
+  | 'promptConstructorNode'
+  // Generate 生成
   | 'imageNode'
-  | 'textNode'
   | 'videoNode'
+  | 'd3Node'
   | 'audioNode'
+  | 'textNode'
+  // Process 处理
+  | 'annotateNode'
   | 'gridSplitNode'
-  | 'gridMergeNode'
+  | 'videoStitchNode'
+  | 'videoTrimNode'
+  | 'easeCurveNode'
+  | 'frameGrabNode'
+  | 'imageCompareNode'
   | 'cropNode'
-  | 'customNode';
+  | 'gridMergeNode'
+  // Route 路由
+  | 'routerNode'
+  | 'switchNode'
+  | 'conditionalSwitchNode'
+  // Output 输出
+  | 'outputNode'
+  | 'outputGalleryNode'
+  // Custom 自定义
+  | 'omniNode';
 
-// 节点分类
+// 节点分类 - 对齐 NodeSidebar.tsx
 const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; icon: string }[] }[] = [
   {
     label: 'Input',
     nodes: [
-      { type: 'imageNode', label: 'Image', icon: 'image' },
-      { type: 'videoNode', label: 'Video', icon: 'video' },
-      { type: 'audioNode', label: 'Audio', icon: 'audio' },
+      { type: 'imageInputNode', label: 'Image', icon: 'image' },
+      { type: 'audioInputNode', label: 'Audio', icon: 'audio' },
+      { type: 'videoInputNode', label: 'Video', icon: 'video' },
+      { type: 'viewer3DNode', label: '3D', icon: '3d' },
+      { type: 'textInputNode', label: 'Text', icon: 'text' },
     ],
   },
   {
     label: 'Text',
     nodes: [
-      { type: 'textNode', label: 'Prompt', icon: 'text' },
+      { type: 'promptNode', label: 'Prompt', icon: 'prompt' },
+      { type: 'promptConstructorNode', label: 'Prompt Builder', icon: 'layers' },
+    ],
+  },
+  {
+    label: 'Generate',
+    nodes: [
+      { type: 'imageNode', label: 'Gen Image', icon: 'wand' },
+      { type: 'videoNode', label: 'Gen Video', icon: 'film' },
+      { type: 'd3Node', label: 'Gen 3D', icon: '3d' },
+      { type: 'audioNode', label: 'Gen Audio', icon: 'volume' },
+      { type: 'textNode', label: 'Gen Text', icon: 'bot' },
     ],
   },
   {
     label: 'Process',
     nodes: [
-      { type: 'cropNode', label: 'Crop', icon: 'crop' },
+      { type: 'annotateNode', label: 'Annotate', icon: 'pen' },
       { type: 'gridSplitNode', label: 'Split Grid', icon: 'split' },
+      { type: 'videoStitchNode', label: 'Video Stitch', icon: 'film' },
+      { type: 'videoTrimNode', label: 'Video Trim', icon: 'scissors' },
+      { type: 'easeCurveNode', label: 'Ease Curve', icon: 'clock' },
+      { type: 'frameGrabNode', label: 'Frame Grab', icon: 'frame' },
+      { type: 'imageCompareNode', label: 'Compare', icon: 'compare' },
+      { type: 'cropNode', label: 'Crop', icon: 'crop' },
       { type: 'gridMergeNode', label: 'Merge Grid', icon: 'merge' },
+    ],
+  },
+  {
+    label: 'Route',
+    nodes: [
+      { type: 'routerNode', label: 'Router', icon: 'branch' },
+      { type: 'switchNode', label: 'Switch', icon: 'toggle' },
+      { type: 'conditionalSwitchNode', label: 'Condition', icon: 'merge' },
+    ],
+  },
+  {
+    label: 'Output',
+    nodes: [
+      { type: 'outputNode', label: 'Output', icon: 'download' },
+      { type: 'outputGalleryNode', label: 'Gallery', icon: 'gallery' },
     ],
   },
   {
     label: 'Custom',
     nodes: [
-      { type: 'customNode', label: '万能节点', icon: 'custom' },
+      { type: 'omniNode', label: 'Omni', icon: 'settings' },
     ],
   },
 ];
@@ -65,6 +126,7 @@ const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; 
 // 图标映射 - 使用字符串 key 获取图标组件
 const getIcon = (iconName: string) => {
   switch (iconName) {
+    // Input 输入
     case 'image':
       return Image;
     case 'text':
@@ -73,13 +135,49 @@ const getIcon = (iconName: string) => {
       return Video;
     case 'audio':
       return Mic;
-    case 'crop':
-      return Scissors;
+    case '3d':
+      return Grid3X3; // Box 替代
+    // Text 文本
+    case 'prompt':
+      return FileText;
+    case 'layers':
+      return LayoutGrid;
+    // Generate 生成
+    case 'wand':
+      return Settings; // Wand2 替代
+    case 'film':
+      return Video;
+    case 'volume':
+      return Mic;
+    case 'bot':
+      return FileText; // Bot 替代
+    // Process 处理
+    case 'pen':
+      return Scissors; // PenTool 替代
     case 'split':
       return Grid3X3;
+    case 'clock':
+      return Settings;
+    case 'frame':
+      return Settings;
+    case 'compare':
+      return Settings;
+    case 'crop':
+      return Scissors;
     case 'merge':
       return LayoutGrid;
-    case 'custom':
+    // Route 路由
+    case 'branch':
+      return Settings; // GitBranch 替代
+    case 'toggle':
+      return Settings; // ToggleLeft 替代
+    // Output 输出
+    case 'download':
+      return Settings; // Download 替代
+    case 'gallery':
+      return LayoutGrid;
+    // Custom
+    case 'settings':
       return Settings;
     default:
       return Settings;
@@ -163,10 +261,11 @@ function GenerateDropdown() {
   );
 
   const generationNodes: { type: NodeType; label: string; icon: string }[] = [
-    { type: 'imageNode', label: 'Image', icon: 'image' },
-    { type: 'textNode', label: 'LLM/Text', icon: 'text' },
-    { type: 'videoNode', label: 'Video', icon: 'video' },
-    { type: 'audioNode', label: 'Audio', icon: 'audio' },
+    { type: 'imageNode', label: 'Image', icon: 'wand' },
+    { type: 'textNode', label: 'LLM/Text', icon: 'bot' },
+    { type: 'videoNode', label: 'Video', icon: 'film' },
+    { type: 'audioNode', label: 'Audio', icon: 'volume' },
+    { type: 'd3Node', label: '3D', icon: '3d' },
   ];
 
   return (
@@ -294,11 +393,11 @@ export default function FloatingActionBar() {
   return (
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50">
       <div className="flex items-center gap-0.5 bg-neutral-800/95 rounded-lg shadow-lg border border-neutral-700/80 px-1.5 py-1">
-        {/* 基础节点按钮 */}
-        <NodeButton type="imageNode" label="Image" />
-        <NodeButton type="videoNode" label="Video" />
-        <NodeButton type="textNode" label="Prompt" />
-        <NodeButton type="audioNode" label="Audio" />
+        {/* 基础节点按钮 - 输入节点 (Input 后缀) */}
+        <NodeButton type="imageInputNode" label="Image" />
+        <NodeButton type="videoInputNode" label="Video" />
+        <NodeButton type="textInputNode" label="Text" />
+        <NodeButton type="audioInputNode" label="Audio" />
 
         {/* 分隔线 */}
         <div className="w-px h-5 bg-neutral-600 mx-1.5" />
