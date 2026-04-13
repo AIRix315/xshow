@@ -1,6 +1,6 @@
 // Ref: node-banana Generate 3D Node + 本地实现
 // 3D 生成需要后端服务，此处使用本地 Canvas 3D 预览占位
-import { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { memo, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { Generate3DNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -8,11 +8,14 @@ import BaseNodeWrapper from './BaseNode';
 
 function Generate3DNode({ id, data, selected }: NodeProps<Generate3DNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [prompt, setPrompt] = useState(data.prompt ?? '');
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [progress, setProgress] = useState(data.progress ?? 0);
-  const [modelUrl, setModelUrl] = useState(data.modelUrl ?? '');
+
+  // Business data from store
+  const prompt = data.prompt ?? '';
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const progress = data.progress ?? 0;
+  const modelUrl = data.modelUrl ?? '';
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
 
@@ -64,23 +67,20 @@ function Generate3DNode({ id, data, selected }: NodeProps<Generate3DNodeType>) {
 
   const handleGenerate = useCallback(() => {
     if (!prompt.trim()) return;
-    setLoading(true);
-    setErrorMessage('');
-    setProgress(0);
+    updateNodeData(id, { loading: true, errorMessage: '', progress: 0 });
 
     // 模拟生成过程（实际需要后端 3D API）
     let currentProgress = 0;
     const interval = setInterval(() => {
       currentProgress += 10;
-      setProgress(currentProgress);
+      updateNodeData(id, { progress: currentProgress });
       
       if (currentProgress >= 100) {
         clearInterval(interval);
-        setLoading(false);
         // 生成虚拟 3D 模型 URL（实际需要后端返回）
-        setModelUrl(`data:model/gltf-binary;base64,placeholder`);
+        const newModelUrl = `data:model/gltf-binary;base64,placeholder`;
         updateNodeData(id, { 
-          modelUrl: `data:model/gltf-binary;base64,placeholder`, 
+          modelUrl: newModelUrl, 
           loading: false, 
           progress: 0 
         });
@@ -89,8 +89,6 @@ function Generate3DNode({ id, data, selected }: NodeProps<Generate3DNodeType>) {
   }, [prompt, updateNodeData, id]);
 
   const handleClear = useCallback(() => {
-    setModelUrl('');
-    setProgress(0);
     updateNodeData(id, { modelUrl: '', progress: 0 });
   }, [updateNodeData, id]);
 
@@ -161,10 +159,7 @@ function Generate3DNode({ id, data, selected }: NodeProps<Generate3DNodeType>) {
           {/* 提示词输入 - 增加高度 */}
           <textarea
             value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              updateNodeData(id, { prompt: e.target.value });
-            }}
+            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
             placeholder="输入 3D 模型描述..."
             className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
             rows={3}

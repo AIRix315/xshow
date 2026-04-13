@@ -8,10 +8,14 @@ import BaseNodeWrapper from './BaseNode';
 
 function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [text, setText] = useState(data.text ?? '');
-  const [voice, setVoice] = useState(data.voice ?? 'zh-CN');
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+
+  // Business data from store
+  const text = data.text ?? '';
+  const voice = data.voice ?? 'zh-CN';
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+
+  // Pure UI state (not business data)
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -28,13 +32,12 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
     if (!text.trim()) return;
     
     if (!('speechSynthesis' in window)) {
-      setErrorMessage('您的浏览器不支持语音合成');
+      updateNodeData(id, { errorMessage: '您的浏览器不支持语音合成' });
       return;
     }
 
-    setLoading(true);
+    updateNodeData(id, { loading: true, errorMessage: '' });
     setIsGenerating(true);
-    setErrorMessage('');
     
     // 停止之前的语音
     window.speechSynthesis.cancel();
@@ -52,15 +55,14 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
 
     // 生成音频 blob
     utterance.onend = () => {
-      setLoading(false);
       setIsGenerating(false);
     };
     
     utterance.onerror = (event) => {
       console.error('Speech synthesis error:', event);
-      setLoading(false);
+      updateNodeData(id, { loading: false });
       setIsGenerating(false);
-      setErrorMessage('语音生成失败');
+      updateNodeData(id, { errorMessage: '语音生成失败' });
     };
 
     // 由于 SpeechSynthesis 不能直接生成音频文件，我们使用录音 API 或提示用户
@@ -93,7 +95,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
       
       // 由于浏览器无法直接用 SpeechSynthesis 生成音频文件，
       // 我们使用提示方式并利用已有 AudioNode 的 TTS 功能
-      setLoading(false);
+      updateNodeData(id, { loading: false });
       setIsGenerating(false);
       
       // 尝试使用 AudioNode 的 TTS 功能（它已有完整实现）
@@ -120,9 +122,9 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
       
     } catch (err) {
       console.error('Audio generation error:', err);
-      setLoading(false);
+      updateNodeData(id, { loading: false });
       setIsGenerating(false);
-      setErrorMessage('音频生成失败');
+      updateNodeData(id, { errorMessage: '音频生成失败' });
     }
   }, [updateNodeData, id, getVoices]);
 
@@ -210,10 +212,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
           {/* 文本输入 - 增加高度 */}
           <textarea
             value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              updateNodeData(id, { text: e.target.value });
-            }}
+            onChange={(e) => updateNodeData(id, { text: e.target.value })}
             placeholder="输入要转换为语音的文本..."
             className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
             rows={3}
@@ -222,10 +221,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeTy
           {/* 语言/语音选择 */}
           <select
             value={voice}
-            onChange={(e) => {
-              setVoice(e.target.value);
-              updateNodeData(id, { voice: e.target.value });
-            }}
+            onChange={(e) => updateNodeData(id, { voice: e.target.value })}
             className="w-full bg-surface text-text text-xs rounded p-1.5 border border-border focus:border-primary outline-none"
           >
             {languageOptions.map((opt) => (

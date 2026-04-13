@@ -1,25 +1,36 @@
 // Ref: node-banana PromptConstructor Node
-import { memo, useState } from 'react';
+// Store-only 模式：对标 node-banana
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { PromptConstructorNodeType } from '@/types';
+import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
-function PromptConstructorNode({ data, selected }: NodeProps<PromptConstructorNodeType>) {
-  const [parts, setParts] = useState(data.parts ?? [{ id: '1', text: '', enabled: true }]);
+interface PromptPart {
+  id: string;
+  text: string;
+  enabled: boolean;
+}
+
+function PromptConstructorNode({ id, data, selected }: NodeProps<PromptConstructorNodeType>) {
+  const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  
+  // Store-only：直接读 data，不使用 useState
+  const parts = (data.parts ?? [{ id: '1', text: '', enabled: true }]) as PromptPart[];
   const combined = parts.filter((p) => p.enabled && p.text.trim()).map((p) => p.text).join('\n');
 
-  const addPart = () => {
-    setParts([...parts, { id: Date.now().toString(), text: '', enabled: true }]);
-  };
+  const addPart = useCallback(() => {
+    updateNodeData(id, { parts: [...parts, { id: Date.now().toString(), text: '', enabled: true }] });
+  }, [id, parts, updateNodeData]);
 
-  const removePart = (id: string) => {
+  const removePart = useCallback((partId: string) => {
     if (parts.length <= 1) return;
-    setParts(parts.filter((p) => p.id !== id));
-  };
+    updateNodeData(id, { parts: parts.filter((p) => p.id !== partId) });
+  }, [id, parts, updateNodeData]);
 
-  const updatePart = (id: string, patch: Partial<{ text: string; enabled: boolean }>) => {
-    setParts(parts.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  };
+  const updatePart = useCallback((partId: string, patch: Partial<PromptPart>) => {
+    updateNodeData(id, { parts: parts.map((p) => (p.id === partId ? { ...p, ...patch } : p)) });
+  }, [id, parts, updateNodeData]);
 
   return (
     <BaseNodeWrapper selected={!!selected} title="构造">

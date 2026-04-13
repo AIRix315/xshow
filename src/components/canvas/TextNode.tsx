@@ -1,7 +1,7 @@
 // Ref: node-banana LLMGenerateNode.tsx + 悬停展开模式
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // 模式：默认只显示文本输出，hover 显示完整参数
-import { memo, useState, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { TextNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -15,13 +15,15 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const addNodes = useFlowStore((s) => s.addNodes);
   const addEdge = useFlowStore((s) => s.addEdge);
-  const [prompt, setPrompt] = useState(data.prompt ?? '');
-  const [text, setText] = useState(data.text ?? '');
-  const [loading, setLoading] = useState(data.loading ?? false);
-  const [errorMessage, setErrorMessage] = useState(data.errorMessage ?? '');
-  const [autoSplit, setAutoSplit] = useState(data.autoSplit ?? false);
-  const [selectedModel, setSelectedModel] = useState(data.selectedModel ?? '');
-  const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>((data as { selectedChannelId?: string }).selectedChannelId);
+
+  // 直接从 data 读取业务数据
+  const prompt = data.prompt ?? '';
+  const text = data.text ?? '';
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const autoSplit = data.autoSplit ?? false;
+  const selectedModel = data.selectedModel ?? '';
+  const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
 
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const textChannelId = useSettingsStore((s) => s.apiConfig.textChannelId);
@@ -37,12 +39,9 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
     if (!prompt.trim() || loading) return;
     const channel = channels.find((c) => c.id === currentChannelId);
     if (!channel) {
-      setErrorMessage('未选择文本供应商');
       updateNodeData(id, { errorMessage: '未选择文本供应商' });
       return;
     }
-    setLoading(true);
-    setErrorMessage('');
     updateNodeData(id, { loading: true, errorMessage: '', prompt: prompt.trim() });
     try {
       const result = await generateText({
@@ -53,7 +52,6 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
         messages: [{ role: 'user', content: prompt.trim() }],
         autoSplit,
       });
-      setText(result.text);
       updateNodeData(id, { text: result.text, loading: false });
 
       // autoSplit: 自动创建子节点并连线
@@ -94,10 +92,7 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '文本生成失败';
-      setErrorMessage(msg);
       updateNodeData(id, { loading: false, errorMessage: msg });
-    } finally {
-      setLoading(false);
     }
   }, [prompt, loading, channels, textChannelId, currentModel, autoSplit, id, updateNodeData]);
 
@@ -159,10 +154,7 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
           {/* 提示词输入 - 增加高度 */}
           <textarea
             value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              updateNodeData(id, { prompt: e.target.value });
-            }}
+            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
             placeholder="输入文本描述..."
             className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
             rows={3}
@@ -173,14 +165,8 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
             type="text"
             selectedChannelId={selectedChannelId}
             selectedModel={selectedModel}
-            onChannelChange={(channelId) => {
-              setSelectedChannelId(channelId);
-              updateNodeData(id, { selectedChannelId: channelId });
-            }}
-            onModelChange={(model) => {
-              setSelectedModel(model);
-              updateNodeData(id, { selectedModel: model });
-            }}
+            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
           />
 
           {/* autoSplit 选项 */}
@@ -188,10 +174,7 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
             <input
               type="checkbox"
               checked={autoSplit}
-              onChange={(e) => {
-                setAutoSplit(e.target.checked);
-                updateNodeData(id, { autoSplit: e.target.checked });
-              }}
+              onChange={(e) => updateNodeData(id, { autoSplit: e.target.checked })}
               className="accent-blue-500"
             />
             自动拆分输出

@@ -1,7 +1,9 @@
 // Ref: node-banana Ease Curve Node
-import { memo, useState } from 'react';
+// Store-only 模式：对标 node-banana
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { EaseCurveNodeType } from '@/types';
+import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
 const CURVE_PATHS: Record<string, string> = {
@@ -12,9 +14,18 @@ const CURVE_PATHS: Record<string, string> = {
   custom: 'M0 40 Q20 40 40 0',
 };
 
-function EaseCurveNode({ data, selected }: NodeProps<EaseCurveNodeType>) {
-  const [curveType, setCurveType] = useState(data.curveType ?? 'ease-in-out');
+type CurveType = 'ease-in' | 'ease-out' | 'ease-in-out' | 'linear' | 'custom';
+
+function EaseCurveNode({ id, data, selected }: NodeProps<EaseCurveNodeType>) {
+  const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  
+  // Store-only：直接读 data，不使用 useState
+  const curveType = data.curveType ?? 'ease-in-out';
   const path = CURVE_PATHS[curveType] ?? CURVE_PATHS['ease-in-out'];
+  
+  const handleCurveTypeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    updateNodeData(id, { curveType: e.target.value as CurveType });
+  }, [id, updateNodeData]);
 
   return (
     <BaseNodeWrapper selected={!!selected} title="缓动">
@@ -30,7 +41,7 @@ function EaseCurveNode({ data, selected }: NodeProps<EaseCurveNodeType>) {
         </div>
         <select
           value={curveType}
-          onChange={(e) => setCurveType(e.target.value as 'ease-in' | 'ease-out' | 'ease-in-out' | 'linear' | 'custom')}
+          onChange={handleCurveTypeChange}
           className="w-full bg-surface text-text text-xs rounded px-2 py-1 border border-border outline-none"
         >
           <option value="ease-in">ease-in</option>

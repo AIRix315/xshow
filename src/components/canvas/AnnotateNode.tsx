@@ -32,11 +32,14 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
   const sourceNode = incomingEdge ? nodes.find((n) => n.id === incomingEdge.source) : undefined;
   const sourceImageUrl = data.inputImageUrl ?? (sourceNode?.data?.imageUrl as string | undefined);
   
-  const [annotations, setAnnotations] = useState<Annotation[]>(() => data.annotations ?? []);
+  // Store-only: 业务数据从 data 读取
+  const annotations = data.annotations ?? [];
+  const fontSize = data.fontSize ?? 16;
+  const color = data.color ?? '#ef4444';
+  const annotationText = data.annotationText ?? '';
+  
+  // UI 状态：保持 local useState
   const [currentTool, setCurrentTool] = useState<ToolType>('text');
-  const [fontSize, setFontSize] = useState(data.fontSize ?? 16);
-  const [color, setColor] = useState(data.color ?? '#ef4444');
-  const [annotationText, setAnnotationText] = useState(data.annotationText ?? '');
   const [errorMessage, setErrorMessage] = useState('');
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -203,7 +206,6 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
         color,
       };
       const newAnnotations = [...annotations, newAnnotation];
-      setAnnotations(newAnnotations);
       updateNodeData(id, { annotations: newAnnotations });
     } else {
       // 开始绘制形状
@@ -253,7 +255,6 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
         id: Date.now().toString(),
       };
       const newAnnotations = [...annotations, newAnnotation];
-      setAnnotations(newAnnotations);
       updateNodeData(id, { annotations: newAnnotations });
     }
     
@@ -262,14 +263,12 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
   }, [isDrawing, currentDraw, annotations, updateNodeData, id]);
 
   const handleClearAll = useCallback(() => {
-    setAnnotations([]);
     updateNodeData(id, { annotations: [] });
   }, [updateNodeData, id]);
 
   const handleUndo = useCallback(() => {
     if (annotations.length === 0) return;
     const newAnnotations = annotations.slice(0, -1);
-    setAnnotations(newAnnotations);
     updateNodeData(id, { annotations: newAnnotations });
   }, [annotations, updateNodeData, id]);
 
@@ -349,7 +348,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
             <input
               type="text"
               value={annotationText}
-              onChange={(e) => setAnnotationText(e.target.value)}
+              onChange={(e) => updateNodeData(id, { annotationText: e.target.value })}
               placeholder="标注文字..."
               className="w-full bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
             />
@@ -361,7 +360,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
             <input
               type="number"
               value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
+              onChange={(e) => updateNodeData(id, { fontSize: Number(e.target.value) })}
               min={8}
               max={72}
               className="w-14 bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border outline-none"
@@ -370,7 +369,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
             <input
               type="color"
               value={color}
-              onChange={(e) => setColor(e.target.value)}
+              onChange={(e) => updateNodeData(id, { color: e.target.value })}
               className="w-6 h-5 rounded border border-border cursor-pointer bg-transparent"
             />
           </div>

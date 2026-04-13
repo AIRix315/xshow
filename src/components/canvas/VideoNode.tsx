@@ -1,6 +1,6 @@
 // Ref: node-banana GenerateVideoNode.tsx + 悬停展开模式
 // 功能：通过 API 生成视频
-import { memo, useState, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { VideoNode as VideoNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -11,15 +11,17 @@ import ProviderModelSelector from './ProviderModelSelector';
 
 function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [prompt, setPrompt] = useState(data.prompt ?? '');
-  const [loading, setLoading] = useState(data.loading ?? false);
-  const [errorMessage, setErrorMessage] = useState(data.errorMessage ?? '');
-  const [progress, setProgress] = useState(data.progress ?? 0);
-  const [videoUrl, setVideoUrl] = useState(data.videoUrl ?? '');
-  const [thumbnailUrl, setThumbnailUrl] = useState(data.thumbnailUrl ?? '');
-  const [selectedModel, setSelectedModel] = useState(data.selectedModel ?? '');
-  const [selectedSeconds, setSelectedSeconds] = useState(data.selectedSeconds ?? '');
-  const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>((data as { selectedChannelId?: string }).selectedChannelId);
+
+  // Store-only: read directly from data
+  const prompt = data.prompt ?? '';
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const progress = data.progress ?? 0;
+  const videoUrl = data.videoUrl ?? '';
+  const thumbnailUrl = data.thumbnailUrl ?? '';
+  const selectedModel = data.selectedModel ?? '';
+  const selectedSeconds = data.selectedSeconds ?? '';
+  const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
 
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const videoChannelId = useSettingsStore((s) => s.apiConfig.videoChannelId);
@@ -37,13 +39,9 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
     if (!prompt.trim() || loading) return;
     const channel = channels.find((c) => c.id === currentChannelId);
     if (!channel) {
-      setErrorMessage('未选择视频供应商');
       updateNodeData(id, { errorMessage: '未选择视频供应商' });
       return;
     }
-    setLoading(true);
-    setErrorMessage('');
-    setProgress(0);
     updateNodeData(id, { loading: true, errorMessage: '', progress: 0, selectedChannelId: currentChannelId, selectedModel: currentModel });
     try {
       const result = await generateVideo(
@@ -56,20 +54,13 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
           seconds: selectedSeconds || durations[0] || '10',
         },
         (p) => {
-          setProgress(p);
           updateNodeData(id, { progress: p });
         },
       );
-      setVideoUrl(result.videoUrl);
-      setThumbnailUrl(result.thumbnailUrl);
       updateNodeData(id, { videoUrl: result.videoUrl, thumbnailUrl: result.thumbnailUrl, loading: false, progress: 0 });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '视频生成失败';
-      setErrorMessage(msg);
       updateNodeData(id, { loading: false, errorMessage: msg, progress: 0 });
-    } finally {
-      setLoading(false);
-      setProgress(0);
     }
   }, [prompt, loading, channels, videoChannelId, currentModel, data.size, selectedSeconds, durations, id, updateNodeData]);
 
@@ -136,7 +127,6 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
           <textarea
             value={prompt}
             onChange={(e) => {
-              setPrompt(e.target.value);
               updateNodeData(id, { prompt: e.target.value });
             }}
             placeholder="输入视频描述..."
@@ -151,18 +141,16 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
               selectedChannelId={selectedChannelId}
               selectedModel={selectedModel}
               onChannelChange={(channelId) => {
-                setSelectedChannelId(channelId);
                 updateNodeData(id, { selectedChannelId: channelId });
               }}
               onModelChange={(model) => {
-                setSelectedModel(model);
                 updateNodeData(id, { selectedModel: model });
               }}
             />
             {durations.length > 0 && (
               <select
                 value={selectedSeconds || durations[0] || '10'}
-                onChange={(e) => setSelectedSeconds(e.target.value)}
+                onChange={(e) => updateNodeData(id, { selectedSeconds: e.target.value })}
                 className="bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333]"
               >
                 {durations.map((d) => (

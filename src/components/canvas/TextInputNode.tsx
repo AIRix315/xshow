@@ -1,5 +1,6 @@
 // Ref: §3.5.1 — 文本输入节点（加载本地文本）
-import { memo, useState, useCallback, useRef } from 'react';
+// Store-only 模式：对标 node-banana
+import { memo, useCallback, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { TextInputNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -7,8 +8,10 @@ import BaseNodeWrapper from './BaseNode';
 
 function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [text, setText] = useState(data.text ?? '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Store-only：直接读 data，不使用 useState
+  const text = data.text ?? '';
 
   // 上传本地文本文件
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -17,7 +20,6 @@ function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
-        setText(content);
         updateNodeData(id, { text: content, filename: file.name });
       };
       reader.readAsText(file);
@@ -32,7 +34,6 @@ function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
-        setText(content);
         updateNodeData(id, { text: content, filename: file.name });
       };
       reader.readAsText(file);
@@ -45,7 +46,6 @@ function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
   }, []);
 
   const handleRemove = useCallback(() => {
-    setText('');
     updateNodeData(id, { text: undefined, filename: undefined });
   }, [id, updateNodeData]);
 

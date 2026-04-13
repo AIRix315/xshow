@@ -2,6 +2,51 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.0] - 2026-04-14
+
+### 架构重构
+
+- **节点状态管理模式重构**：所有节点组件从"双状态模式"（useState + Store）统一重构为 **Store-only 模式**
+  - 业务数据（config、loading、errorMessage、resultData、progress 等）直接从 `data` prop 读取
+  - 所有状态更新统一通过 `updateNodeData(id, { field: value })`
+  - UI 瞬态（isPlaying、isDragging、currentTool 等）保留为本地 `useState`
+  - 对标 node-banana 项目架构，消除状态不一致问题
+
+### 重构节点 (22 个)
+
+| 节点 | 重构内容 |
+|------|----------|
+| ImageNode | loading、errorMessage、resultUrl → Store-only |
+| TextNode | loading、errorMessage、text、result → Store-only |
+| VideoNode | loading、errorMessage、videoUrl、progress → Store-only |
+| AudioNode | loading、errorMessage、audioUrl → Store-only |
+| UniversalNode | config、loading、errorMessage、resultData、progress、nodeValues → Store-only |
+| TextInputNode | text、errorMessage → Store-only |
+| VideoInputNode | videoUrl、loading → Store-only |
+| SwitchNode | activeIndex → Store-only |
+| EaseCurveNode | curve → Store-only |
+| VideoTrimNode | start、end → Store-only |
+| VideoStitchNode | loading、errorMessage → Store-only |
+| FrameGrabNode | frameTime、imageUrl → Store-only |
+| ImageCompareNode | loading、errorMessage → Store-only |
+| PromptConstructorNode | segments、result → Store-only |
+| ConditionalSwitchNode | condition → Store-only |
+| GenerateAudioNode | loading、errorMessage、audioUrl → Store-only |
+| Generate3DNode | loading、errorMessage、modelUrl → Store-only |
+| AnnotateNode | annotations、fontSize、color → Store-only |
+| CropNode | 已符合 Store-only（仅 UI 状态） |
+| GridSplitNode | gridCount、cellSize、splitResults → Store-only |
+| GridMergeNode | gridCount、cellSize、mergedImageUrl → Store-only |
+
+### 已符合原有模式
+
+- ImageInputNode、AnnotateNode、CropNode 已符合 Store-only 模式
+
+### 质量保证
+
+- TypeScript 类型检查全部通过
+- 169 个单元测试全部通过
+
 ## [0.0.9] - 2026-04-13
 
 ### 修复

@@ -1,5 +1,6 @@
 // Ref: §3.6.1 — 视频输入节点（加载本地视频）
-import { memo, useState, useCallback, useRef } from 'react';
+// Store-only 模式：对标 node-banana
+import { memo, useCallback, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { VideoInputNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -7,15 +8,16 @@ import BaseNodeWrapper from './BaseNode';
 
 function VideoInputNode({ id, data, selected }: NodeProps<VideoInputNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [videoUrl, setVideoUrl] = useState(data.videoUrl ?? '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Store-only：直接读 data，不使用 useState
+  const videoUrl = data.videoUrl ?? '';
 
   // 上传本地视频文件
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      setVideoUrl(url);
       updateNodeData(id, { videoUrl: url, filename: file.name });
     }
   }, [id, updateNodeData]);
@@ -26,7 +28,6 @@ function VideoInputNode({ id, data, selected }: NodeProps<VideoInputNodeType>) {
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('video/')) {
       const url = URL.createObjectURL(file);
-      setVideoUrl(url);
       updateNodeData(id, { videoUrl: url, filename: file.name });
     }
   }, [id, updateNodeData]);
@@ -37,7 +38,6 @@ function VideoInputNode({ id, data, selected }: NodeProps<VideoInputNodeType>) {
   }, []);
 
   const handleRemove = useCallback(() => {
-    setVideoUrl('');
     updateNodeData(id, { videoUrl: undefined, filename: undefined });
   }, [id, updateNodeData]);
 

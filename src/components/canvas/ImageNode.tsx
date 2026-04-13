@@ -1,7 +1,7 @@
 // Ref: node-banana GenerateImageNode.tsx + 悬停展开模式
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // 模式：默认只显示图片预览，hover 显示完整参数
-import { memo, useState, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { ImageNode as ImageNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -15,14 +15,16 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const isPromptNode = nodeType === 'promptNode';
   
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [prompt, setPrompt] = useState(data.prompt ?? '');
-  const [imageUrl, setImageUrl] = useState(data.imageUrl ?? '');
-  const [loading, setLoading] = useState(data.loading ?? false);
-  const [errorMessage, setErrorMessage] = useState(data.errorMessage ?? '');
-  const [aspectRatio, setAspectRatio] = useState(data.aspectRatio ?? '1:1');
-  const [imageSize, setImageSize] = useState(data.imageSize ?? '1K');
-  const [selectedModel, setSelectedModel] = useState(data.selectedModel ?? '');
-  const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>((data as { selectedChannelId?: string }).selectedChannelId);
+
+  // 直接从 data 读取业务数据
+  const prompt = data.prompt ?? '';
+  const imageUrl = data.imageUrl ?? '';
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const aspectRatio = data.aspectRatio ?? '1:1';
+  const imageSize = data.imageSize ?? '1K';
+  const selectedModel = data.selectedModel ?? '';
+  const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
 
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const imageChannelId = useSettingsStore((s) => s.apiConfig.imageChannelId);
@@ -38,12 +40,9 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
     if (!prompt.trim() || loading) return;
     const channel = channels.find((c) => c.id === currentChannelId);
     if (!channel) {
-      setErrorMessage('未选择图片供应商');
       updateNodeData(id, { errorMessage: '未选择图片供应商' });
       return;
     }
-    setLoading(true);
-    setErrorMessage('');
     updateNodeData(id, { loading: true, errorMessage: '', prompt: prompt.trim(), selectedChannelId: currentChannelId, selectedModel: currentModel });
     try {
       const dataUrl = await generateImage({
@@ -55,14 +54,10 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
         aspectRatio,
         imageSize,
       });
-      setImageUrl(dataUrl);
       updateNodeData(id, { imageUrl: dataUrl, loading: false });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '图片生成失败';
-      setErrorMessage(msg);
       updateNodeData(id, { loading: false, errorMessage: msg });
-    } finally {
-      setLoading(false);
     }
   }, [prompt, loading, channels, imageChannelId, currentModel, aspectRatio, imageSize, id, updateNodeData]);
 
@@ -130,10 +125,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
           {/* 提示词输入 - 增加高度 */}
           <textarea
             value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              updateNodeData(id, { prompt: e.target.value });
-            }}
+            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
             placeholder="输入图片描述..."
             className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
             rows={3}
@@ -144,14 +136,8 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
             type="image"
             selectedChannelId={selectedChannelId}
             selectedModel={selectedModel}
-            onChannelChange={(channelId) => {
-              setSelectedChannelId(channelId);
-              updateNodeData(id, { selectedChannelId: channelId });
-            }}
-            onModelChange={(model) => {
-              setSelectedModel(model);
-              updateNodeData(id, { selectedModel: model });
-            }}
+            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
           />
 
           {/* 尺寸选项 */}
@@ -159,10 +145,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
             {['1:1', '16:9', '9:16'].map((ar) => (
               <button
                 key={ar}
-                onClick={() => {
-                  setAspectRatio(ar);
-                  updateNodeData(id, { aspectRatio: ar });
-                }}
+                onClick={() => updateNodeData(id, { aspectRatio: ar })}
                 className={`px-1.5 py-0.5 text-[10px] rounded border ${
                   aspectRatio === ar ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-[#333] text-neutral-400 bg-[#1a1a1a] hover:bg-[#262626]'
                 }`}
@@ -172,10 +155,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
             ))}
             <select
               value={imageSize}
-              onChange={(e) => {
-                setImageSize(e.target.value);
-                updateNodeData(id, { imageSize: e.target.value });
-              }}
+              onChange={(e) => updateNodeData(id, { imageSize: e.target.value })}
               className="bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333]"
             >
               {['1K', '2K'].map((s) => (

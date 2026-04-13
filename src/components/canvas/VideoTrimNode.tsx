@@ -1,4 +1,5 @@
 // Ref: node-banana Video Trim Node + 本地实现
+// Store-only 模式：对标 node-banana
 // 视频裁剪使用浏览器 MediaSource API 或提示需要后端处理
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
@@ -16,12 +17,15 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
   const sourceNode = incomingEdge ? nodes.find((n) => n.id === incomingEdge.source) : undefined;
   const sourceVideoUrl = data.inputVideoUrl ?? (sourceNode?.data?.videoUrl as string | undefined);
   
-  const [startTime, setStartTime] = useState(data.startTime ?? 0);
-  const [endTime, setEndTime] = useState(data.endTime ?? 10);
+  // Store-only：直接读 data，不使用 useState
+  const startTime = data.startTime ?? 0;
+  const endTime = data.endTime ?? 10;
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const resultUrl = data.resultUrl ?? '';
+  
+  // 保留：从视频元数据计算，不是节点数据
   const [duration, setDuration] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [resultUrl, setResultUrl] = useState(data.resultUrl ?? '');
   
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -33,25 +37,24 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
     video.onloadedmetadata = () => {
       setDuration(video.duration);
       if (endTime > video.duration) {
-        setEndTime(Math.min(10, video.duration));
+        updateNodeData(id, { endTime: Math.min(10, video.duration) });
       }
     };
     video.src = sourceVideoUrl;
-  }, [sourceVideoUrl]);
+  }, [sourceVideoUrl, endTime, id, updateNodeData]);
 
   const handleTrim = useCallback(async () => {
     if (!sourceVideoUrl) {
-      setErrorMessage('请先连接视频');
+      updateNodeData(id, { errorMessage: '请先连接视频' });
       return;
     }
     
     if (startTime >= endTime) {
-      setErrorMessage('开始时间必须小于结束时间');
+      updateNodeData(id, { errorMessage: '开始时间必须小于结束时间' });
       return;
     }
     
-    setLoading(true);
-    setErrorMessage('');
+    updateNodeData(id, { loading: true, errorMessage: '' });
     
     try {
       // 模拟处理过程
@@ -63,19 +66,15 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
       // 3. 或使用 MediaRecorder 重新录制指定时间段
       
       // 临时方案：设置结果为原视频（实际需要后端处理）
-      setResultUrl(sourceVideoUrl);
       updateNodeData(id, { 
         resultUrl: sourceVideoUrl, 
-        startTime, 
+        loading: false,
+        startTime,
         endTime,
-        loading: false 
       });
       
     } catch (err) {
-      setErrorMessage('视频裁剪失败');
       updateNodeData(id, { loading: false, errorMessage: '视频裁剪失败' });
-    } finally {
-      setLoading(false);
     }
   }, [sourceVideoUrl, startTime, endTime, updateNodeData, id]);
 
@@ -85,6 +84,16 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
       videoRef.current.play();
     }
   }, [startTime]);
+  
+  const handleStartTimeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    updateNodeData(id, { startTime: val });
+  }, [id, updateNodeData]);
+  
+  const handleEndTimeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    updateNodeData(id, { endTime: val });
+  }, [id, updateNodeData]);
 
   // minimalContent - 最小预览模式，无边距
   const minimalContent = (
@@ -137,11 +146,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
             <input
               type="number"
               value={startTime}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setStartTime(val);
-                updateNodeData(id, { startTime: val });
-              }}
+              onChange={handleStartTimeChange}
               min={0}
               max={duration}
               step={0.1}
@@ -155,11 +160,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
             <input
               type="number"
               value={endTime}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setEndTime(val);
-                updateNodeData(id, { endTime: val });
-              }}
+              onChange={handleEndTimeChange}
               min={0}
               max={duration || 999}
               step={0.1}

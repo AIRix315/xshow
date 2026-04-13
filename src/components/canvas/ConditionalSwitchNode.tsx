@@ -1,26 +1,47 @@
 // Ref: node-banana Conditional Switch Node
-import { memo, useState } from 'react';
+// Store-only 模式：对标 node-banana
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { ConditionalSwitchNodeType } from '@/types';
+import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
-function ConditionalSwitchNode({ data, selected }: NodeProps<ConditionalSwitchNodeType>) {
-  const [rules, setRules] = useState(data.rules ?? [
+interface ConditionalRule {
+  id: string;
+  name: string;
+  operator: 'contains' | 'exact' | 'startsWith' | 'endsWith' | 'regex';
+  value: string;
+  outputIndex: number;
+}
+
+function ConditionalSwitchNode({ id, data, selected }: NodeProps<ConditionalSwitchNodeType>) {
+  const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  
+  // Store-only：直接读 data，不使用 useState
+  const rules = (data.rules ?? [
     { id: '1', name: 'Rule 1', operator: 'contains' as const, value: '', outputIndex: 0 },
-  ]);
+  ]) as ConditionalRule[];
 
-  const addRule = () => {
-    setRules([...rules, { id: Date.now().toString(), name: `Rule ${rules.length + 1}`, operator: 'contains', value: '', outputIndex: rules.length }]);
-  };
+  const addRule = useCallback(() => {
+    updateNodeData(id, { 
+      rules: [...rules, { 
+        id: Date.now().toString(), 
+        name: `Rule ${rules.length + 1}`, 
+        operator: 'contains' as const, 
+        value: '', 
+        outputIndex: rules.length 
+      }] 
+    });
+  }, [id, rules, updateNodeData]);
 
-  const removeRule = (id: string) => {
+  const removeRule = useCallback((ruleId: string) => {
     if (rules.length <= 1) return;
-    setRules(rules.filter((r) => r.id !== id));
-  };
+    updateNodeData(id, { rules: rules.filter((r) => r.id !== ruleId) });
+  }, [id, rules, updateNodeData]);
 
-  const updateRule = (id: string, patch: Partial<typeof rules[number]>) => {
-    setRules(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  };
+  const updateRule = useCallback((ruleId: string, patch: Partial<ConditionalRule>) => {
+    updateNodeData(id, { rules: rules.map((r) => (r.id === ruleId ? { ...r, ...patch } : r)) });
+  }, [id, rules, updateNodeData]);
 
   return (
     <BaseNodeWrapper selected={!!selected} title="条件">

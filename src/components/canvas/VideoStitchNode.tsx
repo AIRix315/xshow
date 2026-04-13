@@ -1,4 +1,5 @@
 // Ref: node-banana Video Stitch Node + 本地实现
+// Store-only 模式：对标 node-banana
 // 视频拼接使用 Web MediaRecorder API 或 ffmpeg.wasm（需要外部库）
 // 此处实现为收集多个视频输入并提示用户
 import { memo, useState, useCallback, useRef } from 'react';
@@ -22,9 +23,12 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
     };
   }).filter((v) => v.url);
   
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [resultUrl, setResultUrl] = useState(data.resultUrl ?? '');
+  // Store-only：直接读 data，不使用 useState
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const resultUrl = data.resultUrl ?? '';
+  
+  // 保留：UI 辅助状态，不是节点数据
   const [videoCount, setVideoCount] = useState(2);
 
   // 视频元素引用（用于预览）
@@ -45,12 +49,11 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
   // 模拟视频拼接（实际需要 ffmpeg.wasm 或类似库）
   const handleStitch = useCallback(async () => {
     if (inputVideos.length < 2) {
-      setErrorMessage('需要至少2个视频才能拼接');
+      updateNodeData(id, { errorMessage: '需要至少2个视频才能拼接', loading: false });
       return;
     }
     
-    setLoading(true);
-    setErrorMessage('');
+    updateNodeData(id, { loading: true, errorMessage: '' });
     
     try {
       // 模拟处理过程
@@ -60,14 +63,10 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
       // 1. ffmpeg.wasm 库
       // 2. 或后端 API 处理
       // 此处设置占位结果
-      setResultUrl(inputVideos[0]?.url || '');
       updateNodeData(id, { resultUrl: inputVideos[0]?.url, loading: false });
       
     } catch (err) {
-      setErrorMessage('视频拼接失败');
       updateNodeData(id, { loading: false, errorMessage: '视频拼接失败' });
-    } finally {
-      setLoading(false);
     }
   }, [inputVideos, updateNodeData, id]);
 

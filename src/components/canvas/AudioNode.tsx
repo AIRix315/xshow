@@ -1,6 +1,6 @@
 // Ref: §6.6 — 音频节点 Input 模式（仅上传加载）
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
-import { memo, useState, useRef, useCallback } from 'react';
+import { memo, useRef, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { AudioNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -8,7 +8,9 @@ import BaseNodeWrapper from './BaseNode';
 
 function AudioNodeComponent({ id, data, selected }: NodeProps<AudioNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [audioUrl, setAudioUrl] = useState(data.audioUrl ?? '');
+
+  // Store-only: read directly from data
+  const audioUrl = data.audioUrl ?? '';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 仅上传本地音频文件（Blob URL）
@@ -17,7 +19,6 @@ function AudioNodeComponent({ id, data, selected }: NodeProps<AudioNodeType>) {
     if (file) {
       // 使用 Blob URL 加载本地文件
       const url = URL.createObjectURL(file);
-      setAudioUrl(url);
       updateNodeData(id, { audioUrl: url });
     }
   }, [id, updateNodeData]);
@@ -30,7 +31,6 @@ function AudioNodeComponent({ id, data, selected }: NodeProps<AudioNodeType>) {
     if (!file || !file.type.startsWith('audio/')) return;
 
     const url = URL.createObjectURL(file);
-    setAudioUrl(url);
     updateNodeData(id, { audioUrl: url });
   }, [id, updateNodeData]);
 
@@ -40,7 +40,6 @@ function AudioNodeComponent({ id, data, selected }: NodeProps<AudioNodeType>) {
   }, []);
 
   const handleRemove = useCallback(() => {
-    setAudioUrl('');
     updateNodeData(id, { audioUrl: undefined });
   }, [id, updateNodeData]);
 

@@ -1,6 +1,6 @@
 // Ref: §6.7 + node-banana SplitGridNode.tsx — 九宫格分拆（含 Canvas 图像处理）
 // Ref: §4.2 — 节点数据回写 Store + 上游数据读取
-import { memo, useState, useCallback, useEffect } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { GridSplitNode } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
@@ -10,11 +10,12 @@ import BaseNodeWrapper from './BaseNode';
 
 function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [gridCount, setGridCount] = useState(data.gridCount ?? 3);
-  const [cellSize, setCellSize] = useState(data.cellSize ?? 512);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [splitResults, setSplitResults] = useState<string[]>([]);
+  // Store-only: 业务数据从 data 读取
+  const gridCount = data.gridCount ?? 3;
+  const cellSize = data.cellSize ?? 512;
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const splitResults = (data.splitResults ?? []) as string[];
 
   // 从 Store 读取上游图片节点的 imageUrl
   const upstream = getUpstreamNodes(id);
@@ -24,36 +25,30 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
 
   const handleGridCountChange = useCallback((val: number) => {
     const clamped = Math.max(2, Math.min(5, val));
-    setGridCount(clamped);
     updateNodeData(id, { gridCount: clamped });
   }, [id, updateNodeData]);
 
   const handleCellSizeChange = useCallback((val: number) => {
-    setCellSize(val);
     updateNodeData(id, { cellSize: val });
   }, [id, updateNodeData]);
 
   // 自动执行拆图：当源图变化时
   useEffect(() => {
     if (!sourceImageUrl) {
-      setSplitResults([]);
+      updateNodeData(id, { splitResults: [], loading: false, errorMessage: '' });
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setErrorMessage('');
+    updateNodeData(id, { loading: true, errorMessage: '' });
     loadImage(sourceImageUrl)
       .then((img) => {
         if (cancelled) return;
         const results = splitImageToGrid(img, gridCount, cellSize);
-        setSplitResults(results);
-        updateNodeData(id, { splitResults: results });
-        setLoading(false);
+        updateNodeData(id, { splitResults: results, loading: false });
       })
       .catch((err) => {
         if (cancelled) return;
-        setErrorMessage(err instanceof Error ? err.message : '图片分拆失败');
-        setLoading(false);
+        updateNodeData(id, { loading: false, errorMessage: err instanceof Error ? err.message : '图片分拆失败' });
       });
     return () => { cancelled = true; };
   }, [sourceImageUrl, gridCount, cellSize, id, updateNodeData]);

@@ -1,4 +1,5 @@
 // Ref: node-banana Frame Grab Node + 本地实现
+// Store-only 模式：对标 node-banana
 // 帧提取使用浏览器 Canvas API 从视频中捕获指定时间的帧
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
@@ -16,11 +17,14 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
   const sourceNode = incomingEdge ? nodes.find((n) => n.id === incomingEdge.source) : undefined;
   const sourceVideoUrl = data.inputVideoUrl ?? (sourceNode?.data?.videoUrl as string | undefined);
   
-  const [framePosition, setFramePosition] = useState(data.framePosition ?? 50);
+  // Store-only：直接读 data，不使用 useState
+  const framePosition = data.framePosition ?? 50;
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const resultImageUrl = data.resultImageUrl ?? '';
+  
+  // 保留：从视频元数据计算，不是节点数据
   const [duration, setDuration] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [resultImageUrl, setResultImageUrl] = useState(data.resultImageUrl ?? '');
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,12 +46,11 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
   // 捕获帧
   const handleGrab = useCallback(async () => {
     if (!sourceVideoUrl) {
-      setErrorMessage('请先连接视频');
+      updateNodeData(id, { errorMessage: '请先连接视频' });
       return;
     }
     
-    setLoading(true);
-    setErrorMessage('');
+    updateNodeData(id, { loading: true, errorMessage: '' });
     
     try {
       // 等待视频加载
@@ -93,21 +96,16 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
       
       // 转换为图片
       const dataUrl = canvas.toDataURL('image/png');
-      setResultImageUrl(dataUrl);
-      updateNodeData(id, { resultImageUrl: dataUrl });
+      updateNodeData(id, { resultImageUrl: dataUrl, loading: false });
       
     } catch (err) {
       console.error('Frame grab error:', err);
-      setErrorMessage('帧提取失败');
-      updateNodeData(id, { errorMessage: '帧提取失败' });
-    } finally {
-      setLoading(false);
+      updateNodeData(id, { loading: false, errorMessage: '帧提取失败' });
     }
   }, [sourceVideoUrl, actualTime, updateNodeData, id]);
 
   const handlePositionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = Number(e.target.value);
-    setFramePosition(val);
     updateNodeData(id, { framePosition: val });
   }, [updateNodeData, id]);
 

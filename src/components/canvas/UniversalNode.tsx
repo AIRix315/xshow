@@ -1,5 +1,6 @@
 // Ref: §6.10 + 产物反推 — 万能节点 (AI 驱动 API 适配器)
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
+// Ref: node-banana — Store-only 模式
 import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { UniversalNodeType, CustomNodeConfig } from '@/types';
@@ -156,8 +157,10 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const [configMode, setConfigMode] = useState(data.configMode ?? true);
-  const [config, setConfig] = useState<CustomNodeConfig>(data.config ?? {
+
+  // Store-only: 业务数据从 data 读取
+  const configMode = data.configMode ?? true;
+  const config = data.config ?? {
     apiUrl: '',
     method: 'POST',
     headers: '{}',
@@ -166,33 +169,31 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
     executionMode: 'sync',
     resultPath: '',
     executionType: 'http',
-  });
-  const [loading, setLoading] = useState(data.loading ?? false);
-  const [errorMessage, setErrorMessage] = useState(data.errorMessage ?? '');
-  const [resultData, setResultData] = useState(data.resultData ?? '');
-  const [progress, setProgress] = useState(data.progress ?? 0);
+  };
+  const loading = data.loading ?? false;
+  const errorMessage = data.errorMessage ?? '';
+  const resultData = data.resultData ?? '';
+  const progress = data.progress ?? 0;
+  const nodeValues = (data.nodeValues ?? {}) as Record<string, Record<string, unknown>>;
+
+  // UI 状态保留 useState
   const abortRef = useRef<AbortController | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState('');
+  const [parsedNodes, setParsedNodes] = useState<ReturnType<typeof parseWorkflowNodes>>([]);
 
   // 从上游节点读取数据
   const upstreamData = useMemo(() => {
     return getConnectedInputs(id, nodes, edges);
   }, [id, nodes, edges]);
 
+  // 从设置 Store 读取配置
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const textChannelId = useSettingsStore((s) => s.apiConfig.textChannelId);
   const textModel = useSettingsStore((s) => s.apiConfig.textModel);
   const addTemplate = useSettingsStore((s) => s.addTemplate);
   const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
 
-  // ComfyUI 专用 state（初始化时自动加载第一个工作流）
-  // 注意：config.comfyuiSubType 可能为 undefined，需用 ?? 'local' 回退
   const subType = config.comfyuiSubType ?? 'local';
-  const firstLocalWorkflow = (subType === 'local' && comfyuiConfig.localWorkflows.length > 0)
-    ? comfyuiConfig.localWorkflows[0]!
-    : '';
-  const [selectedWorkflow, setSelectedWorkflow] = useState(firstLocalWorkflow);
-  const [parsedNodes, setParsedNodes] = useState<ReturnType<typeof parseWorkflowNodes>>([]);
-  const [nodeValues, setNodeValues] = useState<Record<string, Record<string, unknown>>>({});
 
   // 初始化时如果已有 selectedWorkflow，加载节点
   useEffect(() => {
@@ -202,15 +203,16 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Store-only: 更新配置
   const updateConfig = useCallback((patch: Partial<CustomNodeConfig>) => {
-    setConfig((prev) => ({ ...prev, ...patch }));
-  }, []);
+    updateNodeData(id, { config: { ...config, ...patch } });
+  }, [id, config, updateNodeData]);
 
   // 选择工作流后解析节点
   const handleSelectWorkflow = useCallback(async (workflowName: string) => {
     setSelectedWorkflow(workflowName);
     setParsedNodes([]);
-    setNodeValues({});
+    updateNodeData(id, { nodeValues: {} });
 
     if (!workflowName) return;
 
@@ -219,23 +221,22 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
 
     const jsonStr = await fetchComfyWorkflowJson(url, workflowName);
     if (!jsonStr) {
-      setErrorMessage(`读取工作流 "${workflowName}" 失败`);
+      updateNodeData(id, { errorMessage: `读取工作流 "${workflowName}" 失败` });
       return;
     }
 
-    const nodes = parseWorkflowNodes(jsonStr);
-    setParsedNodes(nodes);
+    const parsedNodes = parseWorkflowNodes(jsonStr);
+    setParsedNodes(parsedNodes);
 
     // 只初始化用户可编辑的字段（排除节点引用）
-    // 节点引用格式：["节点ID", 输出索引]，用户不应修改
     const values: Record<string, Record<string, unknown>> = {};
-    for (const node of nodes) {
+    for (const node of parsedNodes) {
       values[node.nodeId] = {};
       for (const [field, fieldInfo] of Object.entries(node.inputs)) {
         const val = fieldInfo?.value;
         // 跳过节点引用（数组格式：[" nodeId", index]）
         if (Array.isArray(val)) {
-          continue;  // 不添加到 nodeValues，不会被替换
+          continue;
         }
         // 只保留用户可编辑的简单值
         if (val !== undefined && val !== null) {
@@ -244,26 +245,23 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
         }
       }
     }
-    setNodeValues(values);
-    setConfig((prev) => ({ ...prev, workflowJson: jsonStr }));
-  }, [config.comfyuiSubType, comfyuiConfig.localUrl, comfyuiConfig.cloudUrl]);
+    updateNodeData(id, { nodeValues: values, config: { ...config, workflowJson: jsonStr } });
+  }, [config.comfyuiSubType, comfyuiConfig.localUrl, comfyuiConfig.cloudUrl, id, config, updateNodeData]);
 
   // 节点字段值变化
   const handleNodeValueChange = useCallback((nodeId: string, field: string, value: unknown) => {
-    setNodeValues((prev) => ({
-      ...prev,
-      [nodeId]: { ...prev[nodeId], [field]: value },
-    }));
-  }, []);
+    const newValues = {
+      ...nodeValues,
+      [nodeId]: { ...nodeValues[nodeId], [field]: value },
+    };
+    updateNodeData(id, { nodeValues: newValues });
+  }, [id, nodeValues, updateNodeData]);
 
   // 从 nodeValues 生成 nodeInfoList
-  // 只包含用户显式修改过的字段，避免空值替换工作流原始值
   const generateNodeInfoList = useCallback((): ComfyUINodeInfo[] => {
     const list: ComfyUINodeInfo[] = [];
     for (const [nodeId, fields] of Object.entries(nodeValues)) {
       for (const [fieldName, value] of Object.entries(fields)) {
-        // 只有非空值才加入替换列表
-        // 空字符串会破坏 ComfyUI 节点 ID 引用（如 ["3"]）
         const strValue = String(value ?? '');
         if (strValue.trim() !== '') {
           list.push({ nodeId, fieldName, defaultValue: strValue });
@@ -277,15 +275,14 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   const handleAIAssist = useCallback(async () => {
     const channel = channels.find((c) => c.id === textChannelId);
     if (!channel) {
-      setErrorMessage('未选择文本供应商，无法使用 AI 辅助');
+      updateNodeData(id, { errorMessage: '未选择文本供应商，无法使用 AI 辅助' });
       return;
     }
 
     const description = prompt('请描述你的 API 需求：');
     if (!description) return;
 
-    setLoading(true);
-    setErrorMessage('');
+    updateNodeData(id, { loading: true, errorMessage: '' });
     try {
       const result = await generateText({
         channelUrl: channel.url,
@@ -301,23 +298,16 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
       const cleaned = result.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
-      setConfig((prev) => ({ ...prev, ...parsed }));
-      setConfigMode(true);
+      updateNodeData(id, { config: { ...config, ...parsed }, configMode: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI 辅助失败';
-      setErrorMessage(msg);
-    } finally {
-      setLoading(false);
+      updateNodeData(id, { errorMessage: msg, loading: false });
     }
-  }, [channels, textChannelId, textModel]);
+  }, [channels, textChannelId, textModel, config, id, updateNodeData]);
 
   // 执行请求
   const handleExecute = useCallback(async () => {
     if (loading) return;
-    setLoading(true);
-    setErrorMessage('');
-    setResultData('');
-    setProgress(0);
     updateNodeData(id, { loading: true, errorMessage: '', resultData: '', progress: 0 });
 
     const abortController = new AbortController();
@@ -359,9 +349,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           : [...(config.nodeInfoList ?? [])];
         
         // 图生图场景：如有上游图片且有 IMAGE 类型字段，上传到 ComfyUI
-        // 注意：只有当 upstreamData.images 有内容时才处理
         if (subType === 'local' && url && upstreamData.images.length > 0) {
-          // 找到所有声明为 IMAGE 类型的字段
           const imageFields = processedNodeInfoList.filter(n => n.fieldType === 'IMAGE');
           
           for (let i = 0; i < Math.min(imageFields.length, upstreamData.images.length); i++) {
@@ -370,9 +358,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             
             if (field && imageUrl) {
               try {
-                // 上传图片到 ComfyUI
                 const comfyFilename = await uploadImageToComfyUI(url, imageUrl, abortController.signal);
-                // 替换字段值为 ComfyUI 文件名
                 const fieldIndex = processedNodeInfoList.findIndex(n => n.nodeId === field.nodeId && n.fieldName === field.fieldName);
                 if (fieldIndex >= 0) {
                   processedNodeInfoList[fieldIndex] = {
@@ -396,14 +382,11 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           workflowJson: config.workflowJson,
           nodeInfoList: processedNodeInfoList,
           onProgress: (p) => {
-            setProgress(p);
             updateNodeData(id, { progress: p });
           },
           signal: abortController.signal,
         });
 
-        setResultData(result);
-        setConfigMode(false);
         // 根据 outputType 写入标准化输出字段
         if (config.outputType === 'text') {
           updateNodeData(id, {
@@ -416,7 +399,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             progress: 0
           });
         } else {
-          // image/video/audio
           updateNodeData(id, {
             resultData: result,
             outputUrl: result,
@@ -434,12 +416,10 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
       const variables = config.variables ?? {};
       const result = config.executionMode === 'async'
         ? await executeAsync(config, variables, (p) => {
-            setProgress(p);
             updateNodeData(id, { progress: p });
           }, abortController.signal)
         : await executeSync(config, variables);
-      setResultData(result);
-      setConfigMode(false);
+
       // 根据 outputType 写入标准化输出字段
       if (config.outputType === 'text') {
         updateNodeData(id, {
@@ -452,7 +432,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           progress: 0
         });
       } else {
-        // image/video/audio
         updateNodeData(id, {
           resultData: result,
           outputUrl: result,
@@ -466,19 +445,14 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     } catch (err) {
       if (abortController.signal.aborted) return;
       const msg = err instanceof Error ? err.message : '执行失败';
-      setErrorMessage(msg);
       updateNodeData(id, { loading: false, errorMessage: msg, progress: 0 });
     } finally {
-      setLoading(false);
-      setProgress(0);
       abortRef.current = null;
     }
   }, [loading, config, id, updateNodeData, nodeValues, generateNodeInfoList, upstreamData]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
-    setLoading(false);
-    setProgress(0);
     updateNodeData(id, { loading: false, progress: 0 });
   }, [id, updateNodeData]);
 
@@ -501,13 +475,13 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           <span className="text-[10px] text-text-secondary font-medium">{data.label || '万能节点'}</span>
           <div className="flex gap-1">
             <button
-              onClick={() => setConfigMode(true)}
+              onClick={() => updateNodeData(id, { configMode: true })}
               className={`text-[9px] px-1.5 py-0.5 rounded ${configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
             >
               配置
             </button>
             <button
-              onClick={() => setConfigMode(false)}
+              onClick={() => updateNodeData(id, { configMode: false })}
               className={`text-[9px] px-1.5 py-0.5 rounded ${!configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
             >
               运行
@@ -524,7 +498,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 const newType = e.target.value as 'http' | 'comfyui';
                 updateConfig({
                   executionType: newType,
-                  // 切换到 ComfyUI 模式时自动设置默认子类型为 local
                   ...(newType === 'comfyui' && !config.comfyuiSubType ? { comfyuiSubType: 'local' } : {}),
                 });
               }}
@@ -647,7 +620,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                     updateConfig({ comfyuiSubType: e.target.value as ComfyUISubType });
                     setSelectedWorkflow('');
                     setParsedNodes([]);
-                    setNodeValues({});
+                    updateNodeData(id, { nodeValues: {} });
                   }}
                   className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
                 >
