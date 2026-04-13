@@ -145,7 +145,7 @@ export interface VideoNodeData extends BaseNodeData {
   onShowToast?: (msg: string) => void;
 }
 
-// §3.7 音频节点数据
+// §3.7 音频输入节点数据（audioInputNode）
 export interface AudioNodeData extends BaseNodeData {
   audioUrl?: string;
   audioName?: string;
@@ -157,6 +157,15 @@ export interface AudioNodeData extends BaseNodeData {
   onGenerateAudio?: (nodeId: string) => void;
   onGenerateTTS?: (nodeId: string) => void;
   onShowToast?: (msg: string) => void;
+}
+
+// §3.7.1 音频生成节点数据（audioNode - TTS）
+export interface GenerateAudioNodeData extends BaseNodeData { 
+  text?: string; 
+  voice?: string;
+  audioUrl?: string;
+  loading?: boolean;
+  errorMessage?: string;
 }
 
 // §3.8 九宫格分拆节点
@@ -263,8 +272,9 @@ export interface CropNodeData extends BaseNodeData {
 export interface TextInputNodeData extends BaseNodeData { text?: string; filename?: string; }
 export interface VideoInputNodeData extends BaseNodeData { videoUrl?: string; filename?: string; }
 export interface ImageInputNodeData extends BaseNodeData { imageUrl?: string; filename?: string; isOptional?: boolean; dimensions?: { width: number; height: number }; }
+// §3.14.1 3D 节点数据
 export interface Generate3DNodeData extends BaseNodeData { prompt?: string; modelUrl?: string; progress?: number; }
-export interface GenerateAudioNodeData extends BaseNodeData { text?: string; voice?: string; }
+export interface Viewer3DNodeData extends BaseNodeData { modelUrl?: string; }
 export interface PromptConstructorNodeData extends BaseNodeData { parts?: Array<{ id: string; text: string; enabled: boolean }>; }
 export interface AnnotateNodeData extends BaseNodeData { inputImageUrl?: string; annotations?: Array<{ id: string; type: 'text' | 'rect' | 'arrow' | 'circle'; x: number; y: number; width?: number; height?: number; endX?: number; endY?: number; text?: string; fontSize: number; color: string }>; fontSize?: number; color?: string; annotationText?: string; }
 export interface ConditionalSwitchNodeData extends BaseNodeData { rules?: Array<{ id: string; name: string; operator: string; value: string; outputIndex: number }>; }
@@ -285,7 +295,6 @@ export interface RouterNodeData extends BaseNodeData { outputCount?: number; inp
 export interface SwitchNodeData extends BaseNodeData { enabled?: boolean; }
 export interface VideoStitchNodeData extends BaseNodeData { videoUrls?: string[]; resultUrl?: string; }
 export interface VideoTrimNodeData extends BaseNodeData { inputVideoUrl?: string; startTime?: number; endTime?: number; resultUrl?: string; }
-export interface Viewer3DNodeData extends BaseNodeData { modelUrl?: string; }
 
 // §3.14 画布项目
 export interface Project {
@@ -301,21 +310,24 @@ export interface CustomNodeTemplate {
 }
 
 // §3.15 ReactFlow Node 类型别名
+// 命名规范：功能 + 类型 + Node（如 imageInputNode, imageNode）
+// Input 后缀 = 输入节点，无后缀 = 生成节点
 export type ImageNode = Node<ImageNodeData, 'imageNode'>;
-export type PromptNode = Node<ImageNodeData, 'promptNode'>;
+export type PromptNode = Node<TextNodeData, 'promptNode'>; // promptNode 与 textNode 共用数据结构
 export type TextNodeType = Node<TextNodeData, 'textNode'>;
 export type VideoNode = Node<VideoNodeData, 'videoNode'>;
-export type AudioNodeType = Node<AudioNodeData, 'audioNode'>;
+export type AudioInputNodeType = Node<AudioNodeData, 'audioInputNode'>; // 音频输入节点
+export type AudioNode = Node<GenerateAudioNodeData, 'audioNode'>; // 音频生成节点（TTS）
 export type GridSplitNode = Node<GridSplitNodeData, 'gridSplitNode'>;
 export type GridMergeNodeType = Node<GridMergeNodeData, 'gridMergeNode'>;
 export type CropNodeType = Node<CropNodeData, 'cropNode'>;
-export type UniversalNodeType = Node<UniversalNodeData, 'customNode'>;
+export type OmniNodeType = Node<UniversalNodeData, 'omniNode'>; // 万能节点
 export type TextInputNodeType = Node<TextInputNodeData, 'textInputNode'>;
 export type VideoInputNodeType = Node<VideoInputNodeData, 'videoInputNode'>;
 export type ImageInputNodeType = Node<ImageInputNodeData, 'imageInputNode'>;
 export type ImageInputNode = ImageInputNodeType;
-export type Generate3DNodeType = Node<Generate3DNodeData, 'generate3DNode'>;
-export type GenerateAudioNodeType = Node<GenerateAudioNodeData, 'generateAudioNode'>;
+export type D3NodeType = Node<Generate3DNodeData, 'd3Node'>; // 3D 生成节点
+export type Viewer3DNodeType = Node<Viewer3DNodeData, 'viewer3DNode'>; // 3D 查看节点
 export type PromptConstructorNodeType = Node<PromptConstructorNodeData, 'promptConstructorNode'>;
 export type AnnotateNodeType = Node<AnnotateNodeData, 'annotateNode'>;
 export type ConditionalSwitchNodeType = Node<ConditionalSwitchNodeData, 'conditionalSwitchNode'>;
@@ -328,8 +340,14 @@ export type RouterNodeType = Node<RouterNodeData, 'routerNode'>;
 export type SwitchNodeType = Node<SwitchNodeData, 'switchNode'>;
 export type VideoStitchNodeType = Node<VideoStitchNodeData, 'videoStitchNode'>;
 export type VideoTrimNodeType = Node<VideoTrimNodeData, 'videoTrimNode'>;
-export type Viewer3DNodeType = Node<Viewer3DNodeData, 'viewer3DNode'>;
-export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNodeType | GridSplitNode | GridMergeNodeType | CropNodeType | UniversalNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | Generate3DNodeType | GenerateAudioNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType | Viewer3DNodeType;
+
+// 兼容旧类型别名（过渡期保留）
+export type AudioNodeType = AudioNode;
+export type UniversalNodeType = OmniNodeType;
+export type Generate3DNodeType = D3NodeType;
+export type GenerateAudioNodeType = AudioNode;
+
+export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNode | GridSplitNode | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {
