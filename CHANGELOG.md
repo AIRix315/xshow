@@ -2,6 +2,40 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.4] - 2026-04-14
+
+### 项目保存与导出系统
+
+实现完整的项目文件导出/导入功能，支持多项目管理和媒体资源持久化。
+
+#### 新增文件
+
+- `src/utils/projectManager.ts` — 项目文件导出（chrome.downloads）/ 导入（FileReader）核心逻辑
+- `src/utils/mediaExternalizer.ts` — blob/http URL → base64 序列化；移除不可序列化的回调函数
+
+#### 功能变更
+
+- **导出项目**：将当前画布（nodes + edges）序列化为 `.xshow` JSON 文件，通过 `chrome.downloads` API 触发下载对话框
+- **导入项目**：从 `.xshow` / `.json` 文件导入，自动创建新项目并加载画布数据
+- **Base64 嵌入选项**：用户可选择是否将图片/视频转为 Base64 内嵌到文件（自包含但体积大）或不嵌入（轻量但链接会断开）
+- **未保存状态追踪**：所有画布操作（增删节点、连线、撤销重做等）自动标记为"未保存"，顶部栏实时显示状态
+- **多项目隔离**：项目列表支持切换/新建/删除，IndexedDB 按 projectId 隔离存储画布状态
+
+#### 修改文件
+
+- `src/types.ts` — 新增 `XShowWorkflowFile` 接口
+- `src/stores/useFlowStore.ts` — 新增 `hasUnsavedChanges`/`lastSavedAt`/`isSaving` 状态；`saveProject`/`loadProject`/`markDirty` Action；所有 mutation 自动标记 dirty
+- `src/stores/useSettingsStore.ts` — 新增 `importProjectFromFile` Action
+- `src/App.tsx` — 顶部栏接入导入/新建/保存按钮；保存状态文字动态联动
+- `src/components/settings/SettingsPanel.tsx` — ProjectTab 重构：文件操作区（导入/导出）、Base64 开关含双色提示框
+- `package.json`、`public/manifest.json` — 版本 0.1.4
+
+#### 质量保证
+
+- TypeScript 编译通过
+- 206 个单元测试全部通过
+- 生产构建成功
+
 ## [0.1.3] - 2026-04-14
 
 ### Handle 类型标签显示优化

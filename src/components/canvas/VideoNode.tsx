@@ -27,6 +27,7 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
   const videoChannelId = useSettingsStore((s) => s.apiConfig.videoChannelId);
   const videoModel = useSettingsStore((s) => s.apiConfig.videoModel);
   const videoDurations = useSettingsStore((s) => s.apiConfig.videoDurations);
+  const showNodeModelSettings = useSettingsStore((s) => s.systemSettings.showNodeModelSettings);
 
   const models = videoModel.split('\n').filter((m) => m.trim());
   const currentModel = selectedModel || models[0] || '';
@@ -137,19 +138,20 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
             rows={2}
           />
 
-          {/* 供应商+模型 + 时长 */}
           <div className="flex gap-1">
-            <ProviderModelSelector
-              type="video"
-              selectedChannelId={selectedChannelId}
-              selectedModel={selectedModel}
-              onChannelChange={(channelId) => {
-                updateNodeData(id, { selectedChannelId: channelId });
-              }}
-              onModelChange={(model) => {
-                updateNodeData(id, { selectedModel: model });
-              }}
-            />
+            {showNodeModelSettings && (
+              <ProviderModelSelector
+                type="video"
+                selectedChannelId={selectedChannelId}
+                selectedModel={selectedModel}
+                onChannelChange={(channelId) => {
+                  updateNodeData(id, { selectedChannelId: channelId });
+                }}
+                onModelChange={(model) => {
+                  updateNodeData(id, { selectedModel: model });
+                }}
+              />
+            )}
             {durations.length > 0 && (
               <select
                 value={selectedSeconds || durations[0] || '10'}

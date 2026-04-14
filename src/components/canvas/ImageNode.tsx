@@ -26,6 +26,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const imageChannelId = useSettingsStore((s) => s.apiConfig.imageChannelId);
   const drawingModel = useSettingsStore((s) => s.apiConfig.drawingModel);
+  const showNodeModelSettings = useSettingsStore((s) => s.systemSettings.showNodeModelSettings);
 
   const models = drawingModel.split('\n').filter((m) => m.trim());
   const currentModel = selectedModel || models[0] || '';
@@ -132,14 +133,15 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
             rows={3}
           />
 
-          {/* 供应商+模型选择 */}
-          <ProviderModelSelector
-            type="image"
-            selectedChannelId={selectedChannelId}
-            selectedModel={selectedModel}
-            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
-            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
-          />
+          {showNodeModelSettings && (
+            <ProviderModelSelector
+              type="image"
+              selectedChannelId={selectedChannelId}
+              selectedModel={selectedModel}
+              onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+              onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
+            />
+          )}
 
           {/* 尺寸选项 */}
           <div className="flex gap-1">

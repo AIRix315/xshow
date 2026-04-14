@@ -5,6 +5,8 @@ import {
   DEFAULT_API_CONFIG,
   DEFAULT_PROJECT,
 } from '@/types';
+import { saveCanvasState } from '@/utils/canvasState';
+import { useFlowStore } from '@/stores/useFlowStore';
 import type {
   ApiConfig,
   ChannelConfig,
@@ -107,6 +109,8 @@ interface SettingsActions {
   removeProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
   setCurrentProject: (id: string) => void;
+  /** 从 .xshow 文件导入项目：创建新项目 + 加载画布数据 */
+  importProjectFromFile: (projectFile: import('@/types').XShowWorkflowFile) => Promise<{ projectId: string; warnings: string[] }>;
   addTemplate: (template: CustomNodeTemplate) => void;
   removeTemplate: (id: string) => void;
   addGlobalTask: (task: GlobalTask) => void;
@@ -123,6 +127,10 @@ interface SettingsActions {
   updateComfyuiConfig: (patch: Partial<ComfyUIConfig>) => void;
   addRunninghubApp: (app: RunningHubApp) => void;
   removeRunninghubApp: (id: string) => void;
+  /** 导出：返回当前完整配置的 JSON 字符串 */
+  exportSettingsJson: () => string;
+  /** 导入：用导入的配置替换当前完整状态 */
+  importSettingsJson: (json: string) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -174,22 +182,38 @@ export const useSettingsStore = create<SettingsStore>()(
       setModel: (type, value) =>
         set((s) => ({ apiConfig: { ...s.apiConfig, [type]: value } })),
 
-      addProject: (name) =>
-        set((s) => {
-          const id = Date.now().toString();
-          return { projects: [...s.projects, { id, name }] };
-        }),
+  addProject: (name) =>
+    set((s) => {
+      const id = Date.now().toString();
+      return { projects: [...s.projects, { id, name }] };
+    }),
 
-      removeProject: (id) =>
-        set((s) => ({
-          projects: s.projects.length <= 1 ? s.projects : s.projects.filter((p) => p.id !== id),
-          currentProjectId: s.currentProjectId === id ? (s.projects.find((p) => p.id !== id) ?? s.projects[0]!).id : s.currentProjectId,
-        })),
+  removeProject: (id) =>
+    set((s) => ({
+      projects: s.projects.length <= 1 ? s.projects : s.projects.filter((p) => p.id !== id),
+      currentProjectId: s.currentProjectId === id ? (s.projects.find((p) => p.id !== id) ?? s.projects[0]!).id : s.currentProjectId,
+    })),
 
-      renameProject: (id, name) =>
-        set((s) => ({
-          projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
-        })),
+  renameProject: (id, name) =>
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
+    })),
+
+  /** 从 .xshow 文件导入项目：创建新项目 + 切换到该项目的画布 */
+  importProjectFromFile: async (projectFile: import('@/types').XShowWorkflowFile): Promise<{ projectId: string; warnings: string[] }> => {
+    const newId = Date.now().toString();
+    const newProject: Project = { id: newId, name: projectFile.name || '导入项目' };
+    set((s) => ({
+      projects: [...s.projects, newProject],
+    }));
+    // 直接加载画布数据（避免 IndexedDB 异步竞态）
+    useFlowStore.getState().loadProject(projectFile.nodes as never, projectFile.edges as never);
+    // 保存到 IndexedDB（持久化备份）
+    await saveCanvasState(newId, projectFile.nodes as never, projectFile.edges as never);
+    // 切换到新项目（不影响已在内存中的画布）
+    set({ currentProjectId: newId });
+    return { projectId: newId, warnings: [] };
+  },
 
       setCurrentProject: (id) => set({ currentProjectId: id }),
 
@@ -271,6 +295,17 @@ export const useSettingsStore = create<SettingsStore>()(
             runninghubApps: s.comfyuiConfig.runninghubApps.filter((a) => a.id !== id),
           },
         })),
+
+      exportSettingsJson: () => {
+        const raw = localStorage.getItem('xshow-settings');
+        return raw ?? '';
+      },
+
+      importSettingsJson: (json: string) => {
+        localStorage.setItem('xshow-settings', json);
+        // 重新加载页面以触发 Zustand persist 重新读取 localStorage
+        window.location.reload();
+      },
     }),
     {
       name: 'xshow-settings',

@@ -27,10 +27,16 @@
   --color-handle-default: #525252;
 }
 
+/* 全局字体缩放 - 通过 JS 设置 --font-scale，1rem 基准自动缩放所有 rem 单位 */
+html {
+  font-size: calc(1rem * var(--font-scale, 1));
+}
+
 /* ReactFlow 全局样式覆盖 */
 
 /* Handle 样式 - 默认隐藏，悬停/选中时显示 */
 .react-flow__handle {
+  position: absolute !important;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -44,7 +50,7 @@
 /* 节点悬停或选中时显示 handle */
 .react-flow__node:hover .react-flow__handle,
 .react-flow__node.selected .react-flow__handle {
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 /* Handle 类型化颜色 - 参考 node-banana */

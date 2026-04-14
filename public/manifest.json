@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "XShow",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "节点式可视化 AI 工作流编辑器",
   "permissions": [
     "contextMenus",

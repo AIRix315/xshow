@@ -28,6 +28,7 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   const channels = useSettingsStore((s) => s.apiConfig.channels);
   const textChannelId = useSettingsStore((s) => s.apiConfig.textChannelId);
   const textModel = useSettingsStore((s) => s.apiConfig.textModel);
+  const showNodeModelSettings = useSettingsStore((s) => s.systemSettings.showNodeModelSettings);
 
   const models = textModel.split('\n').filter((m) => m.trim());
   const currentModel = selectedModel || models[0] || '';
@@ -160,14 +161,15 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
             rows={3}
           />
 
-          {/* 供应商+模型选择 */}
-          <ProviderModelSelector
-            type="text"
-            selectedChannelId={selectedChannelId}
-            selectedModel={selectedModel}
-            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
-            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
-          />
+          {showNodeModelSettings && (
+            <ProviderModelSelector
+              type="text"
+              selectedChannelId={selectedChannelId}
+              selectedModel={selectedModel}
+              onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+              onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
+            />
+          )}
 
           {/* autoSplit 选项 */}
           <label className="flex items-center gap-1 text-[10px] text-neutral-400 cursor-pointer">

@@ -8,6 +8,7 @@ import {
   MiniMap,
   type Connection,
   type OnConnectEnd,
+  useOnSelectionChange,
 } from '@xyflow/react';
 import { nodeTypes } from '@/utils/nodeFactory';
 import { createNode } from '@/utils/nodeFactory';
@@ -87,18 +88,31 @@ function isDataTypeCompatible(sourceType: HandleDataType, targetType: HandleData
 function validateConnection(connection: Connection): boolean {
   const { source, target, sourceHandle, targetHandle } = connection;
   
-  if (!source || !target) return false;
-  if (source === target) return false;
+  console.log('[validateConnection] connection:', { source, target, sourceHandle, targetHandle });
+  
+  if (!source || !target) {
+    console.log('[validateConnection] 拒绝: source或target为空');
+    return false;
+  }
+  if (source === target) {
+    console.log('[validateConnection] 拒绝: source === target');
+    return false;
+  }
   
   const sourceType = extractHandleType(sourceHandle);
   const targetType = extractHandleType(targetHandle);
   
+  console.log('[validateConnection] types:', { sourceType, targetType });
+  
   // 如果两边都识别到类型，检查兼容性
   if (sourceType && targetType) {
-    return isDataTypeCompatible(sourceType, targetType);
+    const compatible = isDataTypeCompatible(sourceType, targetType);
+    console.log('[validateConnection] 兼容性:', compatible);
+    return compatible;
   }
   
   // 未知类型默认允许（宽松模式）
+  console.log('[validateConnection] 未知类型，默认允许');
   return true;
 }
 
@@ -107,7 +121,65 @@ function FlowCanvasInner() {
     position: { x: number; y: number } | null;
     sourceHandleType: string | null;
   }>({ position: null, sourceHandleType: null });
-  
+  // 追踪选中节点 ID（用于复制/粘贴）
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+
+  // 追踪选中节点
+  useOnSelectionChange({
+    onChange: ({ nodes: selected }) => {
+      setSelectedNodeIds(selected.map((n) => n.id));
+    },
+  });
+
+  // 全局键盘快捷键（复制/粘贴/撤销/重做）
+  useEffect(() => {
+    const pushUndo = useFlowStore.getState().pushUndo;
+    const copySelectedNodes = useFlowStore.getState().copySelectedNodes;
+    const pasteNodes = useFlowStore.getState().pasteNodes;
+    const undo = useFlowStore.getState().undo;
+    const redo = useFlowStore.getState().redo;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      // Ctrl+Z / Ctrl+Shift+Z 撤销/重做
+      if (e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+          return;
+        }
+        // Ctrl+Y 也支持重做
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        // Ctrl+C 复制
+        if ((e.key === 'c' || e.key === 'C') && selectedNodeIds.length > 0) {
+          e.preventDefault();
+          pushUndo();
+          copySelectedNodes(selectedNodeIds);
+          return;
+        }
+        // Ctrl+V 粘贴
+        if (e.key === 'v' || e.key === 'V') {
+          e.preventDefault();
+          pushUndo();
+          pasteNodes();
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 记录连接拖拽起点的信息
   const connectingInfo = useRef<{
     nodeId: string;
@@ -126,6 +198,7 @@ function FlowCanvasInner() {
   const setEdges = useFlowStore((s) => s.setEdges);
   const currentProjectId = useSettingsStore((s) => s.currentProjectId);
   const showMinimap = useSettingsStore((s) => s.systemSettings.showMinimap);
+  const cs = useSettingsStore((s) => s.canvasSettings);
   const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
 
   useEffect(() => {
@@ -286,7 +359,12 @@ function FlowCanvasInner() {
   }));
 
   return (
-    <div className="flex h-full w-full relative" onDragOver={(e) => e.preventDefault()} onDrop={onDrop} data-testid="flow-canvas">
+    <div
+      className="flex h-full w-full relative"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      data-testid="flow-canvas"
+    >
       <div className="flex-1 h-full">
         <ReactFlow
           nodes={styledNodes}
@@ -319,8 +397,10 @@ function FlowCanvasInner() {
           className="bg-neutral-900"
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ type: 'default', animated: false }}
+          snapToGrid={cs.snapToGrid}
+          snapGrid={[20, 20]}
         >
-          <Background color="#404040" gap={20} size={1} />
+          {cs.showGrid && <Background color="#404040" gap={20} size={1} />}
           <Controls className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg [&>button]:bg-neutral-800 [&>button]:border-neutral-700 [&>button]:text-neutral-300 [&>button:hover]:bg-neutral-700 [&>button:hover]:text-neutral-100" />
           {showMinimap && <MiniMap
             position="top-right"

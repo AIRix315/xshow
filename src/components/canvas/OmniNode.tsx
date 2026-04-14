@@ -2,13 +2,13 @@
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // Ref: node-banana — Store-only 模式
 import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
 import type { OmniNodeType, OmniNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateText } from '@/api/textApi';
 import { executeComfyWorkflow, parseWorkflowNodes, fetchComfyWorkflowJson, uploadImageToComfyUI } from '@/api/comfyApi';
-import { getConnectedInputs } from '@/utils/connectedInputs';
+import { getConnectedInputs, getInputsByHandle } from '@/utils/connectedInputs';
 import BaseNodeWrapper from './BaseNode';
 import { Save, Sparkles } from 'lucide-react';
 import type { ComfyUISubType, ComfyUINodeInfo } from '@/types';
@@ -263,6 +263,8 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  // 动态 handles 时必须调用此 hook 通知 React Flow 更新内部数据
+  const updateNodeInternals = useUpdateNodeInternals();
 
   // Store-only: 业务数据从 data 读取
   const configMode = data.configMode ?? true;
@@ -289,10 +291,17 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
   const abortRef = useRef<AbortController | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState('');
   const [parsedNodes, setParsedNodes] = useState<ReturnType<typeof parseWorkflowNodes>>([]);
+  // ComfyUI 模式：根据工作流中 IMAGE 字段数量动态显示 handle
+  const [imageFieldCount, setImageFieldCount] = useState(0);
 
-  // 从上游节点读取数据
+  // 从上游节点读取数据（按 handle 类型分类）
   const upstreamData = useMemo(() => {
     return getConnectedInputs(id, nodes, edges);
+  }, [id, nodes, edges]);
+
+  // 按 targetHandle 收集图片（用于多图填充）
+  const inputsByHandle = useMemo(() => {
+    return getInputsByHandle(id, nodes, edges);
   }, [id, nodes, edges]);
 
   // 从设置 Store 读取配置
@@ -336,6 +345,18 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
 
     const parsedNodes = parseWorkflowNodes(jsonStr);
     setParsedNodes(parsedNodes);
+
+    // 统计 LoadImage 节点的 IMAGE 字段数量，用于动态显示 handles
+    const imgFieldCount = parsedNodes
+      .filter((n) => n.classType === 'LoadImage')
+      .reduce((count, node) => {
+        return count + Object.entries(node.inputs).filter(
+          ([, fieldInfo]) => fieldInfo?.type === 'IMAGE'
+        ).length;
+      }, 0);
+    setImageFieldCount(imgFieldCount);
+    // 通知 React Flow 更新内部数据（动态 handles 必须）
+    updateNodeInternals(id);
 
     // 只初始化用户可编辑的字段（排除节点引用）
     const values: Record<string, Record<string, unknown>> = {};
@@ -458,22 +479,44 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           : [...(config.nodeInfoList ?? [])];
         
         // 图生图场景：如有上游图片且有 IMAGE 类型字段，上传到 ComfyUI
-        if (subType === 'local' && url && upstreamData.images.length > 0) {
-          const imageFields = processedNodeInfoList.filter(n => n.fieldType === 'IMAGE');
-          
-          for (let i = 0; i < Math.min(imageFields.length, upstreamData.images.length); i++) {
-            const field = imageFields[i];
-            const imageUrl = upstreamData.images[i];
-            
-            if (field && imageUrl) {
+        // 使用 inputsByHandle 按 targetHandle 精确填充
+        if (subType === 'local' && url) {
+          // 获取 LoadImage 节点的所有 IMAGE 字段
+          const imageFields = parsedNodes
+            .filter((n) => n.classType === 'LoadImage')
+            .flatMap((n) =>
+              Object.entries(n.inputs)
+                .filter(([, fieldInfo]) => fieldInfo?.type === 'IMAGE')
+                .map(([field]) => ({ nodeId: n.nodeId, field }))
+            );
+
+          // 按 image-* handle 填充对应图片
+          for (const [handleId, images] of Object.entries(inputsByHandle)) {
+            const handleIndex = parseInt(handleId.replace('image-', ''), 10);
+            // 找到对应的 IMAGE 字段
+            const targetField = imageFields[handleIndex];
+            if (!targetField) continue;
+
+            for (const imageUrl of images) {
               try {
                 const comfyFilename = await uploadImageToComfyUI(url, imageUrl, abortController.signal);
-                const fieldIndex = processedNodeInfoList.findIndex(n => n.nodeId === field.nodeId && n.fieldName === field.fieldName);
+                // 找到并更新对应的 nodeInfoList 条目
+                const fieldIndex = processedNodeInfoList.findIndex(
+                  (n) => n.nodeId === targetField.nodeId && n.fieldName === targetField.field
+                );
                 if (fieldIndex >= 0) {
+                  // 已存在，更新值
                   processedNodeInfoList[fieldIndex] = {
                     ...processedNodeInfoList[fieldIndex]!,
                     defaultValue: comfyFilename,
                   };
+                } else {
+                  // 不存在（用户未通过界面修改过该字段），动态添加
+                  processedNodeInfoList.push({
+                    nodeId: targetField.nodeId,
+                    fieldName: targetField.field,
+                    defaultValue: comfyFilename,
+                  });
                 }
               } catch (uploadErr) {
                 console.error('[OmniNode] 上传图片失败:', uploadErr);
@@ -602,8 +645,53 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360} accentColor={accentColor}>
+      {/* 默认 any handle — 始终保留，用于 prompt 等其他类型输入 */}
       <Handle type="target" position={Position.Left} id="custom-input" data-handletype="any" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
+
+      {/* ComfyUI 多图模式：额外的 image-* handles（与 any handle 共存） */}
+      {config.executionType === 'comfyui' && imageFieldCount > 1 && (
+        <>
+          {/* 图片 handles — 避开 50% 位置（any handle） */}
+          {Array.from({ length: imageFieldCount }, (_, i) => {
+            // 计算位置：跳过 50% 的 any handle
+            const totalSlots = imageFieldCount + 1; // +1 预留 any handle
+            let position = ((i + 1) / totalSlots) * 100;
+            // 如果位置接近 50%，向下偏移一点
+            if (Math.abs(position - 50) < 15) {
+              position = position < 50 ? position - 10 : position + 10;
+            }
+            return (
+              <Handle
+                key={`image-${i}`}
+                type="target"
+                position={Position.Left}
+                id={`image-${i}`}
+                data-handletype="image"
+                style={{ top: `${position}%` }}
+              />
+            );
+          })}
+          {/* 图片 handle 标签 */}
+          {Array.from({ length: imageFieldCount }, (_, i) => {
+            const totalSlots = imageFieldCount + 1;
+            let position = ((i + 1) / totalSlots) * 100;
+            if (Math.abs(position - 50) < 15) {
+              position = position < 50 ? position - 10 : position + 10;
+            }
+            return (
+              <div
+                key={`image-label-${i}`}
+                className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+                data-type="image"
+                style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+              >
+                Image {i}
+              </div>
+            );
+          })}
+        </>
+      )}
       <div className="flex flex-col h-full min-h-[180px]">
         {/* 标题栏 - 配置/运行按钮紧跟标题 */}
         <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0">
@@ -644,11 +732,12 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             {/* ========== HTTP 模式 ========== */}
             {config.executionType === 'http' && (
               <>
-                <input
+                <textarea
                   value={config.apiUrl}
                   onChange={(e) => updateConfig({ apiUrl: e.target.value })}
-                  placeholder="API URL"
-                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
+                  placeholder="输入API文档链接，点击[AI辅助]自动分析"
+                  className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1.5 border border-border focus:border-blue-500 outline-none resize-none font-mono"
+                  rows={2}
                 />
                 <div className="flex gap-1">
                   <select
@@ -795,7 +884,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
                     {/* 节点参数（可调节） */}
                     {parsedNodes.length > 0 && (
-                      <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto bg-[#1a1a1a] rounded p-1 border border-border">
+                      <div className="flex flex-col gap-0.5 bg-[#1a1a1a] rounded p-1 border border-border">
                         {parsedNodes.map((node) => (
                           <div key={node.nodeId} className="flex flex-col gap-0.5 p-1 bg-surface rounded">
                             <span className="text-[8px] text-primary font-mono">[{node.nodeId}] {node.classType}</span>

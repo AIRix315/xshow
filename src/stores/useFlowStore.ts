@@ -5,6 +5,13 @@ import { applyNodeChanges, applyEdgeChanges, type OnNodesChange, type OnEdgesCha
 import { executeCanvas } from '@/utils/executionEngine';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import { getNodeExecutor } from '@/store/execution';
+import { exportProjectFile } from '@/utils/projectManager';
+import type { AppNode } from '@/types';
+
+/** 深拷贝（剥离响应式 + 防止循环引用问题） */
+function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
 
 interface FlowState {
   nodes: Node[];
@@ -14,6 +21,15 @@ interface FlowState {
   isRunning: boolean;
   currentNodeIds: string[];
   _abortController: AbortController | null;
+  // 撤销/重做
+  _undoStack: Array<{ nodes: Node[]; edges: Edge[] }>;
+  _redoStack: Array<{ nodes: Node[]; edges: Edge[] }>;
+  // 复制/粘贴
+  _clipboard: Array<{ nodes: Node[]; edges: Edge[] }>;
+  // 项目保存状态
+  hasUnsavedChanges: boolean;
+  lastSavedAt: number | null;
+  isSaving: boolean;
 }
 
 interface FlowActions {
@@ -29,9 +45,21 @@ interface FlowActions {
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   clearCanvas: () => void;
+  // 撤销/重做
+  pushUndo: () => void;
+  undo: () => void;
+  redo: () => void;
+  // 复制/粘贴
+  copySelectedNodes: (selectedNodeIds: string[]) => void;
+  pasteNodes: () => void;
   // 执行方法
   executeWorkflow: () => Promise<void>;
   stopWorkflow: () => void;
+  // 项目保存
+  saveProject: (projectId: string, projectName: string, embedBase64: boolean) => Promise<boolean>;
+  loadProject: (nodes: Node[], edges: Edge[]) => void;
+  markDirty: () => void;
+  markClean: () => void;
 }
 
 type FlowStore = FlowState & FlowActions;
@@ -43,28 +71,38 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
   isRunning: false,
   currentNodeIds: [],
   _abortController: null,
+  _undoStack: [],
+  _redoStack: [],
+  _clipboard: [],
+  hasUnsavedChanges: false,
+  lastSavedAt: null,
+  isSaving: false,
 
   onNodesChange: (changes) => {
     set((state) => ({
       nodes: applyNodeChanges(changes, state.nodes),
+      hasUnsavedChanges: true,
     }));
   },
 
   onEdgesChange: (changes) => {
     set((state) => ({
       edges: applyEdgeChanges(changes, state.edges),
+      hasUnsavedChanges: true,
     }));
   },
 
   addNode: (node) => {
     set((state) => ({
       nodes: [...state.nodes, node],
+      hasUnsavedChanges: true,
     }));
   },
 
   addNodes: (nodes) => {
     set((state) => ({
       nodes: [...state.nodes, ...nodes],
+      hasUnsavedChanges: true,
     }));
   },
 
@@ -72,6 +110,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     set((state) => ({
       nodes: state.nodes.filter((n) => n.id !== id),
       edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+      hasUnsavedChanges: true,
     }));
   },
 
@@ -80,18 +119,21 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
       nodes: state.nodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, ...patch } } : n
       ),
+      hasUnsavedChanges: true,
     }));
   },
 
   addEdge: (edge) => {
     set((state) => ({
       edges: [...state.edges, edge],
+      hasUnsavedChanges: true,
     }));
   },
 
   removeEdge: (id) => {
     set((state) => ({
       edges: state.edges.filter((e) => e.id !== id),
+      hasUnsavedChanges: true,
     }));
   },
 
@@ -100,15 +142,95 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
   },
 
   setNodes: (nodes) => {
-    set({ nodes });
+    set({ nodes, hasUnsavedChanges: true });
   },
 
   setEdges: (edges) => {
-    set({ edges });
+    set({ edges, hasUnsavedChanges: true });
   },
 
   clearCanvas: () => {
-    set({ nodes: [], edges: [], highlightedNodeId: null });
+    set({ nodes: [], edges: [], highlightedNodeId: null, hasUnsavedChanges: true });
+  },
+
+  // ==================== 撤销/重做 ====================
+
+  /** 将当前状态压入撤销栈 */
+  pushUndo: () => {
+    const { nodes, edges } = get();
+    set((s) => ({
+      _undoStack: [...s._undoStack, { nodes: deepClone(nodes), edges: deepClone(edges) }].slice(-50),
+      _redoStack: [], // 新操作清空重做栈
+    }));
+  },
+
+  /** 撤销 */
+  undo: () => {
+    const { _undoStack, nodes, edges } = get();
+    if (_undoStack.length === 0) return;
+    const prev = _undoStack[_undoStack.length - 1]!;
+    set({
+      nodes: prev.nodes,
+      edges: prev.edges,
+      _undoStack: _undoStack.slice(0, -1),
+      _redoStack: [...get()._redoStack, { nodes: deepClone(nodes), edges: deepClone(edges) }].slice(-50),
+      hasUnsavedChanges: true,
+    });
+  },
+
+  /** 重做 */
+  redo: () => {
+    const { _redoStack, nodes, edges } = get();
+    if (_redoStack.length === 0) return;
+    const next = _redoStack[_redoStack.length - 1]!;
+    set({
+      nodes: next.nodes,
+      edges: next.edges,
+      _redoStack: _redoStack.slice(0, -1),
+      _undoStack: [...get()._undoStack, { nodes: deepClone(nodes), edges: deepClone(edges) }].slice(-50),
+      hasUnsavedChanges: true,
+    });
+  },
+
+  // ==================== 复制/粘贴 ====================
+
+  /** 复制选中节点及其边 */
+  copySelectedNodes: (selectedNodeIds) => {
+    const { nodes, edges } = get();
+    const clonedNodes = nodes
+      .filter((n) => selectedNodeIds.includes(n.id))
+      .map((n) => deepClone(n));
+    const nodeIdSet = new Set(selectedNodeIds);
+    const clonedEdges = edges
+      .filter((e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+      .map((e) => deepClone(e));
+    set({ _clipboard: [{ nodes: clonedNodes, edges: clonedEdges }] });
+  },
+
+  /** 粘贴剪贴板节点（带偏移） */
+  pasteNodes: () => {
+    const { _clipboard, nodes, edges } = get();
+    if (_clipboard.length === 0) return;
+    const latest = _clipboard[_clipboard.length - 1]!;
+    if (latest.nodes.length === 0) return;
+
+    const offset = 50;
+    const idMap = new Map<string, string>();
+    const newNodes = latest.nodes.map((n) => {
+      const newId = `${n.type ?? 'node'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      idMap.set(n.id, newId);
+      return { ...deepClone(n), id: newId, position: { x: n.position.x + offset, y: n.position.y + offset } };
+    });
+    const newEdges = latest.edges.map((e) => {
+      const newSource = idMap.get(e.source) ?? e.source;
+      const newTarget = idMap.get(e.target) ?? e.target;
+      return { ...deepClone(e), id: `${newSource}-${newTarget}-${Date.now()}`, source: newSource, target: newTarget };
+    });
+    set({
+      nodes: [...nodes, ...newNodes],
+      edges: [...edges, ...newEdges],
+      hasUnsavedChanges: true,
+    });
   },
 
   // BFS 分层执行整个画布
@@ -208,6 +330,47 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     }
     set({ isRunning: false, currentNodeIds: [], _abortController: null });
     console.log('[stopWorkflow] 执行已停止');
+  },
+
+  // 项目保存：导出为 .xshow 文件
+  saveProject: async (projectId, projectName, embedBase64) => {
+    const { nodes, edges } = get();
+    set({ isSaving: true });
+    try {
+      const success = await exportProjectFile(
+        projectId,
+        projectName,
+        nodes as AppNode[],
+        edges,
+        embedBase64,
+      );
+      if (success) {
+        set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
+      }
+      return success;
+    } finally {
+      set({ isSaving: false });
+    }
+  },
+
+  // 项目加载：替换当前画布数据
+  loadProject: (nodes, edges) => {
+    set({
+      nodes,
+      edges,
+      hasUnsavedChanges: false,
+      lastSavedAt: null,
+    });
+  },
+
+  // 标记为有未保存更改
+  markDirty: () => {
+    set({ hasUnsavedChanges: true });
+  },
+
+  // 标记为已保存
+  markClean: () => {
+    set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
   },
 }));
 

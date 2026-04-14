@@ -486,3 +486,45 @@ export function getUpstreamNodes(
     })
     .filter((item): item is { edge: Edge; node: Node } => item !== null);
 }
+
+/**
+ * 按 targetHandle 收集上游图片
+ * 用于 OmniNode 等支持多图片输入的节点
+ * 返回格式: { "image-0": ["url1"], "image-1": ["url2"] }
+ */
+export function getInputsByHandle(
+  nodeId: string,
+  nodes: Node[],
+  edges: Edge[],
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+
+  // 遍历所有指向当前节点的边
+  edges
+    .filter((e) => e.target === nodeId && e.targetHandle?.startsWith('image-'))
+    .forEach((edge) => {
+      const handleId = edge.targetHandle!; // 如 "image-0"
+      if (!result[handleId]) result[handleId] = [];
+
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (!sourceNode) return;
+
+      // 推断 targetHandle 类型用于 getSourceOutput
+      const targetHandleType = inferHandleType(handleId);
+      const sourceOutput = getSourceOutput(sourceNode, edge.sourceHandle, targetHandleType);
+
+      if (sourceOutput.value) {
+        const arr = result[handleId] ?? [];
+        arr.push(sourceOutput.value);
+        result[handleId] = arr;
+      }
+      // 处理 additionalValues（如多图输出）
+      sourceOutput.additionalValues?.forEach((v) => {
+        const arr = result[handleId] ?? [];
+        arr.push(v);
+        result[handleId] = arr;
+      });
+    });
+
+  return result;
+}

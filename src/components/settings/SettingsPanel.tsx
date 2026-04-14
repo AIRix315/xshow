@@ -1,11 +1,13 @@
 // Ref: §7.2 — SettingsPanel 5 Tab 结构（项目/模型/提示词/画布/系统）
 // Ref: 原型 xshow-canvas-prototype.html 设置面板
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import type { CanvasSettings } from '@/stores/useSettingsStore';
 import type { ChannelConfig, PresetPrompt } from '@/types';
 import { testComfyConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
-import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2 } from 'lucide-react';
+import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload } from 'lucide-react';
+import { useFlowStore } from '@/stores/useFlowStore';
+import { importProjectFile } from '@/utils/projectManager';
 
 type SettingsTab = 'project' | 'model' | 'prompt' | 'canvas' | 'system';
 type ApiType = 'text' | 'image' | 'video' | 'audio';
@@ -539,8 +541,39 @@ function ProjectTab() {
   const renameProject = useSettingsStore((s) => s.renameProject);
   const removeProject = useSettingsStore((s) => s.removeProject);
   const setCurrentProject = useSettingsStore((s) => s.setCurrentProject);
+  const importProjectFromFile = useSettingsStore((s) => s.importProjectFromFile);
   const systemSettings = useSettingsStore((s) => s.systemSettings);
   const updateSystemSettings = useSettingsStore((s) => s.updateSystemSettings);
+  const hasUnsavedChanges = useFlowStore((s) => s.hasUnsavedChanges);
+  const isSaving = useFlowStore((s) => s.isSaving);
+  const saveProject = useFlowStore((s) => s.saveProject);
+
+  const [ioStatus, setIoStatus] = useState<string | null>(null);
+  const currentProject = projects.find((p) => p.id === currentProjectId);
+
+  /** 导入项目 */
+  const handleImport = async () => {
+    if (hasUnsavedChanges) {
+      if (!confirm('有未保存的更改，确定要导入吗？')) return;
+    }
+    setIoStatus('正在导入...');
+    const result = await importProjectFile();
+    if (result) {
+      await importProjectFromFile(result.file);
+      if (result.warnings.length > 0) {
+        alert(result.warnings.join('\n'));
+      }
+    }
+    setIoStatus(null);
+  };
+
+  /** 导出当前项目 */
+  const handleExport = async () => {
+    if (!currentProject || isSaving) return;
+    setIoStatus('正在导出...');
+    await saveProject(currentProjectId, currentProject.name, systemSettings.embedBase64);
+    setIoStatus(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -548,29 +581,68 @@ function ProjectTab() {
         <label className="block text-xs text-text-secondary mb-1">项目名称</label>
         <input
           type="text"
-          value={projects.find((p) => p.id === currentProjectId)?.name ?? ''}
+          value={currentProject?.name ?? ''}
           onChange={(e) => renameProject(currentProjectId, e.target.value)}
           className="w-full bg-surface text-text text-xs rounded px-2 py-1.5 border border-border focus:border-primary outline-none"
           placeholder="输入项目名称..."
         />
       </div>
-      <div>
-        <label className="block text-xs text-text-secondary mb-1">保存目录</label>
-        <div className="flex gap-2">
-          <input type="text" value={systemSettings.saveDirectory} onChange={(e) => updateSystemSettings({ saveDirectory: e.target.value })} placeholder="选择保存目录..." className="flex-1 bg-surface text-text text-xs rounded px-2 py-1.5 border border-border focus:border-primary outline-none" />
-          <button className="px-3 py-1.5 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border"><FolderOpen className="w-3.5 h-3.5" /></button>
-        </div>
-        <p className="text-[10px] text-text-muted mt-1">不设置目录时，仅内存暂存</p>
-      </div>
-      <div className="border-t border-border pt-3">
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
+
+      {/* 导入/导出区域 */}
+      <div className="border border-border rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
           <div>
-            <span className="text-sm text-text">图片嵌入 Base64</span>
-            <p className="text-[10px] text-text-muted">图片直接存在流程文件中</p>
+            <span className="text-xs text-text font-medium">文件操作</span>
+            <p className="text-[10px] text-text-muted">导出为 .xshow 文件，或从文件导入</p>
+          </div>
+          {ioStatus && <span className="text-[10px] text-primary">{ioStatus}</span>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleImport}
+            disabled={!!ioStatus}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
+          >
+            <Upload className="w-3.5 h-3.5" />导入项目
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={!!ioStatus || isSaving}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />{isSaving ? '导出中...' : '导出项目'}
+          </button>
+        </div>
+        {hasUnsavedChanges && (
+          <p className="text-[10px] text-yellow-400 text-center">当前有未保存的更改</p>
+        )}
+      </div>
+
+      {/* Base64 嵌入开关 */}
+      <div className="border-t border-border pt-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <span className="text-sm text-text">导出含媒体</span>
+            <p className="text-[10px] text-text-muted mt-0.5">
+              {systemSettings.embedBase64 ? (
+                <span className="text-green-400">✓ 已开启 — 图片/视频内嵌为 Base64，导出的 .xshow 文件自包含所有资源，可直接分享</span>
+              ) : (
+                <span className="text-yellow-400">✗ 已关闭 — 保留 URL 引用，导出的文件较小，但链接在导出后可能失效</span>
+              )}
+            </p>
           </div>
           <Toggle value={systemSettings.embedBase64} onChange={(v) => updateSystemSettings({ embedBase64: v })} />
-        </label>
+        </div>
+        <div className={`mt-1.5 px-2 py-1.5 rounded text-[10px] leading-relaxed ${systemSettings.embedBase64 ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-200 border border-yellow-500/20'}`}>
+          {systemSettings.embedBase64 ? (
+            <>导出的文件较大（图片越多体积越大），但完全自包含，无需担心资源链接丢失。</>
+          ) : (
+            <>文件轻量，但 AI 生成的图片/视频链接在导出后会断开。请在导出前确保资源已保存到本地。</>
+          )}
+        </div>
       </div>
+
+      {/* 项目列表 */}
       <div className="border-t border-border pt-3">
         <label className="block text-xs text-text-secondary mb-1.5">项目列表</label>
         <div className="space-y-1">
@@ -714,6 +786,7 @@ function CanvasTab() {
 function SystemTab() {
   const ss = useSettingsStore((s) => s.systemSettings);
   const update = useSettingsStore((s) => s.updateSystemSettings);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="space-y-4">
@@ -744,21 +817,52 @@ function SystemTab() {
 
       {/* 路径配置 */}
       <div className="bg-surface rounded-lg border border-border p-3 space-y-3">
-        <div>
-          <label className="text-xs text-text-secondary mb-1 block">.env 配置文件路径</label>
-          <div className="flex gap-2">
-            <input type="text" value={ss.envConfigPath} onChange={(e) => update({ envConfigPath: e.target.value })} placeholder="选择 .env 配置保存目录..." className="flex-1 bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none" />
-            <button className="px-2 py-1 bg-surface hover:bg-surface-hover text-text-secondary rounded border border-border"><FolderOpen className="w-3.5 h-3.5" /></button>
-          </div>
-          <p className="text-[10px] text-text-muted mt-1">API Key 等配置保存为 .env 文件</p>
-        </div>
-        <div>
-          <label className="text-xs text-text-secondary mb-1 block">配置保存路径</label>
-          <div className="flex gap-2">
-            <input type="text" value={ss.configSavePath} onChange={(e) => update({ configSavePath: e.target.value })} placeholder="选择配置保存目录..." className="flex-1 bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none" />
-            <button className="px-2 py-1 bg-surface hover:bg-surface-hover text-text-secondary rounded border border-border"><FolderOpen className="w-3.5 h-3.5" /></button>
-          </div>
-          <p className="text-[10px] text-text-muted mt-1">独立保存模型和渠道配置，升级不丢失</p>
+        <div className="text-sm font-medium text-text">配置备份</div>
+        <p className="text-[10px] text-text-muted">导出包含所有 API Key、供应商配置、项目设定、画布及系统设置。导入将覆盖当前配置。</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              const json = useSettingsStore.getState().exportSettingsJson();
+              if (!json) return;
+              const blob = new Blob([json], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              const ts = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+              a.href = url;
+              a.download = `xshow-config-${ts}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />导出配置
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />导入配置
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                const content = reader.result as string;
+                if (window.confirm('导入将覆盖当前所有配置。确定继续？')) {
+                  useSettingsStore.getState().importSettingsJson(content);
+                }
+              };
+              reader.readAsText(file);
+              // 清空 value 以便重复选择同一文件
+              e.target.value = '';
+            }}
+          />
         </div>
       </div>
     </div>

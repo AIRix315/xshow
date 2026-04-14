@@ -1,6 +1,6 @@
 // Ref: §三 — 核心数据结构定义 + @xyflow/react Node 类型
 // 所有接口与类型均对照 01-1-reverse-engineering-plan-v2.md §3.1-3.15
-import type { Node } from '@xyflow/react';
+import type { Node, Edge } from '@xyflow/react';
 
 // §3.1 通道配置与全局 API 配置
 export type ComfyUISubType = 'local' | 'cloud' | 'runninghub' | 'runninghubApp';
@@ -313,6 +313,19 @@ export interface VideoTrimNodeData extends BaseNodeData { inputVideoUrl?: string
 export interface Project {
   id: string;          // 默认 "default"
   name: string;        // 项目名
+}
+
+// §3.16 项目文件格式（导出/导入 JSON）
+// 用于项目完整保存和跨设备迁移
+export interface XShowWorkflowFile {
+  version: 1;
+  id: string;          // 项目 ID（时间戳）
+  name: string;        // 项目名称
+  embedBase64: boolean; // 是否嵌入了 Base64 媒体
+  nodes: AppNode[];    // 节点数据
+  edges: Edge[];
+  savedAt: number;     // 保存时间戳（ISO ms）
+  xshowVersion: string; // XShow 版本号
 }
 
 // §3.14 自定义节点模板

@@ -101,7 +101,7 @@ function BaseNodeWrapper({
         </div>
       )}
 
-      {/* 节点容器 - 对标 node-banana 样式: bg=#262626, border=#333, rounded=8px */}
+        {/* 节点容器 - 对标 node-banana 样式: bg=#262626, border=#333, rounded=8px */}
       <div
         className={`
           w-full h-full flex flex-col overflow-visible relative
@@ -113,15 +113,16 @@ function BaseNodeWrapper({
               : nodeStatus === 'error'
               ? 'border-red-500'
               : selected
-              ? `ring-2 shadow-lg ${accentColor ? '' : 'shadow-blue-500/25'}`
+              ? `border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/25`
               : 'border-[#333]'
           }
         `}
-        style={{
-          ...(accentColor ? {
-            borderColor: selected ? accentColor : undefined,
-            boxShadow: selected ? `0 0 0 2px ${accentColor}40, 0 4px 12px ${accentColor}25` : undefined,
-          } : selected ? undefined : undefined),
+          style={{
+          transition: 'var(--reduce-anim, inherit)',
+          ...(accentColor && selected ? {
+            borderColor: accentColor,
+            boxShadow: `0 0 0 2px ${accentColor}40, 0 4px 12px ${accentColor}25`,
+          } : {}),
         }}
       >
         {/* 标题栏 - 对标: bg=#262626, border-bottom 使用 accentColor */}
@@ -130,7 +131,7 @@ function BaseNodeWrapper({
             className="flex items-center justify-between px-3 py-1.5 border-b bg-[#262626] rounded-t-lg"
             style={{ borderBottomColor: accentColor ?? '#333' }}
           >
-            <span className="text-[10px] font-semibold uppercase text-[#9ca3af] truncate">{title}</span>
+            <span className="font-semibold uppercase text-[#9ca3af] truncate">{title}</span>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {settingsPanel && (
                 <button 
