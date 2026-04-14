@@ -35,6 +35,7 @@ function PromptConstructorNode({ id, data, selected }: NodeProps<PromptConstruct
   return (
     <BaseNodeWrapper selected={!!selected} title="构造">
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%' }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       <div className="flex flex-col gap-2 p-2 min-w-[220px]">
         <span className="text-[10px] text-text-secondary font-medium">提示词构造器</span>
         {parts.map((part) => (
@@ -64,6 +65,7 @@ function PromptConstructorNode({ id, data, selected }: NodeProps<PromptConstruct
         )}
       </div>
       <Handle type="source" position={Position.Right} id="text" style={{ top: '50%' }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="text" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
     </BaseNodeWrapper>
   );
 }

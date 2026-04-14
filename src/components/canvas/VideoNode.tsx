@@ -69,6 +69,7 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
     <>
       {/* 输入 Handle (33%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '33%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Video</div>
       
       {/* 视频预览区域 */}
       {videoUrl && !loading ? (
@@ -97,6 +98,7 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
       
       {/* 输出 Handle (67%) */}
       <Handle type="source" position={Position.Right} id="video" style={{ top: '67%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Video</div>
     </>
   );
 
@@ -105,6 +107,7 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
     <>
       {/* 输入 Handle (33%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '33%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Video</div>
       
       {/* 内容区域 */}
       <div className="flex flex-col h-full">
@@ -183,6 +186,7 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
       
       {/* 输出 Handle (67%) */}
       <Handle type="source" position={Position.Right} id="video" style={{ top: '67%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Video</div>
     </>
   );
 

@@ -30,6 +30,7 @@ function EaseCurveNode({ id, data, selected }: NodeProps<EaseCurveNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} title="缓动">
       <Handle type="target" position={Position.Left} id="value" style={{ top: '50%' }} data-handletype="value" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="value" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Value</div>
       <div className="flex flex-col gap-2 p-2 min-w-[180px]">
         <span className="text-[10px] text-text-secondary font-medium">Ease Curve</span>
         <div className="h-16 bg-surface rounded border border-border flex items-center justify-center p-2">
@@ -52,6 +53,7 @@ function EaseCurveNode({ id, data, selected }: NodeProps<EaseCurveNodeType>) {
         </select>
       </div>
       <Handle type="source" position={Position.Right} id="value" style={{ top: '50%' }} data-handletype="value" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="value" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Value</div>
     </BaseNodeWrapper>
   );
 }

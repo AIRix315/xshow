@@ -46,6 +46,7 @@ function ConditionalSwitchNode({ id, data, selected }: NodeProps<ConditionalSwit
   return (
     <BaseNodeWrapper selected={!!selected} title="条件">
       <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} data-handletype="any" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
       <div className="flex flex-col gap-2 p-2 min-w-[220px]">
         <span className="text-[10px] text-text-secondary font-medium">Conditional Switch</span>
         {rules.map((rule) => (
@@ -85,6 +86,7 @@ function ConditionalSwitchNode({ id, data, selected }: NodeProps<ConditionalSwit
         <Handle key={rule.id} type="source" position={Position.Right} id={`rule-${i}`} style={{ top: `${20 + (i * 60 / Math.max(rules.length, 1))}%` }} data-handletype="any" />
       ))}
       <Handle type="source" position={Position.Right} id="default" style={{ top: '85%' }} data-handletype="any" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="any" style={{ left: 'calc(100% + 8px)', top: 'calc(85% - 8px)', zIndex: 10 }}>Default</div>
     </BaseNodeWrapper>
   );
 }

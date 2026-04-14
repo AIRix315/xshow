@@ -133,10 +133,13 @@ function ImageInputNode({ id, data, selected }: NodeProps<ImageInputNodeType>) {
       )}
 
       <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
       {/* 接收上游图片数据（自动覆盖本地上传） */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '40%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(40% - 8px)', zIndex: 10 }}>Image</div>
       {/* 接收 reference 引用线（GridSplitNode 子节点连接） */}
       <Handle type="target" position={Position.Left} id="reference" style={{ top: '60%', zIndex: 10 }} data-handletype="reference" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="reference" style={{ right: 'calc(100% + 8px)', top: 'calc(60% - 8px)', zIndex: 10 }}>Ref</div>
     </BaseNodeWrapper>
   );
 }

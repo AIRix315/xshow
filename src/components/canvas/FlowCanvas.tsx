@@ -125,6 +125,7 @@ function FlowCanvasInner() {
   const setNodes = useFlowStore((s) => s.setNodes);
   const setEdges = useFlowStore((s) => s.setEdges);
   const currentProjectId = useSettingsStore((s) => s.currentProjectId);
+  const showMinimap = useSettingsStore((s) => s.systemSettings.showMinimap);
   const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
 
   useEffect(() => {
@@ -321,7 +322,7 @@ function FlowCanvasInner() {
         >
           <Background color="#404040" gap={20} size={1} />
           <Controls className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg [&>button]:bg-neutral-800 [&>button]:border-neutral-700 [&>button]:text-neutral-300 [&>button:hover]:bg-neutral-700 [&>button:hover]:text-neutral-100" />
-          <MiniMap
+          {showMinimap && <MiniMap
             position="top-right"
             className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg"
             maskColor="rgba(0, 0, 0, 0.6)"
@@ -343,7 +344,7 @@ function FlowCanvasInner() {
                   return '#f59e0b';
                 case 'gridMergeNode':
                   return '#f97316';
-                case 'customNode':
+                case 'omniNode':
                   return '#06b6d4';
                 // Input
                 case 'viewer3DNode':
@@ -385,7 +386,7 @@ function FlowCanvasInner() {
                   return '#94a3b8';
               }
             }}
-          />
+          />}
         </ReactFlow>
       </div>
       <FloatingActionBar />

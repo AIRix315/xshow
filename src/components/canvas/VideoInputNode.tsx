@@ -90,6 +90,7 @@ function VideoInputNode({ id, data, selected }: NodeProps<VideoInputNodeType>) {
       )}
 
       <Handle type="source" position={Position.Right} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
     </BaseNodeWrapper>
   );
 }

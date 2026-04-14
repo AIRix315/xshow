@@ -10,6 +10,7 @@ function RouterNode({ data, selected }: NodeProps<RouterNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} title="路由">
       <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} data-handletype="any" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
       <div className="flex flex-col gap-2 p-2 min-w-[160px]">
         <span className="text-[10px] text-text-secondary font-medium">Router</span>
         <div className="text-[10px] text-text-muted text-center">分发到 {outputCount} 个输出</div>

@@ -719,7 +719,7 @@ function SystemTab() {
     <div className="space-y-4">
       {/* 主题 */}
       <div className="bg-surface rounded-lg border border-border p-3 space-y-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-text"><Monitor className="w-4 h-4" />主题</div>
+        <div className="flex items-center gap-2 text-sm font-medium text-text"><Monitor className="w-4 h-4" />主题 <span className="text-[10px] text-orange-400 font-normal">尚未开发</span></div>
         <div className="flex gap-2">
           <button onClick={() => update({ theme: 'dark' })} className={`flex-1 px-3 py-2 text-xs rounded border ${ss.theme === 'dark' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary bg-surface-hover'}`}><Moon className="w-3.5 h-3.5 inline mr-1" />深色 Dark</button>
           <button onClick={() => update({ theme: 'light' })} className={`flex-1 px-3 py-2 text-xs rounded border ${ss.theme === 'light' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary bg-surface-hover'}`}><Sun className="w-3.5 h-3.5 inline mr-1" />浅色 Light</button>

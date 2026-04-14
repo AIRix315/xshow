@@ -92,6 +92,29 @@
   background: #bef264;
 }
 
+/* Handle 类型标签 - 默认隐藏，悬停时显示 */
+.handle-label {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* 节点悬停时显示 handle 标签 */
+.react-flow__node:hover .handle-label,
+.react-flow__node.selected .handle-label {
+  opacity: 1;
+}
+
+/* Handle 标签颜色 - 与 handle 颜色对应 */
+.handle-label[data-type="image"] { color: #10b981; }
+.handle-label[data-type="text"] { color: #3b82f6; }
+.handle-label[data-type="video"] { color: #f97316; }
+.handle-label[data-type="audio"] { color: #a855f7; }
+.handle-label[data-type="model"] { color: #f97316; }
+.handle-label[data-type="any"] { color: #525252; }
+.handle-label[data-type="reference"] { color: #6b7280; }
+.handle-label[data-type="value"] { color: #bef264; }
+
 /* Controls 样式 */
 .react-flow__controls {
   background: var(--color-surface) !important;

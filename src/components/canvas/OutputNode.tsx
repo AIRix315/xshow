@@ -73,12 +73,11 @@ function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
     <BaseNodeWrapper selected={!!selected} title="输出">
       {/* 多类型输入 handle — 各类型独立入口 */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '25%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', zIndex: 10 }}>Image</div>
       <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
       <Handle type="target" position={Position.Left} id="text" style={{ top: '75%', zIndex: 10 }} data-handletype="text" />
-      {/* Handle 标签 */}
-      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', color: 'var(--color-handle-image)', zIndex: 10 }}>Image</div>
-      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', color: 'var(--color-handle-video)', zIndex: 10 }}>Video</div>
-      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', color: 'var(--color-handle-text)', zIndex: 10 }}>Text</div>
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', zIndex: 10 }}>Text</div>
 
       {/* 内容区域 — flex-1 填满剩余空间 */}
       <div className="flex flex-col h-full">

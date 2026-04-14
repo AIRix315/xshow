@@ -63,6 +63,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
     <>
       {/* 输入 Handle 1 - Image (33%) */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
       
       {/* 图片预览区域 - 全屏无间隙 */}
       {imageUrl && !loading ? (
@@ -91,6 +92,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
       
       {/* 输出 Handle (67%) */}
       <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
@@ -99,8 +101,10 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
     <>
       {/* 输入 Handle 1 - Image (33%) */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
       {/* 输入 Handle 2 - Text (67%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
       
       {/* 内容区域：图片预览在上，参数在底部 */}
       <div className="flex flex-col h-full">
@@ -174,6 +178,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
       
       {/* 输出 Handle (67%) */}
       <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 

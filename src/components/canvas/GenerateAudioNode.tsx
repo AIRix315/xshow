@@ -163,6 +163,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       
       {/* 文本状态 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
@@ -185,6 +186,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
       
       {/* 输出 Handle (50%) */}
       <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
     </>
   );
 
@@ -193,6 +195,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       
       {/* 内容区域：预览在上，参数在底部 */}
       <div className="flex flex-col h-full">
@@ -257,6 +260,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
       
       {/* 输出 Handle (50%) */}
       <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
     </>
   );
 

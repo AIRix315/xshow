@@ -21,7 +21,9 @@ function ImageCompareNode({ id, data, selected }: NodeProps<ImageCompareNodeType
   return (
     <BaseNodeWrapper selected={!!selected} title="对比">
       <Handle type="target" position={Position.Left} id="image-left" style={{ top: '35%' }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(35% - 8px)', zIndex: 10 }}>Image</div>
       <Handle type="target" position={Position.Left} id="image-right" style={{ top: '65%' }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(65% - 8px)', zIndex: 10 }}>Image</div>
       <div className="flex flex-col gap-2 p-2 min-w-[220px]">
         <span className="text-[10px] text-text-secondary font-medium">Image Compare</span>
         <div className="flex gap-1">
@@ -39,6 +41,7 @@ function ImageCompareNode({ id, data, selected }: NodeProps<ImageCompareNodeType
         </div>
       </div>
       <Handle type="source" position={Position.Right} id="image" style={{ top: '50%' }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </BaseNodeWrapper>
   );
 }

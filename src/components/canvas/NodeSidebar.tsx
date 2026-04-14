@@ -1,6 +1,6 @@
 // Ref: @xyflow/react DnD 文档 + node-banana WorkflowCanvas.tsx + 原型 NodeSidebar
 // Ref: 原型 — fixed overlay 模式，由外部按钮控制开合
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
 import {
   Image, FileText, Video, Mic, Box,
@@ -9,14 +9,14 @@ import {
   PenTool, Grid3x3, Scissors, Clock, Frame, GitCompare,
   GitBranch, ToggleLeft, GitMerge,
   Download, GalleryHorizontal,
-  Settings, X,
+  Settings, X, ChevronDown,
 } from 'lucide-react';
 
 // 按 node-banana 分类组织
 // 命名规范：Input 后缀 = 输入节点，无后缀 = 生成节点
 const NODE_CATEGORIES = [
   {
-    title: 'Input 输入',
+    title: 'COMMON 常用',
     items: [
       { type: 'imageInputNode', label: '图片', icon: Image },
       { type: 'audioInputNode', label: '音频', icon: Mic },
@@ -26,7 +26,7 @@ const NODE_CATEGORIES = [
     ],
   },
   {
-    title: 'Text 文本',
+    title: 'Prompt 提示词',
     items: [
       { type: 'promptNode', label: '提示词', icon: Sparkles },
       { type: 'promptConstructorNode', label: '提示词构造', icon: Layers },
@@ -85,6 +85,23 @@ interface NodeSidebarProps {
 }
 
 function NodeSidebar({ open, onClose }: NodeSidebarProps) {
+  // 默认只有第一项（Input 输入）展开，其他折叠
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set([NODE_CATEGORIES[0]!.title]),
+  );
+
+  const toggleCategory = useCallback((title: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) {
+        next.delete(title);
+      } else {
+        next.add(title);
+      }
+      return next;
+    });
+  }, []);
+
   const onDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>, nodeType: string) => {
       // 使用 nativeEvent 获取原生的 DataTransfer 对象
@@ -122,24 +139,33 @@ function NodeSidebar({ open, onClose }: NodeSidebarProps) {
 
         {/* 分类列表 - 统一暗色滚动条 */}
         <div className="flex-1 overflow-y-auto px-2 py-2 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-transparent hover:scrollbar-thumb-neutral-500">
-          {NODE_CATEGORIES.map((category) => (
-            <div key={category.title} className="mb-3">
-              <div className="text-[10px] uppercase text-text-muted mb-1.5 px-1 tracking-wide">{category.title}</div>
-              {category.items.map(({ type, label, icon: Icon }) => (
-                <div
-                  key={`${type}-${label}`}
-                  data-testid={`add-node-${type}`}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, type)}
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-text bg-transparent hover:bg-surface-hover border border-transparent hover:border-border rounded-md cursor-grab active:cursor-grabbing transition-colors mb-0.5"
-                  title={label}
+          {NODE_CATEGORIES.map((category) => {
+            const isExpanded = expandedCategories.has(category.title);
+            return (
+              <div key={category.title} className="mb-3">
+                <button
+                  onClick={() => toggleCategory(category.title)}
+                  className="flex items-center justify-between w-full text-[10px] uppercase text-text-muted mb-1.5 px-1 tracking-wide hover:text-text transition-colors"
                 >
-                  <Icon className="w-3.5 h-3.5 text-text-secondary shrink-0" />
-                  <span className="truncate">{label}</span>
-                </div>
-              ))}
-            </div>
-          ))}
+                  <span>{category.title}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                </button>
+                {isExpanded && category.items.map(({ type, label, icon: Icon }) => (
+                  <div
+                    key={`${type}-${label}`}
+                    data-testid={`add-node-${type}`}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, type)}
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-text bg-transparent hover:bg-surface-hover border border-transparent hover:border-border rounded-md cursor-grab active:cursor-grabbing transition-colors mb-0.5"
+                    title={label}
+                  >
+                    <Icon className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                    <span className="truncate">{label}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     </>

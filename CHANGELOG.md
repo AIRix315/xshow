@@ -2,6 +2,42 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.3] - 2026-04-14
+
+### Handle 类型标签显示优化
+
+- **全局统一**：所有节点的 Handle 类型标签（Image/Video/Text/Audio/Model/Any 等）现在统一在鼠标悬停时显示
+- **悬停交互**：标签默认隐藏（`opacity: 0`），节点悬停或选中时淡入显示
+- **颜色语义**：标签颜色与 Handle 圆点颜色对应（image=绿、video=橙、audio=紫、text=蓝、model=橙、any=灰）
+- **OmniNode 特殊处理**：输出 Handle 新增 "Any" 标签，替代原有纯颜色区分
+- **OutputNode/OutputGalleryNode**：标签从一直显示改为悬停显示，与其他节点统一
+- **清理死代码**：移除 MiniMap 中不存在的 `customNode` 引用，改用正确的 `omniNode`
+
+#### 修改文件
+
+- `src/tailwind.css` — `.handle-label` 全局样式 + 悬停显示规则
+- `src/components/canvas/FlowCanvas.tsx` — MiniMap 颜色映射修复
+- `src/components/canvas/OmniNode.tsx` — 添加 Any 标签
+- `src/components/canvas/OutputNode.tsx` — 标签改为悬停显示
+- `src/components/canvas/OutputGalleryNode.tsx` — 标签改为悬停显示
+- `src/components/canvas/ImageNode.tsx` — 添加 Image/Text 标签
+- `src/components/canvas/VideoNode.tsx` — 添加 Video 标签
+- `src/components/canvas/GenerateAudioNode.tsx` — 添加 Text/Audio 标签
+- `src/components/canvas/Generate3DNode.tsx` — 添加 Text/Model 标签
+- `src/components/canvas/ImageInputNode.tsx` — 添加 Image/Ref 标签
+- `src/components/canvas/VideoInputNode.tsx` — 添加 Video 标签
+- `src/components/canvas/TextInputNode.tsx` — 添加 Text 标签
+- `src/components/canvas/AnnotateNode.tsx` — 添加 Image 标签
+- `src/components/canvas/FrameGrabNode.tsx` — 添加 Video/Image 标签
+- `src/components/canvas/Viewer3DNode.tsx` — 添加 Image/Model 标签
+- `src/components/canvas/VideoTrimNode.tsx` — 添加 Video 标签
+- `src/components/canvas/VideoStitchNode.tsx` — 添加 Video 标签
+- `src/components/canvas/PromptConstructorNode.tsx` — 添加 Text 标签
+- `src/components/canvas/ImageCompareNode.tsx` — 添加 Image 标签
+- `src/components/canvas/EaseCurveNode.tsx` — 添加 Value 标签
+- `src/components/canvas/SwitchNode.tsx` — 添加 Any/On/Off 标签
+- `src/components/canvas/ConditionalSwitchNode.tsx` — 添加 Any/Default 标签
+
 ## [0.1.2] - 2026-04-15
 
 ### 万能节点数据流 & UI 改进

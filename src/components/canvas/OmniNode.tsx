@@ -603,6 +603,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360} accentColor={accentColor}>
       <Handle type="target" position={Position.Left} id="custom-input" data-handletype="any" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
       <div className="flex flex-col h-full min-h-[180px]">
         {/* 标题栏 - 配置/运行按钮紧跟标题 */}
         <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0">
@@ -915,6 +916,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         data-handletype="any"
         style={{ top: '50%', zIndex: 10, backgroundColor: accentColor ?? '#525252', width: 12, height: 12, border: '2px solid #1e1e1e' }}
       />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="any" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
     </BaseNodeWrapper>
   );
 }

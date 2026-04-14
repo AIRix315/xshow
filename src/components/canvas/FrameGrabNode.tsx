@@ -114,6 +114,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
       
       {/* 帧预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
@@ -130,6 +131,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
       
       {/* 输出 Handle (50%) */}
       <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
@@ -138,6 +140,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
       
       {/* 内容区域：预览在上，参数在底部 */}
       <div className="flex flex-col h-full">
@@ -202,6 +205,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
       
       {/* 输出 Handle (50%) */}
       <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 

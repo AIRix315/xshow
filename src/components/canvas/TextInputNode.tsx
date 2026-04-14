@@ -88,6 +88,7 @@ function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
           </button>
         </div>
         <Handle type="source" position={Position.Right} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+        <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="text" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       </BaseNodeWrapper>
     );
   }
@@ -160,6 +161,7 @@ function TextInputNode({ id, data, selected }: NodeProps<TextInputNodeType>) {
       )}
 
       <Handle type="source" position={Position.Right} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="text" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
     </BaseNodeWrapper>
   );
 }

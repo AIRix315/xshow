@@ -57,6 +57,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNodeT
   const minimalContent = (
     <>
       <Handle type="target" position={Position.Left} id="source-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
       
       <div className="w-full h-full p-2">
         <div
@@ -112,6 +113,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNodeT
   const hoverContent = (
     <>
       <Handle type="target" position={Position.Left} id="source-image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
       
       <div className="flex flex-col h-full">
         <div className="flex-1 min-h-0 p-2">

@@ -124,7 +124,9 @@ function Viewer3DNode({ id, data, selected }: NodeProps<Viewer3DNodeType>) {
       )}
 
       <Handle type="target" position={Position.Left} id="image" style={{ top: '50%' }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
       <Handle type="source" position={Position.Right} id="model" style={{ top: '50%' }} data-handletype="model" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="model" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Model</div>
     </BaseNodeWrapper>
   );
 }
