@@ -397,35 +397,45 @@ export async function testComfyConnection(
       }
 
       case 'runninghub': {
-        // 测试 RunningHub API Key
-        const resp = await fetch('https://www.runninghub.cn/api-open/openapi/getUserInfo', {
+        // 测试 RunningHub API Key（通过 extensionFetch 代理避免 SidePanel CORS 限制）
+        // 正确端点：/uc/openapi/accountStatus，认证用 Bearer Token
+        const resp = await extensionFetch('https://www.runninghub.cn/uc/openapi/accountStatus', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Host': 'www.runninghub.cn' },
-          body: JSON.stringify({ apiKey }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ apikey: apiKey }),
         });
         const json = await resp.json();
         if (json.code === 0) {
-          return { ok: true, message: `已连接 RunningHub: ${json.data?.userName ?? ''}` };
+          return {
+            ok: true,
+            message: `已连接 RunningHub: 余额 ${json.data?.remainCoins ?? '?'} 币，${json.data?.remainMoney ?? '?'} 元`,
+          };
         }
         return { ok: false, message: json.msg ?? 'API Key 无效' };
       }
 
       case 'runninghubApp': {
-        // 测试 RunningHub APP 模式，同时获取 APP 列表
-        const resp = await fetch('https://www.runninghub.cn/api-open/openapi/getWebappList', {
+        // 测试 RunningHub APP 模式，同时获取 APP 列表（通过 extensionFetch 代理避免 SidePanel CORS 限制）
+        // 正确端点：/uc/openapi/accountStatus
+        const resp = await extensionFetch('https://www.runninghub.cn/uc/openapi/accountStatus', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Host': 'www.runninghub.cn' },
-          body: JSON.stringify({ apiKey }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ apikey: apiKey }),
         });
         const json = await resp.json();
         if (json.code === 0) {
-          const apps = (json.data ?? []).map((app: { webappId?: string; appName?: string }) => ({
-            id: app.webappId ?? '',
-            name: app.appName ?? app.webappId ?? '',
-          }));
-          return { ok: true, message: `已连接 RunningHub APP: ${apps.length} 个应用`, apps };
+          return {
+            ok: true,
+            message: `已连接 RunningHub: 余额 ${json.data?.remainCoins ?? '?'} 币，${json.data?.remainMoney ?? '?'} 元`,
+          };
         }
-        return { ok: false, message: json.msg ?? 'APP API Key 无效' };
+        return { ok: false, message: json.msg ?? 'API Key 无效' };
       }
 
       default:
@@ -728,9 +738,9 @@ export async function fetchRunninghubWorkflows(
   apiKey: string,
 ): Promise<string[]> {
   try {
-    const resp = await fetch('https://www.runninghub.cn/api-open/openapi/getWorkflowList', {
+    const resp = await extensionFetch('https://www.runninghub.cn/api/openapi/getWorkflowList', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Host': 'www.runninghub.cn' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey }),
     });
     const json = await resp.json();
@@ -748,9 +758,9 @@ export async function fetchRunninghubApps(
   apiKey: string,
 ): Promise<Array<{ id: string; name: string }>> {
   try {
-    const resp = await fetch('https://www.runninghub.cn/api-open/openapi/getWebappList', {
+    const resp = await extensionFetch('https://www.runninghub.cn/api/openapi/getWebappList', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Host': 'www.runninghub.cn' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey }),
     });
     const json = await resp.json();

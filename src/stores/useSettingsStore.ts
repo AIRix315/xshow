@@ -7,6 +7,7 @@ import {
 } from '@/types';
 import { saveCanvasState } from '@/utils/canvasState';
 import { useFlowStore } from '@/stores/useFlowStore';
+import { fsManager } from '@/utils/fileSystemAccess';
 import type {
   ApiConfig,
   ChannelConfig,
@@ -16,8 +17,27 @@ import type {
   PresetPrompt,
   ComfyUIConfig,
   RunningHubApp,
+  RunningHubWorkflow,
+  ModelEntry,
 } from '@/types';
 import { createPersistStorage } from '@/utils/chromeStorage';
+
+/**
+ * 将当前 settings 状态同步写入 fsManager（静默备份到设置目录）。
+ * 每次 settings mutation 后调用，确保设置目录中的 settings.json 与 chrome.storage 保持同步。
+ */
+function syncSettingsToFs(state: SettingsState & SettingsActions): void {
+  if (!fsManager.hasSettingsDirectory()) return;
+  const json = state.exportSettingsJson();
+  // 添加时间戳标记（用于 UI 显示上次同步时间）
+  try {
+    const parsed = JSON.parse(json);
+    parsed._savedAt = Date.now();
+    fsManager.saveSettings(JSON.stringify(parsed));
+  } catch {
+    fsManager.saveSettings(json);
+  }
+}
 
 interface SettingsState {
   apiConfig: ApiConfig;
@@ -61,6 +81,8 @@ export interface SystemSettings {
   saveDirectory: string;
   /** 调试模式 - 显示节点调试信息 */
   debugMode: boolean;
+  /** 自动保存开关（默认关闭，需先设置项目目录） */
+  autoSave: boolean;
 }
 
 const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
@@ -87,6 +109,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   embedBase64: false,
   saveDirectory: '',
   debugMode: true, // 默认开启，生产发布时改为 false
+  autoSave: false, // 默认关闭
 };
 
 const DEFAULT_COMFYUI_CONFIG: ComfyUIConfig = {
@@ -103,8 +126,14 @@ interface SettingsActions {
   addChannel: (channel: ChannelConfig) => void;
   updateChannel: (id: string, patch: Partial<ChannelConfig>) => void;
   removeChannel: (id: string) => void;
-  setChannelId: (type: 'image' | 'video' | 'text' | 'audio', channelId: string) => void;
-  setModel: (type: 'drawingModel' | 'videoModel' | 'textModel' | 'audioModel' | 'ttsVoice' | 'videoDurations' | 'comfyuiLocalWorkflows' | 'comfyuiCloudWorkflows' | 'comfyuiRunninghubWorkflows', value: string) => void;
+  setChannelId: (type: 'image' | 'video' | 'text' | 'audio' | '3d', channelId: string) => void;
+  setModel: (type: 'drawingModel' | 'videoModel' | 'textModel' | 'audioModel' | 'model3D' | 'ttsVoice' | 'videoDurations' | 'comfyuiLocalWorkflows' | 'comfyuiCloudWorkflows' | 'comfyuiRunninghubWorkflows', value: string) => void;
+  // 模型列表管理
+  addModelEntry: (type: string, entry: ModelEntry) => void;
+  removeModelEntry: (type: string, entryId: string) => void;
+  setDefaultModel: (type: string, entryId: string) => void;
+  updateModelSpeed: (type: string, entryId: string, speed: number) => void;
+  addModelEntries: (type: string, entries: ModelEntry[]) => void;
   addProject: (name: string) => void;
   removeProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
@@ -127,6 +156,8 @@ interface SettingsActions {
   updateComfyuiConfig: (patch: Partial<ComfyUIConfig>) => void;
   addRunninghubApp: (app: RunningHubApp) => void;
   removeRunninghubApp: (id: string) => void;
+  addRunninghubWorkflow: (workflow: RunningHubWorkflow) => void;
+  removeRunninghubWorkflow: (id: string) => void;
   /** 导出：返回当前完整配置的 JSON 字符串 */
   exportSettingsJson: () => string;
   /** 导入：用导入的配置替换当前完整状态 */
@@ -148,56 +179,161 @@ export const useSettingsStore = create<SettingsStore>()(
       comfyuiConfig: DEFAULT_COMFYUI_CONFIG,
 
       addChannel: (channel) =>
-        set((s) => ({
-          apiConfig: { ...s.apiConfig, channels: [...s.apiConfig.channels, channel] },
-        })),
+        set((s) => {
+          syncSettingsToFs({ ...s, apiConfig: { ...s.apiConfig, channels: [...s.apiConfig.channels, channel] } } as SettingsState & SettingsActions);
+          return {
+            apiConfig: { ...s.apiConfig, channels: [...s.apiConfig.channels, channel] },
+          };
+        }),
 
       updateChannel: (id, patch) =>
-        set((s) => ({
-          apiConfig: {
-            ...s.apiConfig,
-            channels: s.apiConfig.channels.map((c) =>
-              c.id === id ? { ...c, ...patch } : c
-            ),
-          },
-        })),
+        set((s) => {
+          const next = { apiConfig: { ...s.apiConfig, channels: s.apiConfig.channels.map((c) => c.id === id ? { ...c, ...patch } : c) } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       removeChannel: (id) =>
-        set((s) => ({
-          apiConfig: {
-            ...s.apiConfig,
-            channels: s.apiConfig.channels.filter((c) => c.id !== id),
-          },
-        })),
+        set((s) => {
+          const next = { apiConfig: { ...s.apiConfig, channels: s.apiConfig.channels.filter((c) => c.id !== id) } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       setChannelId: (type, channelId) =>
         set((s) => {
-          const key =
-            type === 'image' ? 'imageChannelId' :
-            type === 'video' ? 'videoChannelId' :
-            type === 'text' ? 'textChannelId' : 'audioChannelId';
-          return { apiConfig: { ...s.apiConfig, [key]: channelId } };
+          const key = type === 'image' ? 'imageChannelId' : type === 'video' ? 'videoChannelId' : type === 'text' ? 'textChannelId' : type === 'audio' ? 'audioChannelId' : 'model3DChannelId';
+          const next = { apiConfig: { ...s.apiConfig, [key]: channelId } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
         }),
 
       setModel: (type, value) =>
-        set((s) => ({ apiConfig: { ...s.apiConfig, [type]: value } })),
+        set((s) => {
+          const next = { apiConfig: { ...s.apiConfig, [type]: value } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      addModelEntry: (type, entry) =>
+        set((s) => {
+          const entries = s.apiConfig.modelEntries[type] ?? [];
+          // 如果该类型还没有任何模型，设置第一个为默认
+          const newEntry = entries.length === 0 ? { ...entry, isDefault: true } : entry;
+          const next = {
+            apiConfig: {
+              ...s.apiConfig,
+              modelEntries: {
+                ...s.apiConfig.modelEntries,
+                [type]: [...entries, newEntry],
+              },
+            },
+          };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      removeModelEntry: (type, entryId) =>
+        set((s) => {
+          const entries = s.apiConfig.modelEntries[type] ?? [];
+          const filtered = entries.filter((e) => e.id !== entryId);
+          // 如果删除的是默认模型，且还有剩余模型，将第一个设为默认
+          const newEntries = filtered.length > 0 && !filtered.some((e) => e.isDefault)
+            ? filtered.map((e, i) => (i === 0 ? { ...e, isDefault: true } : e))
+            : filtered;
+          const next = {
+            apiConfig: {
+              ...s.apiConfig,
+              modelEntries: {
+                ...s.apiConfig.modelEntries,
+                [type]: newEntries,
+              },
+            },
+          };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      setDefaultModel: (type, entryId) =>
+        set((s) => {
+          const entries = s.apiConfig.modelEntries[type] ?? [];
+          const next = {
+            apiConfig: {
+              ...s.apiConfig,
+              modelEntries: {
+                ...s.apiConfig.modelEntries,
+                [type]: entries.map((e) => ({ ...e, isDefault: e.id === entryId })),
+              },
+            },
+          };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      updateModelSpeed: (type, entryId, speed) =>
+        set((s) => {
+          const entries = s.apiConfig.modelEntries[type] ?? [];
+          const next = {
+            apiConfig: {
+              ...s.apiConfig,
+              modelEntries: {
+                ...s.apiConfig.modelEntries,
+                [type]: entries.map((e) => (e.id === entryId ? { ...e, speed } : e)),
+              },
+            },
+          };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      addModelEntries: (type, newEntries) =>
+        set((s) => {
+          const existing = s.apiConfig.modelEntries[type] ?? [];
+          // 合并：如果同名模型已存在则跳过
+          const existingNames = new Set(existing.map((e) => `${e.provider}-${e.name}`));
+          const filtered = newEntries.filter((e) => !existingNames.has(`${e.provider}-${e.name}`));
+          const merged = [...existing, ...filtered];
+          // 如果该类型还没有任何模型，将第一个设为默认
+          const finalEntries = existing.length === 0 && merged.length > 0
+            ? merged.map((e, i) => (i === 0 ? { ...e, isDefault: true } : e))
+            : merged;
+          const next = {
+            apiConfig: {
+              ...s.apiConfig,
+              modelEntries: {
+                ...s.apiConfig.modelEntries,
+                [type]: finalEntries,
+              },
+            },
+          };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
   addProject: (name) =>
     set((s) => {
       const id = Date.now().toString();
-      return { projects: [...s.projects, { id, name }] };
+      const next = { projects: [...s.projects, { id, name }] };
+      syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+      return next;
     }),
 
   removeProject: (id) =>
-    set((s) => ({
-      projects: s.projects.length <= 1 ? s.projects : s.projects.filter((p) => p.id !== id),
-      currentProjectId: s.currentProjectId === id ? (s.projects.find((p) => p.id !== id) ?? s.projects[0]!).id : s.currentProjectId,
-    })),
+    set((s) => {
+      const next = {
+        projects: s.projects.length <= 1 ? s.projects : s.projects.filter((p) => p.id !== id),
+        currentProjectId: s.currentProjectId === id ? (s.projects.find((p) => p.id !== id) ?? s.projects[0]!).id : s.currentProjectId,
+      };
+      syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+      return next;
+    }),
 
   renameProject: (id, name) =>
-    set((s) => ({
-      projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
-    })),
+    set((s) => {
+      const next = { projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)) };
+      syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+      return next;
+    }),
 
   /** 从 .xshow 文件导入项目：创建新项目 + 切换到该项目的画布 */
   importProjectFromFile: async (projectFile: import('@/types').XShowWorkflowFile): Promise<{ projectId: string; warnings: string[] }> => {
@@ -215,7 +351,11 @@ export const useSettingsStore = create<SettingsStore>()(
     return { projectId: newId, warnings: [] };
   },
 
-      setCurrentProject: (id) => set({ currentProjectId: id }),
+      setCurrentProject: (id) => set((s) => {
+        const next = { currentProjectId: id };
+        syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+        return next;
+      }),
 
       addTemplate: (template) =>
         set((s) => ({
@@ -266,35 +406,53 @@ export const useSettingsStore = create<SettingsStore>()(
         })),
 
       updateCanvasSettings: (patch) =>
-        set((s) => ({
-          canvasSettings: { ...s.canvasSettings, ...patch },
-        })),
+        set((s) => {
+          const next = { canvasSettings: { ...s.canvasSettings, ...patch } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       updateSystemSettings: (patch) =>
-        set((s) => ({
-          systemSettings: { ...s.systemSettings, ...patch },
-        })),
+        set((s) => {
+          const next = { systemSettings: { ...s.systemSettings, ...patch } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       updateComfyuiConfig: (patch) =>
-        set((s) => ({
-          comfyuiConfig: { ...s.comfyuiConfig, ...patch },
-        })),
+        set((s) => {
+          const next = { comfyuiConfig: { ...s.comfyuiConfig, ...patch } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       addRunninghubApp: (app) =>
-        set((s) => ({
-          comfyuiConfig: {
-            ...s.comfyuiConfig,
-            runninghubApps: [...s.comfyuiConfig.runninghubApps, app],
-          },
-        })),
+        set((s) => {
+          const next = { comfyuiConfig: { ...s.comfyuiConfig, runninghubApps: [...s.comfyuiConfig.runninghubApps, app] } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       removeRunninghubApp: (id) =>
-        set((s) => ({
-          comfyuiConfig: {
-            ...s.comfyuiConfig,
-            runninghubApps: s.comfyuiConfig.runninghubApps.filter((a) => a.id !== id),
-          },
-        })),
+        set((s) => {
+          const next = { comfyuiConfig: { ...s.comfyuiConfig, runninghubApps: s.comfyuiConfig.runninghubApps.filter((a) => a.id !== id) } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      addRunninghubWorkflow: (workflow: RunningHubWorkflow) =>
+        set((s) => {
+          const next = { comfyuiConfig: { ...s.comfyuiConfig, runninghubWorkflows: [...s.comfyuiConfig.runninghubWorkflows, workflow] } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
+
+      removeRunninghubWorkflow: (id: string) =>
+        set((s) => {
+          const next = { comfyuiConfig: { ...s.comfyuiConfig, runninghubWorkflows: s.comfyuiConfig.runninghubWorkflows.filter((w) => w.id !== id) } };
+          syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
+          return next;
+        }),
 
       exportSettingsJson: () => {
         const raw = localStorage.getItem('xshow-settings');

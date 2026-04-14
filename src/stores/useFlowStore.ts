@@ -6,6 +6,8 @@ import { executeCanvas } from '@/utils/executionEngine';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import { getNodeExecutor } from '@/store/execution';
 import { exportProjectFile } from '@/utils/projectManager';
+import { saveProjectWithPatch, resetBaseState } from '@/utils/patchManager';
+import { fsManager } from '@/utils/fileSystemAccess';
 import type { AppNode } from '@/types';
 
 /** 深拷贝（剥离响应式 + 防止循环引用问题） */
@@ -124,10 +126,16 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
   },
 
   addEdge: (edge) => {
-    set((state) => ({
-      edges: [...state.edges, edge],
-      hasUnsavedChanges: true,
-    }));
+    set((state) => {
+      // 防止重复添加相同ID的边
+      if (state.edges.some((e) => e.id === edge.id)) {
+        return state;
+      }
+      return {
+        edges: [...state.edges, edge],
+        hasUnsavedChanges: true,
+      };
+    });
   },
 
   removeEdge: (id) => {
@@ -332,22 +340,29 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     console.log('[stopWorkflow] 执行已停止');
   },
 
-  // 项目保存：导出为 .xshow 文件
+  // 项目保存：差量写入项目目录 + 下载备份；手动保存重置基准
   saveProject: async (projectId, projectName, embedBase64) => {
     const { nodes, edges } = get();
     set({ isSaving: true });
     try {
-      const success = await exportProjectFile(
+      // 手动保存重置基准 → 下次 auto-save 写完整文件
+      if (fsManager.hasProjectDirectory()) {
+        resetBaseState(projectId);
+        await saveProjectWithPatch(projectId, projectName, nodes as AppNode[], edges, embedBase64);
+      }
+
+      const downloadSuccess = await exportProjectFile(
         projectId,
         projectName,
         nodes as AppNode[],
         edges,
         embedBase64,
       );
-      if (success) {
+
+      if (downloadSuccess) {
         set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
       }
-      return success;
+      return downloadSuccess;
     } finally {
       set({ isSaving: false });
     }

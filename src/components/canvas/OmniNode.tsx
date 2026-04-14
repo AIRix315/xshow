@@ -294,6 +294,13 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
   // ComfyUI 模式：根据工作流中 IMAGE 字段数量动态显示 handle
   const [imageFieldCount, setImageFieldCount] = useState(0);
 
+  // 监听 imageFieldCount 变化，通知 React Flow 更新内部数据
+  useEffect(() => {
+    if (imageFieldCount > 0) {
+      updateNodeInternals(id);
+    }
+  }, [imageFieldCount, id, updateNodeInternals]);
+
   // 从上游节点读取数据（按 handle 类型分类）
   const upstreamData = useMemo(() => {
     return getConnectedInputs(id, nodes, edges);
@@ -490,20 +497,28 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 .map(([field]) => ({ nodeId: n.nodeId, field }))
             );
 
+          console.log('[DEBUG OmniNode] inputsByHandle:', JSON.stringify(inputsByHandle));
+          console.log('[DEBUG OmniNode] imageFields:', JSON.stringify(imageFields));
+          console.log('[DEBUG OmniNode] processedNodeInfoList before:', JSON.stringify(processedNodeInfoList));
+
           // 按 image-* handle 填充对应图片
           for (const [handleId, images] of Object.entries(inputsByHandle)) {
             const handleIndex = parseInt(handleId.replace('image-', ''), 10);
+            console.log('[DEBUG OmniNode] handleId:', handleId, 'handleIndex:', handleIndex, 'images:', images);
             // 找到对应的 IMAGE 字段
             const targetField = imageFields[handleIndex];
+            console.log('[DEBUG OmniNode] targetField:', JSON.stringify(targetField));
             if (!targetField) continue;
 
             for (const imageUrl of images) {
               try {
                 const comfyFilename = await uploadImageToComfyUI(url, imageUrl, abortController.signal);
+                console.log('[DEBUG OmniNode] comfyFilename:', comfyFilename);
                 // 找到并更新对应的 nodeInfoList 条目
                 const fieldIndex = processedNodeInfoList.findIndex(
                   (n) => n.nodeId === targetField.nodeId && n.fieldName === targetField.field
                 );
+                console.log('[DEBUG OmniNode] fieldIndex:', fieldIndex);
                 if (fieldIndex >= 0) {
                   // 已存在，更新值
                   processedNodeInfoList[fieldIndex] = {
@@ -524,6 +539,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
               }
             }
           }
+          console.log('[DEBUG OmniNode] processedNodeInfoList after:', JSON.stringify(processedNodeInfoList));
         }
 
         const result = await executeComfyWorkflow({
@@ -650,7 +666,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
 
       {/* ComfyUI 多图模式：额外的 image-* handles（与 any handle 共存） */}
-      {config.executionType === 'comfyui' && imageFieldCount > 1 && (
+      {imageFieldCount > 1 && (
         <>
           {/* 图片 handles — 避开 50% 位置（any handle） */}
           {Array.from({ length: imageFieldCount }, (_, i) => {

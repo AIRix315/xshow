@@ -1,0 +1,30 @@
+https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287339.md
+https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287340.md
+https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287342.md
+https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287341.md
+
+RH 消费会员key： 13f84abb028e4503bd82507d68e22715
+RH 企业共享Key： 15e8ca9a46114109bdc09856d7961b6f
+
+-----
+
+【名称】 | 【APPID】
+
+【AIRix [API] 001 Qwen 文生图】 | 【2037760725296357377】
+【AIRix [API] 002 Qwen 文生图+SedX2放大】 | 【2038131610033332226】
+【AIRix [API] 003 Qwen 提示词改图】 | 【2037822548796252162】
+
+【AIRix [API] 010 IndexTT 音频生成】 | 【2038460463490535426】
+【AIRix [API] 011 QwenTTS 音频生成】 | 【2038460895365439489】
+
+【AIRix [API] 020 TTS+Infinite 语音图片数字人集成】 | 【2038472757071056897】
+【AIRix [API] 021 Infinite 语音图片数字人】 | 【2038499492558807041】
+【AIRix [API] 023 LTX23  数字人】 | 【2040262879986847745】
+
+【AIRix [API] 040 LTX23 首尾帧生视频】 | 【2041120539950977025】
+【AIRix [API] 042 LTX23 首中尾帧生视频】 | 【2041123433374818306】
+【AIRix [API] 043 LTX23 分镜控制无限时长】 | 【2041147372696244226】
+
+【AIRix [API] 090 RTXVSR 视频放大】 | 【2040411956145819649】
+
+

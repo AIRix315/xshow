@@ -1,15 +1,19 @@
 // Ref: §七 — 顶部栏布局（对标原型三段式：左Logo+项目+新建/保存 | 中空 | 右节点+设置+快捷键）
 // Ref: 原型 — 顶部栏三段式布局 + 节点/设置按钮
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { Settings, Plus, Save, Keyboard, Upload } from 'lucide-react';
+import { Settings, Plus, Save, Keyboard, Upload, FolderOpen } from 'lucide-react';
 import FlowCanvas from './components/canvas/FlowCanvas';
 import NodeSidebar from './components/canvas/NodeSidebar';
 import SettingsPanel from './components/settings/SettingsPanel';
 import KeyboardShortcutsDialog from './components/settings/KeyboardShortcutsDialog';
+import ResourcesMenu from '@/components/ResourcesMenu';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { importProjectFile } from '@/utils/projectManager';
+import { fsManager } from '@/utils/fileSystemAccess';
+import { saveProjectWithPatch } from '@/utils/patchManager';
+import type { AppNode } from '@/types';
 
 // Vite 注入 package.json 版本号
 const APP_VERSION = __APP_VERSION__;
@@ -20,6 +24,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('canvas');
   const [nodeSidebarOpen, setNodeSidebarOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const projects = useSettingsStore((s) => s.projects);
   const currentProjectId = useSettingsStore((s) => s.currentProjectId);
@@ -34,6 +39,58 @@ function App() {
   const isSaving = useFlowStore((s) => s.isSaving);
   const saveProject = useFlowStore((s) => s.saveProject);
 
+  /** 初始化文件系统管理器（页面加载时验证已保存的目录句柄） */
+  useEffect(() => {
+    fsManager.initialize();
+  }, []);
+
+  /** 静默自动保存：每 30 秒检查未保存状态 + 项目目录存在，自动写入（无 UI 反馈） */
+  const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // 清理旧定时器
+    if (autoSaveTimerRef.current) {
+      clearInterval(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    autoSaveTimerRef.current = setInterval(async () => {
+      // 检查开关 + 目录
+      const settings = useSettingsStore.getState();
+      if (!settings.systemSettings.autoSave) return;
+      if (!fsManager.hasProjectDirectory()) return;
+
+      const state = useFlowStore.getState();
+      if (!state.hasUnsavedChanges || state.isSaving) return;
+
+      const project = settings.projects.find((p) => p.id === settings.currentProjectId);
+      if (!project) return;
+
+      try {
+        const success = await saveProjectWithPatch(
+          project.id,
+          project.name,
+          state.nodes as AppNode[],
+          state.edges,
+          settings.systemSettings.embedBase64,
+        );
+        if (success) {
+          console.log('[autoSave] 差量保存完成');
+          useFlowStore.setState({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
+        }
+      } catch (err) {
+        console.warn('[autoSave] 静默保存失败:', err);
+      }
+    }, 30_000);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, []); // 只在 App 挂载时设置一次；内部每 tick 动态检查目录
+
   /** 新建项目 */
   const handleNew = () => {
     if (hasUnsavedChanges) {
@@ -45,7 +102,7 @@ function App() {
   /** 保存当前项目 */
   const handleSave = async () => {
     if (!currentProject || isSaving) return;
-    setSavingStatus('正在导出...');
+    setSavingStatus('正在保存...');
     await saveProject(currentProjectId, currentProject.name, systemSettings.embedBase64);
     setSavingStatus(null);
   };
@@ -73,19 +130,24 @@ function App() {
     document.documentElement.style.setProperty('--reduce-anim', canvasSettings.reduceAnimations ? 'all 0s !important' : 'inherit');
   }, [canvasSettings.fontSize, canvasSettings.reduceAnimations]);
 
-  // 全局快捷键：? 打开快捷键对话框
+  // 全局快捷键：? 打开快捷键对话框；Ctrl+S 保存
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 忽略输入框内的按键
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       if (e.key === '?' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
         setShortcutsOpen((prev) => !prev);
+      }
+      if (e.key === 's' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        handleSave();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleSave]);
 
   return (
     <div className="flex h-screen bg-background flex-col font-sans text-text">
@@ -120,7 +182,7 @@ function App() {
 
         {/* 中: 空（原型无中间内容） */}
 
-        {/* 右: 节点 + 设置 + 快捷键 */}
+        {/* 右: 节点 + 资源 + 设置 + 快捷键 */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setNodeSidebarOpen(!nodeSidebarOpen)}
@@ -129,6 +191,18 @@ function App() {
             }`}
           >
             节点
+          </button>
+          <button
+            onClick={() => setResourcesOpen((v) => !v)}
+            className={`relative px-2 py-1 text-[11px] font-medium rounded transition-colors ${
+              resourcesOpen ? 'text-primary bg-primary/10' : 'text-text-secondary hover:text-text hover:bg-surface-hover'
+            }`}
+            title="资源库"
+          >
+            <FolderOpen className="w-4 h-4" />
+            {resourcesOpen && (
+              <ResourcesMenu onClose={() => setResourcesOpen(false)} />
+            )}
           </button>
           <button
             onClick={() => setActiveTab(activeTab === 'settings' ? 'canvas' : 'settings')}

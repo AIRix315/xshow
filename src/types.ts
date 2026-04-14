@@ -5,6 +5,15 @@ import type { Node, Edge } from '@xyflow/react';
 // §3.1 通道配置与全局 API 配置
 export type ComfyUISubType = 'local' | 'cloud' | 'runninghub' | 'runninghubApp';
 
+// 模型条目（单个模型配置）
+export interface ModelEntry {
+  id: string;          // 唯一标识
+  name: string;        // 模型名称（如 "Qwen2.5-7B"）
+  provider: string;    // 供应商名称（如 "ollama"）
+  speed?: number;      // 最近一次连接速度(ms)，undefined表示未测试
+  isDefault: boolean;  // 是否默认
+}
+
 // ComfyUI 独立配置（与渠道商框架分离）
 export interface ComfyUIConfig {
   // 本地 ComfyUI
@@ -17,7 +26,7 @@ export interface ComfyUIConfig {
 
   // RunningHub（共用一个 API Key）
   runninghubApiKey: string;      // RunningHub API Key
-  runninghubWorkflows: string[];  // 工作流 ID 列表
+  runninghubWorkflows: RunningHubWorkflow[];  // 工作流列表
   runninghubApps: RunningHubApp[]; // APP 列表
 }
 
@@ -26,6 +35,12 @@ export interface RunningHubApp {
   id: string;         // webappId
   name: string;       // 显示名称
   quickCreateCode?: string;  // quickCreateCode（可选）
+}
+
+// RunningHub Workflow 配置
+export interface RunningHubWorkflow {
+  id: string;         // workflowId
+  name: string;       // 显示名称（别名）
 }
 
 export interface ChannelConfig {
@@ -40,16 +55,20 @@ export interface ChannelConfig {
 export interface ApiConfig {
   channels: ChannelConfig[];       // 供应商池
   imageChannelId: string;          // 生图供应商 ID
-  drawingModel: string;            // 生图模型，换行分隔
+  drawingModel: string;            // 生图模型（兼容旧版换行分隔，新版用 modelEntries）
   videoChannelId: string;           // 生视频供应商 ID
-  videoModel: string;              // 生视频模型，换行分隔
+  videoModel: string;              // 生视频模型（兼容旧版换行分隔，新版用 modelEntries）
   textChannelId: string;            // LLM 供应商 ID
-  textModel: string;                // LLM 模型，换行分隔
+  textModel: string;                // LLM 模型（兼容旧版换行分隔，新版用 modelEntries）
   audioChannelId: string;           // 语音供应商 ID
-  audioModel: string;               // 语音模型，换行分隔
+  audioModel: string;               // 语音模型（兼容旧版换行分隔，新版用 modelEntries）
+  model3DChannelId: string;        // 3D模型供应商 ID
+  model3D: string;                  // 3D模型（兼容旧版，新版用 modelEntries）
   ttsVoice: string;                 // TTS 语音标识，用户自定义填入
   videoDurations: string;           // 视频时长选项，换行分隔
   presetPrompts: PresetPrompt[];    // 预设词
+  // 模型列表（新版：每个类型的模型列表）
+  modelEntries: Record<string, ModelEntry[]>;  // key: 'text'|'image'|'video'|'audio'|'3d'
   // ComfyUI 工作流列表
   comfyuiLocalWorkflows: string;
   comfyuiCloudWorkflows: string;
@@ -254,6 +273,8 @@ export interface OmniNodeData extends BaseNodeData {
   outputUrls?: string[];     // 多图/多输出 URL 数组
   textOutput?: string;       // 文本输出
   errorMessage?: string;
+  // ComfyUI 工作流节点值缓存（用于画布级执行）
+  nodeValues?: Record<string, Record<string, unknown>>;
   onAIAssist?: (desc: string, config: OmniNodeConfig) => Promise<string>;
   onGenerateCustom?: (nodeId: string) => void;
   onSaveTemplate?: (name: string, config: OmniNodeConfig) => void;
@@ -387,9 +408,12 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   textModel: '',
   audioChannelId: 'default',
   audioModel: '',
+  model3DChannelId: 'default',
+  model3D: '',
   ttsVoice: '',
   videoDurations: '',
   presetPrompts: [],
+  modelEntries: {},  // 新版模型列表
   comfyuiLocalWorkflows: '',
   comfyuiCloudWorkflows: '',
   comfyuiRunninghubWorkflows: '',

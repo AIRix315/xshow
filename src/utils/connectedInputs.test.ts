@@ -555,10 +555,12 @@ describe('connectedInputs', () => {
     });
 
     it('extracts omniNode outputUrls as additionalValues', () => {
+      // 实际 ComfyAPI 返回：outputUrl = allUrls[0], outputUrls = allUrls（完整数组）
       const nodes = [
         makeNode('n1', 'omniNode', {
           outputUrl: 'https://example.com/first.png',
-          outputUrls: ['https://example.com/second.png', 'https://example.com/third.png'],
+          // outputUrls 包含 outputUrl（完整数组），符合 ComfyAPI 实际行为
+          outputUrls: ['https://example.com/first.png', 'https://example.com/second.png', 'https://example.com/third.png'],
           config: { outputType: 'image' },
         }),
         makeNode('n2', 'outputNode'),
@@ -567,6 +569,7 @@ describe('connectedInputs', () => {
 
       const result = getConnectedInputs('n2', nodes, edges);
 
+      // 修复后：additionalValues 排除了 outputUrl，不重复
       expect(result.images).toHaveLength(3);
       expect(result.images[0]).toBe('https://example.com/first.png');
       expect(result.images[1]).toBe('https://example.com/second.png');

@@ -37,48 +37,27 @@ test.describe('Workflow Execution', () => {
     // 点击"节点"按钮
     const nodeButton = page.getByRole('button', { name: '节点' });
     await nodeButton.click();
-    
+
     // 等待侧边栏打开
     const sidebar = page.locator('[data-testid="node-sidebar"]');
     await expect(sidebar).toBeVisible();
-    
-    // 验证侧边栏包含节点分类
-    await expect(sidebar.locator('text=Input 输入')).toBeVisible();
-    await expect(sidebar.locator('text=Generate 生成')).toBeVisible();
-    await expect(sidebar.locator('text=Output 输出')).toBeVisible();
+
+    // 验证侧边栏包含可见的节点分类（只有 COMMON 常用默认展开，显示输入类节点）
+    await expect(sidebar.locator('text=COMMON 常用')).toBeVisible();
+    await expect(sidebar.locator('text=图片')).toBeVisible();
   });
 
-  test('can drag and drop node to canvas', async ({ page }) => {
-    // 打开侧边栏
-    await page.getByRole('button', { name: '节点' }).click();
-    await page.waitForSelector('[data-testid="node-sidebar"]');
-    
-    // 验证节点侧边栏显示
-    const sidebar = page.locator('[data-testid="node-sidebar"]');
-    await expect(sidebar).toBeVisible();
-    
-    // 获取画布位置（用于拖拽目标）
-    const canvas = page.locator('[data-testid="flow-canvas"]');
-    const canvasBounds = await canvas.boundingBox();
-    
-    if (canvasBounds) {
-      // 拖拽图片节点到画布
-      const imageNodeItem = sidebar.locator('[data-testid="add-node-imageNode"]');
-      
-      // 执行拖拽
-      await imageNodeItem.hover();
-      await page.mouse.down();
-      await page.mouse.move(canvasBounds.x + 300, canvasBounds.y + 200);
-      await page.mouse.up();
-      
-      // 短暂等待
-      await page.waitForTimeout(500);
-      
-      // 验证画布上有节点（可能显示为 react-flow__node）
-      const nodes = page.locator('.react-flow__node');
-      const nodeCount = await nodes.count();
-      expect(nodeCount).toBeGreaterThanOrEqual(0); // 拖拽可能失败，但不应报错
-    }
+  test('can add node to canvas via FAB', async ({ page }) => {
+    // 获取添加前的节点数
+    const beforeNodes = await page.locator('.react-flow__node').count();
+
+    // 通过 FAB 的"Image"按钮直接添加节点
+    await page.getByRole('button', { name: 'Image' }).first().click();
+    await page.waitForTimeout(300);
+
+    // 验证画布上有新节点
+    const afterNodes = await page.locator('.react-flow__node').count();
+    expect(afterNodes).toBeGreaterThan(beforeNodes);
   });
 
   test('sidebar closes on outside click', async ({ page }) => {

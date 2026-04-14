@@ -179,7 +179,10 @@ function getSourceOutput(
         }
         // image / video / audio：检查 outputUrl 是否匹配该类型
         if (outputUrl && urlMatchesType(outputUrl, outputType)) {
-          const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+          // additionalValues 排除 outputUrl（避免重复）
+          const additional = (outputUrls && outputUrls.length > 0)
+            ? outputUrls.filter((u) => u !== outputUrl)
+            : undefined;
           return { type: outputType, value: outputUrl, additionalValues: additional };
         }
         // outputUrl 不匹配，检查 outputUrls 中是否有匹配的
@@ -209,7 +212,10 @@ function getSourceOutput(
       if (want === 'image') {
         // 下游要图片
         if (outputUrl && urlMatchesType(outputUrl, 'image')) {
-          const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+          // additionalValues 排除 outputUrl（避免重复）
+          const additional = (outputUrls && outputUrls.length > 0)
+            ? outputUrls.filter((u) => u !== outputUrl)
+            : undefined;
           return { type: 'image', value: outputUrl, additionalValues: additional };
         }
         if (outputUrls) {
@@ -248,7 +254,10 @@ function getSourceOutput(
       // want === 'any'：返回主输出（outputUrl 优先，其次 textOutput）
       if (outputUrl) {
         const inferred = inferType(outputUrl);
-        const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+        // additionalValues 排除 outputUrl（避免重复）
+        const additional = (outputUrls && outputUrls.length > 0)
+          ? outputUrls.filter((u) => u !== outputUrl)
+          : undefined;
         return { type: inferred, value: outputUrl, additionalValues: additional };
       }
       if (outputUrls && outputUrls.length > 0) {

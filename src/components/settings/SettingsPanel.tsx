@@ -3,21 +3,21 @@
 import { useState, useCallback, useRef } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import type { CanvasSettings } from '@/stores/useSettingsStore';
-import type { ChannelConfig, PresetPrompt } from '@/types';
+import type { PresetPrompt } from '@/types';
 import { testComfyConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
-import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload } from 'lucide-react';
+import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload, Box } from 'lucide-react';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { importProjectFile } from '@/utils/projectManager';
 
 type SettingsTab = 'project' | 'model' | 'prompt' | 'canvas' | 'system';
-type ApiType = 'text' | 'image' | 'video' | 'audio';
+type ApiType = 'text' | 'image' | 'video' | 'audio' | '3d';
 
 interface ApiSectionConfig {
   type: ApiType;
   icon: typeof FileText;
   label: string;
-  channelIdKey: 'textChannelId' | 'imageChannelId' | 'videoChannelId' | 'audioChannelId';
-  modelKey: 'textModel' | 'drawingModel' | 'videoModel' | 'audioModel';
+  channelIdKey: 'textChannelId' | 'imageChannelId' | 'videoChannelId' | 'audioChannelId' | 'model3DChannelId';
+  modelKey: 'textModel' | 'drawingModel' | 'videoModel' | 'audioModel' | 'model3D';
 }
 
 const API_SECTIONS: ApiSectionConfig[] = [
@@ -25,55 +25,188 @@ const API_SECTIONS: ApiSectionConfig[] = [
   { type: 'image', icon: Image, label: '图像模型', channelIdKey: 'imageChannelId', modelKey: 'drawingModel' },
   { type: 'video', icon: Video, label: '视频模型', channelIdKey: 'videoChannelId', modelKey: 'videoModel' },
   { type: 'audio', icon: Volume2, label: '音频模型', channelIdKey: 'audioChannelId', modelKey: 'audioModel' },
+  { type: '3d', icon: Box, label: '3D模型', channelIdKey: 'model3DChannelId', modelKey: 'model3D' },
 ];
 
 // =============================================================================
-// 测试连接按钮（逐行测试所有模型）
+// 模型列表编辑器
 // =============================================================================
 
-function TestConnectionButton({ channel, model }: { channel: ChannelConfig | undefined; model: string }) {
-  const [results, setResults] = useState<Array<{ model: string; ok: boolean }>>([]);
-  const [testing, setTesting] = useState(false);
+function ModelListEditor({ channelId, modelType }: { channelId: string; modelType: string }) {
+  const apiConfig = useSettingsStore((s) => s.apiConfig);
+  const channels = apiConfig.channels;
+  const channel = channels.find((c) => c.id === channelId);
+  const modelEntries = apiConfig.modelEntries?.[modelType] ?? [];
+  const addModelEntry = useSettingsStore((s) => s.addModelEntry);
+  const removeModelEntry = useSettingsStore((s) => s.removeModelEntry);
+  const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
+  const updateModelSpeed = useSettingsStore((s) => s.updateModelSpeed);
+  const addModelEntries = useSettingsStore((s) => s.addModelEntries);
 
-  const handleTest = useCallback(async () => {
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [manualInput, setManualInput] = useState('');
+
+  // 刷新模型列表
+  const handleRefresh = useCallback(async () => {
     if (!channel) return;
-    const models = model.split('\n').map((m) => m.trim()).filter(Boolean);
-    if (models.length === 0) return;
-    setTesting(true);
-    setResults([]);
-    const testResults = await Promise.all(
-      models.map(async (m) => {
-        try {
-          const url = channel.protocol === 'gemini'
-            ? `${channel.url.replace(/\/$/, '')}/v1beta/models/${m}:generateContent?key=${channel.key}`
-            : `${channel.url.replace(/\/$/, '')}/v1/chat/completions`;
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          const body: Record<string, unknown> = { model: m, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 };
-          if (channel.protocol !== 'gemini') { headers['Authorization'] = `Bearer ${channel.key}`; }
-          const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-          return { model: m, ok: response.ok };
-        } catch {
-          return { model: m, ok: false };
-        }
-      })
+    setFetching(true);
+    setFetchError(null);
+    try {
+      const { fetchModelList } = await import('@/api/modelListApi');
+      const models = await fetchModelList(channel);
+      const entries = models.map((name) => ({
+        id: `${channel.id}-${name}-${Date.now()}`,
+        name,
+        provider: channel.name || channel.id,
+        isDefault: false,
+      }));
+      addModelEntries(modelType, entries);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : '获取模型列表失败');
+    } finally {
+      setFetching(false);
+    }
+  }, [channel, modelType, addModelEntries]);
+
+  // 测试单个模型
+  const handleTest = useCallback(async (entryId: string, modelName: string) => {
+    if (!channel) return;
+    setTestingId(entryId);
+    try {
+      const { testModelSpeed } = await import('@/api/modelListApi');
+      const speed = await testModelSpeed(channel, modelName);
+      updateModelSpeed(modelType, entryId, speed);
+    } catch {
+      updateModelSpeed(modelType, entryId, -1); // -1 表示失败
+    } finally {
+      setTestingId(null);
+    }
+  }, [channel, modelType, updateModelSpeed]);
+
+  // 手动添加模型
+  const handleAddManual = useCallback(() => {
+    const name = manualInput.trim();
+    if (!name || !channel) return;
+    const entry = {
+      id: `${channel.id}-${name}-${Date.now()}`,
+      name,
+      provider: channel.name || channel.id,
+      isDefault: modelEntries.length === 0,
+    };
+    addModelEntry(modelType, entry);
+    setManualInput('');
+  }, [manualInput, channel, modelType, modelEntries.length, addModelEntry]);
+
+  // 删除模型
+  const handleRemove = useCallback((entryId: string) => {
+    removeModelEntry(modelType, entryId);
+  }, [modelType, removeModelEntry]);
+
+  // 设置默认
+  const handleSetDefault = useCallback((entryId: string) => {
+    setDefaultModel(modelType, entryId);
+  }, [modelType, setDefaultModel]);
+
+  if (!channel) {
+    return (
+      <div className="text-[9px] text-text-muted italic py-2">
+        请先在「渠道商」中添加供应商
+      </div>
     );
-    setResults(testResults);
-    setTesting(false);
-  }, [channel, model]);
+  }
 
   return (
-    <div className="space-y-1.5">
-      <button onClick={handleTest} disabled={testing} className="text-[9px] px-2 py-0.5 rounded bg-surface hover:bg-surface-hover disabled:opacity-50 text-text-secondary border border-border">
-        {testing ? '测试中...' : '测试全部'}
-      </button>
-      {results.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          {results.map((r, i) => (
-            <span key={i} className={`text-[9px] flex items-center gap-1 ${r.ok ? 'text-green-500' : 'text-error'}`}>
-              {r.ok ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-              <span className="font-mono opacity-75">{i + 1}.</span> {r.model}
-            </span>
+    <div className="space-y-2">
+      {/* 操作栏 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleRefresh}
+          disabled={fetching}
+          className="text-[9px] px-2 py-0.5 rounded bg-surface hover:bg-surface-hover disabled:opacity-50 text-text-secondary border border-border flex items-center gap-1"
+        >
+          {fetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+          刷新模型
+        </button>
+        <div className="flex-1 flex items-center gap-1">
+          <input
+            value={manualInput}
+            onChange={(e) => setManualInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddManual()}
+            placeholder="手动输入模型名"
+            className="flex-1 bg-surface-hover text-text text-[9px] rounded px-1.5 py-0.5 border border-border focus:border-primary outline-none"
+          />
+          <button
+            onClick={handleAddManual}
+            disabled={!manualInput.trim()}
+            className="text-[9px] px-2 py-0.5 rounded bg-surface hover:bg-surface-hover disabled:opacity-50 text-text-secondary border border-border"
+          >
+            添加
+          </button>
+        </div>
+      </div>
+
+      {/* 错误提示 */}
+      {fetchError && (
+        <div className="text-[9px] text-error bg-error/10 rounded px-2 py-1">
+          {fetchError}
+        </div>
+      )}
+
+      {/* 模型列表 */}
+      {modelEntries.length > 0 ? (
+        <div className="space-y-1 max-h-40 overflow-y-auto bg-surface-hover rounded p-2">
+          {modelEntries.map((entry) => (
+            <div
+              key={entry.id}
+              className={`flex items-center gap-2 text-[9px] p-1 rounded ${
+                entry.isDefault ? 'bg-primary/10 border border-primary/30' : 'bg-surface'
+              }`}
+            >
+              {/* 默认勾选 */}
+              <input
+                type="radio"
+                checked={entry.isDefault}
+                onChange={() => handleSetDefault(entry.id)}
+                className="accent-primary w-3 h-3"
+                title="设为默认"
+              />
+
+              {/* 模型信息 */}
+              <span className={`flex-1 truncate font-mono ${entry.isDefault ? 'text-primary' : 'text-text-secondary'}`}>
+                {entry.provider}-{entry.name}
+              </span>
+
+              {/* 速度显示 */}
+              {entry.speed !== undefined && (
+                <span className={`text-[8px] ${entry.speed < 0 ? 'text-error' : 'text-green-400'}`}>
+                  {entry.speed < 0 ? '失败' : `${entry.speed}ms`}
+                </span>
+              )}
+
+              {/* 测试按钮 */}
+              <button
+                onClick={() => handleTest(entry.id, entry.name)}
+                disabled={testingId === entry.id}
+                className="text-[8px] px-1.5 py-0.5 rounded bg-surface hover:bg-surface-hover text-text-secondary border border-border disabled:opacity-50"
+              >
+                {testingId === entry.id ? <Loader2 className="w-3 h-3 animate-spin" /> : '测试'}
+              </button>
+
+              {/* 删除按钮 */}
+              <button
+                onClick={() => handleRemove(entry.id)}
+                className="text-error hover:text-error/80"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           ))}
+        </div>
+      ) : (
+        <div className="text-[9px] text-text-muted italic py-2 text-center">
+          暂无模型，请刷新或手动添加
         </div>
       )}
     </div>
@@ -134,12 +267,8 @@ function ComfyWorkflowSection() {
   const [expanded, setExpanded] = useState(false);
   const [testingLocal, setTestingLocal] = useState(false);
   const [testingCloud, setTestingCloud] = useState(false);
-  const [testingRH, setTestingRH] = useState(false);
-  const [testingRHApp, setTestingRHApp] = useState(false);
   const [testResultLocal, setTestResultLocal] = useState<ComfyConnectionTestResult | null>(null);
   const [testResultCloud, setTestResultCloud] = useState<ComfyConnectionTestResult | null>(null);
-  const [testResultRH, setTestResultRH] = useState<ComfyConnectionTestResult | null>(null);
-  const [testResultRHApp, setTestResultRHApp] = useState<ComfyConnectionTestResult | null>(null);
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [scanningWorkflows, setScanningWorkflows] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -149,8 +278,6 @@ function ComfyWorkflowSection() {
   const [wfListExpanded, setWfListExpanded] = useState(true);
   const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
   const updateComfyuiConfig = useSettingsStore((s) => s.updateComfyuiConfig);
-  const addRunninghubApp = useSettingsStore((s) => s.addRunninghubApp);
-  const removeRunninghubApp = useSettingsStore((s) => s.removeRunninghubApp);
 
   // 扫描工作流（独立于连接测试）
   const handleScanWorkflows = useCallback(async () => {
@@ -197,34 +324,6 @@ function ComfyWorkflowSection() {
     setTestResultCloud(result);
     setTestingCloud(false);
   }, [comfyuiConfig.cloudUrl]);
-
-  // 测试 RunningHub Workflow
-  const handleTestRH = useCallback(async () => {
-    setTestingRH(true);
-    setTestResultRH(null);
-    const result = await testComfyConnection('runninghub', '', comfyuiConfig.runninghubApiKey ?? '');
-    setTestResultRH(result);
-    setTestingRH(false);
-  }, [comfyuiConfig.runninghubApiKey]);
-
-  // 测试 RunningHub APP
-  const handleTestRHApp = useCallback(async () => {
-    setTestingRHApp(true);
-    setTestResultRHApp(null);
-    const result = await testComfyConnection('runninghubApp', '', comfyuiConfig.runninghubApiKey ?? '');
-    setTestResultRHApp(result);
-    setTestingRHApp(false);
-  }, [comfyuiConfig.runninghubApiKey]);
-
-  // 添加 APP
-  const handleAddApp = useCallback(() => {
-    const name = prompt('APP 名称：');
-    if (!name) return;
-    const id = prompt('APP ID：');
-    if (!id) return;
-    const quickCreateCode = prompt('quickCreateCode（可选）：') || undefined;
-    addRunninghubApp({ id, name, quickCreateCode });
-  }, [addRunninghubApp]);
 
   // 点击工作流项预览 JSON
   const handleSelectWorkflow = useCallback(async (wfPath: string) => {
@@ -386,6 +485,83 @@ function ComfyWorkflowSection() {
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// RunningHub 独立配置区段
+// =============================================================================
+
+function RunningHubSection() {
+  const [expanded, setExpanded] = useState(false);
+  const [testingRH, setTestingRH] = useState(false);
+  const [testingRHApp, setTestingRHApp] = useState(false);
+  const [testResultRH, setTestResultRH] = useState<ComfyConnectionTestResult | null>(null);
+  const [testResultRHApp, setTestResultRHApp] = useState<ComfyConnectionTestResult | null>(null);
+  const comfyuiConfig = useSettingsStore((s) => s.comfyuiConfig);
+  const updateComfyuiConfig = useSettingsStore((s) => s.updateComfyuiConfig);
+  const addRunninghubApp = useSettingsStore((s) => s.addRunninghubApp);
+  const removeRunninghubApp = useSettingsStore((s) => s.removeRunninghubApp);
+  const addRunninghubWorkflow = useSettingsStore((s) => s.addRunninghubWorkflow);
+  const removeRunninghubWorkflow = useSettingsStore((s) => s.removeRunninghubWorkflow);
+
+  // 测试 RunningHub Workflow
+  const handleTestRH = useCallback(async () => {
+    setTestingRH(true);
+    setTestResultRH(null);
+    const result = await testComfyConnection('runninghub', '', comfyuiConfig.runninghubApiKey ?? '');
+    setTestResultRH(result);
+    setTestingRH(false);
+  }, [comfyuiConfig.runninghubApiKey]);
+
+  // 测试 RunningHub APP
+  const handleTestRHApp = useCallback(async () => {
+    setTestingRHApp(true);
+    setTestResultRHApp(null);
+    const result = await testComfyConnection('runninghubApp', '', comfyuiConfig.runninghubApiKey ?? '');
+    setTestResultRHApp(result);
+    setTestingRHApp(false);
+  }, [comfyuiConfig.runninghubApiKey]);
+
+  // 添加 APP
+  const handleAddApp = useCallback(() => {
+    const name = prompt('APP 名称：');
+    if (!name) return;
+    const id = prompt('APP ID：');
+    if (!id) return;
+    addRunninghubApp({ id, name });
+  }, [addRunninghubApp]);
+
+  // 添加 Workflow
+  const handleAddWorkflow = useCallback(() => {
+    const name = prompt('Workflow 名称（别名）：');
+    if (!name) return;
+    const id = prompt('Workflow ID：');
+    if (!id) return;
+    addRunninghubWorkflow({ id, name });
+  }, [addRunninghubWorkflow]);
+
+  return (
+    <div className="bg-surface rounded-lg border border-border p-3">
+      <button onClick={() => setExpanded((e) => !e)} className="w-full flex items-center justify-between text-sm font-medium text-text">
+        <span className="flex items-center gap-2"><Workflow className="w-4 h-4" />RunningHub</span>
+        {expanded ? <ChevronUp className="w-4 h-4 text-text-secondary" /> : <ChevronDown className="w-4 h-4 text-text-secondary" />}
+      </button>
+      {expanded && (
+        <div className="mt-3 space-y-4">
+          {/* ===== API Key（共用） ===== */}
+          <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
+            <input
+              type="password"
+              value={comfyuiConfig.runninghubApiKey ?? ''}
+              onChange={(e) => updateComfyuiConfig({ runninghubApiKey: e.target.value })}
+              placeholder="RunningHub API Key"
+              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
+            />
+          </div>
 
           {/* ===== RunningHub Workflow ===== */}
           <div className="space-y-1.5 p-2 bg-[#1a1a1a] rounded border border-[#444]">
@@ -400,20 +576,38 @@ function ComfyWorkflowSection() {
                 测试
               </button>
             </div>
-            <input
-              type="password"
-              value={comfyuiConfig.runninghubApiKey ?? ''}
-              onChange={(e) => updateComfyuiConfig({ runninghubApiKey: e.target.value })}
-              placeholder="RunningHub API Key"
-              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
-            />
-            <textarea
-              value={(comfyuiConfig.runninghubWorkflows ?? []).join('\n')}
-              onChange={(e) => updateComfyuiConfig({ runninghubWorkflows: e.target.value.split('\n').filter(Boolean) })}
-              placeholder="Workflow ID 列表（每行一个）"
-              rows={2}
-              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono focus:border-primary outline-none"
-            />
+            <div className="flex items-center justify-between">
+              <label className="text-[9px] text-text-secondary">Workflow 列表</label>
+              <button
+                onClick={handleAddWorkflow}
+                className="text-[9px] px-2 py-0.5 rounded bg-surface-hover hover:bg-surface text-text-secondary border border-border"
+              >
+                + 添加 Workflow
+              </button>
+            </div>
+            {(comfyuiConfig.runninghubWorkflows ?? []).length > 0 ? (
+              <div className="space-y-1 max-h-32 overflow-y-auto bg-surface-hover rounded p-1.5">
+                {(comfyuiConfig.runninghubWorkflows ?? []).map((workflow, index) => (
+                  <div key={workflow.id} className="flex items-center gap-2 text-[9px]">
+                    <span className="text-primary font-mono w-5 shrink-0">{index + 1}.</span>
+                    <span className="truncate text-text-secondary flex-1 min-w-0">
+                      {workflow.name}
+                    </span>
+                    <span className="text-text-muted text-[8px] font-mono shrink-0">
+                      ID:{workflow.id}
+                    </span>
+                    <button
+                      onClick={() => removeRunninghubWorkflow(workflow.id)}
+                      className="text-error hover:text-error/80 shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[9px] text-text-muted italic">暂无 Workflow，请点击添加</div>
+            )}
             {testResultRH && (
               <div className={`text-[9px] p-1.5 rounded ${testResultRH.ok ? 'bg-green-500/10 text-green-400' : 'bg-error/10 text-error'}`}>
                 {testResultRH.message}
@@ -434,13 +628,6 @@ function ComfyWorkflowSection() {
                 测试
               </button>
             </div>
-            <input
-              type="password"
-              value={comfyuiConfig.runninghubApiKey ?? ''}
-              onChange={(e) => updateComfyuiConfig({ runninghubApiKey: e.target.value })}
-              placeholder="RunningHub API Key（共用）"
-              className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-primary outline-none"
-            />
             <div className="flex items-center justify-between">
               <label className="text-[9px] text-text-secondary">APP 列表</label>
               <button
@@ -452,14 +639,18 @@ function ComfyWorkflowSection() {
             </div>
             {(comfyuiConfig.runninghubApps ?? []).length > 0 ? (
               <div className="space-y-1 max-h-32 overflow-y-auto bg-surface-hover rounded p-1.5">
-                {(comfyuiConfig.runninghubApps ?? []).map((app) => (
-                  <div key={app.id} className="flex items-center gap-1 text-[9px]">
-                    <span className="flex-1 truncate font-mono text-text-secondary">
-                      {app.name} ({app.id}){app.quickCreateCode ? ` [${app.quickCreateCode}]` : ''}
+                {(comfyuiConfig.runninghubApps ?? []).map((app, index) => (
+                  <div key={app.id} className="flex items-center gap-2 text-[9px]">
+                    <span className="text-primary font-mono w-5 shrink-0">{index + 1}.</span>
+                    <span className="truncate text-text-secondary flex-1 min-w-0">
+                      {app.name}
+                    </span>
+                    <span className="text-text-muted text-[8px] font-mono shrink-0">
+                      ID:{app.id}
                     </span>
                     <button
                       onClick={() => removeRunninghubApp(app.id)}
-                      className="text-error hover:text-error/80 px-1"
+                      className="text-error hover:text-error/80 shrink-0"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -489,11 +680,8 @@ function ApiConfigSection({ config }: { config: ApiSectionConfig }) {
   const [expanded, setExpanded] = useState(false);
   const apiConfig = useSettingsStore((s) => s.apiConfig);
   const setChannelId = useSettingsStore((s) => s.setChannelId);
-  const setModel = useSettingsStore((s) => s.setModel);
   const channels = apiConfig.channels;
   const selectedChannelId = apiConfig[config.channelIdKey] as string;
-  const modelValue = apiConfig[config.modelKey] as string;
-  const selectedChannel = channels.find((c) => c.id === selectedChannelId);
 
   return (
     <div className="bg-surface rounded-lg border border-border p-3">
@@ -508,9 +696,8 @@ function ApiConfigSection({ config }: { config: ApiSectionConfig }) {
             <select value={selectedChannelId} onChange={(e) => setChannelId(config.type, e.target.value)} className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border">
               {channels.map((ch) => (<option key={ch.id} value={ch.id}>{ch.name || ch.url || ch.id}</option>))}
             </select>
-            <label className="text-[9px] text-text-secondary">模型名（每行一个）</label>
-            <textarea value={modelValue} onChange={(e) => setModel(config.modelKey, e.target.value)} placeholder="每行一个模型名" rows={2} className="w-full bg-surface-hover text-text text-[10px] rounded px-1.5 py-1 border border-border resize-none font-mono focus:border-primary outline-none" />
-            <TestConnectionButton channel={selectedChannel} model={modelValue} />
+            <label className="text-[9px] text-text-secondary">模型列表</label>
+            <ModelListEditor channelId={selectedChannelId} modelType={config.type} />
           </div>
         </div>
       )}
@@ -906,6 +1093,7 @@ export default function SettingsPanel() {
           <div className="space-y-4">
             <ChannelSection />
             <ComfyWorkflowSection />
+            <RunningHubSection />
             {API_SECTIONS.map((config) => (<ApiConfigSection key={config.type} config={config} />))}
           </div>
         )}

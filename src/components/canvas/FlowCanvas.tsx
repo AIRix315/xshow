@@ -225,7 +225,7 @@ function FlowCanvasInner() {
         return;
       }
       addEdge({
-        id: `${connection.source}-${connection.target}`,
+        id: `${connection.source}-${connection.sourceHandle ?? ''}-${connection.target}-${connection.targetHandle ?? ''}-${Date.now()}`,
         source: connection.source!,
         target: connection.target!,
         sourceHandle: connection.sourceHandle ?? undefined,
