@@ -2,6 +2,43 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.5] - 2026-04-15
+
+### 资源文件系统 & 自动保存
+
+#### 新增文件
+
+- `src/components/ResourcesMenu.tsx` — 资源库菜单组件，支持目录选择与文件浏览
+- `src/utils/fileSystemAccess.ts` — File System Access API 封装，支持持久化目录句柄
+- `src/utils/patchManager.ts` — 差量保存管理器（fast-json-patch）
+- `src/api/modelListApi.ts` — 模型列表 API 获取
+- `src/types-file-system-access.d.ts` — File System Access API 类型声明
+- `e2e/fileSystem.spec.ts` — 文件系统 E2E 测试
+
+#### 功能变更
+
+- **资源库菜单**：新增"资源库"按钮，点击展开目录选择器，可持久化保存用户本地文件夹
+- **静默自动保存**：每 30 秒检查未保存状态 + 项目目录存在时自动写入，无 UI 反馈（仅 console 日志）
+- **Ctrl+S 快捷键**：全局键盘快捷键，保存当前项目
+- **3D 模型支持**：SettingsPanel 新增 3D 模型配置 Tab（Channel + Model），扩展 API_SECTIONS
+
+#### 修改文件
+
+- `src/App.tsx` — 资源菜单按钮、自动保存定时器、Ctrl+S 快捷键
+- `src/components/settings/SettingsPanel.tsx` — 3D 模型配置 Section、新增 ApiType
+- `src/stores/useSettingsStore.ts` — 3D 渠道/模型配置字段
+- `src/stores/useFlowStore.ts` — hasUnsavedChanges 状态管理
+- `src/api/comfyApi.ts` — 模型列表相关 API
+- `src/store/execution/omniExecutor.ts` — 执行器逻辑更新
+- `src/utils/canvasState.ts` — 画布状态工具
+- `src/utils/connectedInputs.ts` — 输入连接工具
+- `src/types.ts` — 新增类型定义
+
+#### 质量保证
+
+- TypeScript 编译通过
+- 单元测试全部通过
+
 ## [0.1.4] - 2026-04-14
 
 ### 项目保存与导出系统
