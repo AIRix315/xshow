@@ -204,7 +204,7 @@ describe('connectedInputs', () => {
       const nodes = [
         makeNode('n1', 'omniNode', {
           outputUrl: 'https://example.com/output.jpg',
-          config: { outputType: 'text' }, // 即使配置是 text，URL 扩展名优先
+          config: { outputType: 'auto' }, // auto 模式：URL 扩展名优先推断
         }),
         makeNode('n2', 'outputNode'),
       ];
@@ -214,6 +214,59 @@ describe('connectedInputs', () => {
 
       expect(result.images).toHaveLength(1);
       expect(result.images[0]).toBe('https://example.com/output.jpg');
+    });
+
+    it('omniNode explicit text type filters out image URL', () => {
+      // 显式类型模式：outputType='text' 只输出文本，即使 outputUrl 是图片也过滤掉
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/output.jpg',
+          textOutput: 'some text',
+          config: { outputType: 'text' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(0);
+      expect(result.text).toBe('some text');
+    });
+
+    it('omniNode auto mode routes image to image targetHandle', () => {
+      // auto 模式：下游 targetHandle='image' 时，从 outputUrls 中筛选图片
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/output.jpg',
+          config: { outputType: 'auto' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', undefined, 'image')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/output.jpg');
+    });
+
+    it('omniNode auto mode routes text to text targetHandle', () => {
+      // auto 模式：下游 targetHandle='text' 时，返回 textOutput
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/output.jpg',
+          textOutput: 'hello world',
+          config: { outputType: 'auto' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', undefined, 'text')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(0);
+      expect(result.text).toBe('hello world');
     });
 
     it('infers omniNode video from URL', () => {
@@ -400,6 +453,124 @@ describe('connectedInputs', () => {
       expect(isAudioHandle('video')).toBe(false);
       expect(isAudioHandle(null)).toBe(false);
       expect(isAudioHandle(undefined)).toBe(false);
+    });
+  });
+
+  describe('P0 fixes — distribution by type (not just handleId)', () => {
+    it('routes image type to images[] when targetHandle is "any" (was bug: data lost)', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/img.png' }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image', 'any')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/img.png');
+    });
+
+    it('routes video type to videos[] when targetHandle is "any"', () => {
+      const nodes = [
+        makeNode('n1', 'videoNode', { videoUrl: 'https://example.com/vid.mp4' }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'video', 'any')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.videos).toHaveLength(1);
+      expect(result.videos[0]).toBe('https://example.com/vid.mp4');
+    });
+
+    it('routes audio type to audio[] when targetHandle is "any"', () => {
+      const nodes = [
+        makeNode('n1', 'audioInputNode', { audioUrl: 'https://example.com/audio.mp3' }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'audio', 'any')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.audio).toHaveLength(1);
+      expect(result.audio[0]).toBe('https://example.com/audio.mp3');
+    });
+
+    it('routes text type to text when targetHandle is "any"', () => {
+      const nodes = [
+        makeNode('n1', 'textNode', { text: 'Hello' }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'text', 'any')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.text).toBe('Hello');
+    });
+
+    it('extracts image from omniNode when targetHandle is "any"', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/omni.png',
+          config: { outputType: 'image' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'custom-output', 'any')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/omni.png');
+    });
+
+    it('extracts gridSplitNode splitResults as multiple images', () => {
+      const nodes = [
+        makeNode('n1', 'gridSplitNode', {
+          splitResults: ['https://example.com/cell0.png', 'https://example.com/cell1.png', 'https://example.com/cell2.png'],
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'cell-0-0', 'image')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(3);
+      expect(result.images[0]).toBe('https://example.com/cell0.png');
+      expect(result.images[1]).toBe('https://example.com/cell1.png');
+      expect(result.images[2]).toBe('https://example.com/cell2.png');
+    });
+
+    it('extracts image from imageCompareNode output', () => {
+      const nodes = [
+        makeNode('n1', 'imageCompareNode', { outputImageUrl: 'https://example.com/compare.png' }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/compare.png');
+    });
+
+    it('extracts omniNode outputUrls as additionalValues', () => {
+      const nodes = [
+        makeNode('n1', 'omniNode', {
+          outputUrl: 'https://example.com/first.png',
+          outputUrls: ['https://example.com/second.png', 'https://example.com/third.png'],
+          config: { outputType: 'image' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(3);
+      expect(result.images[0]).toBe('https://example.com/first.png');
+      expect(result.images[1]).toBe('https://example.com/second.png');
+      expect(result.images[2]).toBe('https://example.com/third.png');
     });
   });
 });

@@ -216,3 +216,52 @@ export async function executeImageCompare(ctx: NodeExecutionContext): Promise<vo
     }
   }
 }
+
+/**
+ * GridSplitNode 执行器
+ * 从上游获取图片并进行九宫格拆分，将结果写入 splitResults。
+ * 如果 childNodeIds 已配置（子节点已创建），则将拆分结果填充到子 ImageInput 节点。
+ */
+export async function executeGridSplit(ctx: NodeExecutionContext): Promise<void> {
+  const { node, getConnectedInputs, updateNodeData } = ctx;
+
+  const nodeData = node.data as Record<string, unknown>;
+  const gridCount = (nodeData.gridCount as number) ?? 3;
+  const cellSize = (nodeData.cellSize as number) ?? 512;
+
+  updateNodeData(node.id, { loading: true, errorMessage: '' });
+
+  try {
+    const { images } = getConnectedInputs(node.id);
+
+    if (!images[0]) {
+      updateNodeData(node.id, { splitResults: [], loading: false });
+      return;
+    }
+
+    // 动态导入图片处理工具（避免 Canvas API 在非浏览器环境的直接引用）
+    const { loadImage, splitImageToGrid } = await import('@/utils/imageProcessing');
+    const img = await loadImage(images[0]!);
+    const splitResults = splitImageToGrid(img, gridCount, cellSize);
+
+    // 写入拆分结果
+    updateNodeData(node.id, { splitResults, loading: false });
+
+    // 如果子节点已配置，将拆分结果填充到子 ImageInput 节点
+    const childNodeIds = nodeData.childNodeIds as Array<{ imageInputId: string }> | undefined;
+    if (childNodeIds && childNodeIds.length > 0) {
+      for (let i = 0; i < childNodeIds.length; i++) {
+        const imageInputId = childNodeIds[i]!.imageInputId;
+        if (splitResults[i]) {
+          updateNodeData(imageInputId, {
+            imageUrl: splitResults[i],
+            filename: `split-${Math.floor(i / gridCount) + 1}-${(i % gridCount) + 1}.png`,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '图片分拆失败';
+    updateNodeData(node.id, { loading: false, errorMessage: msg });
+  }
+}

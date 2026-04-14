@@ -2,7 +2,7 @@
 // 功能：通过 API 生成视频
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { VideoNode as VideoNodeType } from '@/types';
+import type { VideoNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateVideo } from '@/api/videoApi';

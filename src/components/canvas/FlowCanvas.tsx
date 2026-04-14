@@ -16,20 +16,29 @@ import { useSettingsStore } from '@/stores/useSettingsStore';
 import { saveCanvasState, loadCanvasState } from '@/utils/canvasState';
 import FloatingActionBar from './FloatingActionBar';
 import ConnectionDropMenu from './ConnectionDropMenu';
+import ReferenceEdge from '../edges/ReferenceEdge';
 import '@xyflow/react/dist/style.css';
+
+// =============================================================================
+// 自定义边类型注册
+// =============================================================================
+
+const edgeTypes = {
+  reference: ReferenceEdge,
+};
 
 // =============================================================================
 // 连接验证：Handle 数据类型兼容性检查
 // =============================================================================
 
 /** Handle 数据类型 */
-type HandleDataType = 'image' | 'text' | 'audio' | 'video' | 'model' | 'value' | 'any';
+type HandleDataType = 'image' | 'text' | 'audio' | 'video' | 'model' | 'value' | 'reference' | 'any';
 
 /** 从 Handle ID 提取数据类型（参考 node-banana getHandleType） */
 function getHandleType(handleId: string | null | undefined): HandleDataType {
   if (!handleId) return 'any';
   // 精确匹配
-  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'input') {
+  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'reference' || handleId === 'input') {
     return handleId === 'input' ? 'any' : handleId as HandleDataType;
   }
   // cell-* 格式 (GridSplitNode 的输出句柄，如 cell-0-0, cell-1-0)
@@ -50,7 +59,7 @@ function getHandleType(handleId: string | null | undefined): HandleDataType {
 function extractHandleType(handleId: string | null): HandleDataType | null {
   if (!handleId) return null;
   // 精确匹配
-  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'any' || handleId === 'input') {
+  if (handleId === 'image' || handleId === 'text' || handleId === 'audio' || handleId === 'video' || handleId === 'model' || handleId === 'value' || handleId === 'any' || handleId === 'reference' || handleId === 'input') {
     return handleId === 'input' ? 'any' : handleId as HandleDataType;
   }
   // 前缀匹配 (如 "video-0", "image-left", "output-1", "rule-0")
@@ -292,6 +301,7 @@ function FlowCanvasInner() {
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           deleteKeyCode={['Backspace', 'Delete']}
           multiSelectionKeyCode="Shift"

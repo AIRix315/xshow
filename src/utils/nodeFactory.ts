@@ -9,7 +9,7 @@ import type {
   GridSplitNodeData,
   GridMergeNodeData,
   CropNodeData,
-  UniversalNodeData,
+  OmniNodeData,
 } from '@/types';
 
 // Ref: §6.11 — 懒加载节点组件
@@ -20,7 +20,7 @@ const VideoNode = lazy(() => import('@/components/canvas/VideoNode'));
 const AudioNode = lazy(() => import('@/components/canvas/AudioNode')); // 音频输入节点
 const GridSplitNode = lazy(() => import('@/components/canvas/GridSplitNode'));
 const GridMergeNode = lazy(() => import('@/components/canvas/GridMergeNode'));
-const UniversalNode = lazy(() => import('@/components/canvas/UniversalNode')); // 万能节点（omniNode）
+const OmniNode = lazy(() => import('@/components/canvas/OmniNode')); // 万能节点
 
 // 输入节点
 const TextInputNode = lazy(() => import('@/components/canvas/TextInputNode'));
@@ -52,7 +52,7 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   videoNode: VideoNode as unknown as ComponentType<NodeProps>,
   audioNode: GenerateAudioNode as unknown as ComponentType<NodeProps>, // 音频生成（TTS）
   d3Node: D3Node as unknown as ComponentType<NodeProps>, // 3D 生成
-  omniNode: UniversalNode as unknown as ComponentType<NodeProps>, // 万能节点
+  omniNode: OmniNode as unknown as ComponentType<NodeProps>, // 万能节点
   
   // 输入节点（Input 后缀）
   textInputNode: TextInputNode as unknown as ComponentType<NodeProps>,
@@ -197,13 +197,13 @@ function getDefaultData(type: string): Record<string, unknown> {
           method: 'POST',
           headers: '{}',
           body: '',
-          outputType: 'text' as const,
+          outputType: 'auto' as const,
           executionMode: 'sync' as const,
           resultPath: '',
           executionType: 'http',
         },
         loading: false,
-      } as UniversalNodeData;
+      } as OmniNodeData;
     
     // 九宫格拆分
     case 'gridSplitNode':

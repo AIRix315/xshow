@@ -736,6 +736,10 @@ function SystemTab() {
           <div><span className="text-sm text-text">显示小地图</span><p className="text-[10px] text-text-muted">画布右上角显示节点概览</p></div>
           <Toggle value={ss.showMinimap} onChange={(v) => update({ showMinimap: v })} />
         </label>
+        <label className="flex items-center justify-between cursor-pointer">
+          <div><span className="text-sm text-text">调试模式</span><p className="text-[10px] text-text-muted">显示节点调试信息，方便排查问题</p></div>
+          <Toggle value={ss.debugMode} onChange={(v) => update({ debugMode: v })} />
+        </label>
       </div>
 
       {/* 路径配置 */}

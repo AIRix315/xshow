@@ -8,6 +8,9 @@ import NodeSidebar from './components/canvas/NodeSidebar';
 import SettingsPanel from './components/settings/SettingsPanel';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 
+// Vite 注入 package.json 版本号
+const APP_VERSION = __APP_VERSION__;
+
 type TabId = 'canvas' | 'settings';
 
 function App() {
@@ -26,7 +29,7 @@ function App() {
           <button className="flex items-center gap-2 hover:opacity-80">
             <div className="w-6 h-6 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center font-bold text-black text-sm">X</div>
             <h1 className="text-xl font-semibold text-text">XShow</h1>
-            <span className="text-[10px] text-text-muted ml-1">V0.0.7</span>
+            <span className="text-[10px] text-text-muted ml-1">v{APP_VERSION}</span>
           </button>
           <div className="flex items-center gap-2 ml-3 pl-3 border-l border-border">
             <span className="text-xs text-text-secondary truncate max-w-[120px]">{currentProject?.name ?? '未命名项目'}</span>

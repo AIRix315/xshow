@@ -2,11 +2,11 @@
 // 3D 生成需要后端服务，此处使用本地 Canvas 3D 预览占位
 import { memo, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { Generate3DNodeType } from '@/types';
+import type { D3NodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
-function Generate3DNode({ id, data, selected }: NodeProps<Generate3DNodeType>) {
+function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
 
   // Business data from store

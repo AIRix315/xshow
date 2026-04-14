@@ -2,11 +2,11 @@
 // 使用浏览器 SpeechSynthesis API 实现本地 TTS，无需外部 API
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { GenerateAudioNodeType } from '@/types';
+import type { AudioNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
 
-function GenerateAudioNode({ id, data, selected }: NodeProps<GenerateAudioNodeType>) {
+function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
 
   // Business data from store

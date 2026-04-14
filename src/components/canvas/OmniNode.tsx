@@ -3,7 +3,7 @@
 // Ref: node-banana — Store-only 模式
 import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { UniversalNodeType, CustomNodeConfig } from '@/types';
+import type { OmniNodeType, OmniNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateText } from '@/api/textApi';
@@ -29,7 +29,16 @@ function guessMediaType(url: string): 'image' | 'video' | 'audio' | 'unknown' {
   return 'unknown';
 }
 
-// 输出预览组件
+// Handle 颜色映射
+const HANDLE_COLORS: Record<string, string> = {
+  image: '#10b981',
+  video: '#f97316',
+  audio: '#a855f7',
+  text: '#3b82f6',
+  auto: '#525252',
+};
+
+// 输出预览组件 - 自适应填充父容器
 function OutputPreview({
   loading,
   errorMessage,
@@ -45,7 +54,7 @@ function OutputPreview({
 }) {
   if (loading) {
     return (
-      <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+      <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
         <div className="flex items-center gap-2 text-neutral-500">
           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -59,7 +68,7 @@ function OutputPreview({
 
   if (errorMessage) {
     return (
-      <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+      <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
         <span className="text-[10px] text-error px-2 text-center">{errorMessage}</span>
       </div>
     );
@@ -71,25 +80,25 @@ function OutputPreview({
     
     if (mediaType === 'image' || outputType === 'image') {
       return (
-        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+        <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
           <img
             src={outputUrl}
             alt="生成结果"
-            className="max-w-full max-h-[200px] object-contain"
+            className="max-w-full max-h-full object-contain"
           />
         </div>
       );
     }
     if (mediaType === 'video' || outputType === 'video') {
       return (
-        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
-          <video src={outputUrl} controls className="max-w-full max-h-[200px]" />
+        <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
+          <video src={outputUrl} controls className="max-w-full max-h-full" />
         </div>
       );
     }
     if (mediaType === 'audio' || outputType === 'audio') {
       return (
-        <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded p-2">
+        <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded p-2">
           <audio src={outputUrl} controls className="w-full max-w-[280px]" />
         </div>
       );
@@ -99,8 +108,8 @@ function OutputPreview({
   // 文本输出
   if (textOutput) {
     return (
-      <div className="min-h-[100px] flex-1 bg-[#1a1a1a] rounded">
-        <div className="bg-surface text-text text-[10px] rounded p-1.5 border border-border max-h-[120px] overflow-y-auto whitespace-pre-wrap break-all font-mono w-full">
+      <div className="w-full h-full bg-[#1a1a1a] rounded flex flex-col">
+        <div className="flex-1 overflow-auto bg-surface text-text text-[10px] rounded p-1.5 border border-border whitespace-pre-wrap break-all font-mono">
           {textOutput}
         </div>
       </div>
@@ -109,7 +118,7 @@ function OutputPreview({
 
   // 无内容
   return (
-    <div className="min-h-[100px] flex-1 flex items-center justify-center bg-[#1a1a1a] rounded">
+    <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
       <span className="text-[10px] text-text-muted">运行配置</span>
     </div>
   );
@@ -134,7 +143,7 @@ function extractByPath(obj: unknown, path: string): unknown {
 }
 
 // 同步执行万能节点
-async function executeSync(config: CustomNodeConfig, variables: Record<string, string>): Promise<string> {
+async function executeSync(config: OmniNodeConfig, variables: Record<string, string>): Promise<string> {
   const url = replaceVariables(config.apiUrl, variables);
   const headers = JSON.parse(replaceVariables(config.headers, variables));
   const body = replaceVariables(config.body, variables);
@@ -164,7 +173,7 @@ async function executeSync(config: CustomNodeConfig, variables: Record<string, s
 
 // 异步执行万能节点（提交任务 -> 轮询状态 -> 返回结果）
 async function executeAsync(
-  config: CustomNodeConfig,
+  config: OmniNodeConfig,
   variables: Record<string, string>,
   onProgress?: (progress: number) => void,
   signal?: AbortSignal,
@@ -250,7 +259,7 @@ async function executeAsync(
   throw new Error('异步任务超时: 轮询次数达到上限');
 }
 
-function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeType>) {
+function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
@@ -304,7 +313,7 @@ function UniversalNodeComponent({ id, data, selected }: NodeProps<UniversalNodeT
   }, []);
 
   // Store-only: 更新配置
-  const updateConfig = useCallback((patch: Partial<CustomNodeConfig>) => {
+  const updateConfig = useCallback((patch: Partial<OmniNodeConfig>) => {
     updateNodeData(id, { config: { ...config, ...patch } });
   }, [id, config, updateNodeData]);
 
@@ -398,7 +407,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
       const cleaned = result.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
-      updateNodeData(id, { config: { ...config, ...parsed }, configMode: true });
+      updateNodeData(id, { config: { ...config, ...parsed }, configMode: true, loading: false });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI 辅助失败';
       updateNodeData(id, { errorMessage: msg, loading: false });
@@ -467,7 +476,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                   };
                 }
               } catch (uploadErr) {
-                console.error('[UniversalNode] 上传图片失败:', uploadErr);
+                console.error('[OmniNode] 上传图片失败:', uploadErr);
                 throw new Error(`上传图片到 ComfyUI 失败: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`);
               }
             }
@@ -488,12 +497,16 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         });
 
         // ComfyUI 返回的通常是媒体 URL，智能判断
-        const isMediaUrl = result.includes('/view?') || 
-          /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(result);
+        const isMediaUrl = result.outputUrl.includes('/view?') || 
+          /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(result.outputUrl);
         
-        if (config.outputType === 'text' && !isMediaUrl) {
+        // ComfyUI 模式使用独立配置，优先按用户设置判断
+        const effectiveOutputType = config.comfyuiOutputType ?? 'image';
+        
+        // 根据输出类型和实际返回判断写入哪个字段
+        if (effectiveOutputType === 'text' && !isMediaUrl) {
           updateNodeData(id, {
-            textOutput: result,
+            textOutput: result.outputUrl,
             outputUrl: undefined,
             outputUrls: undefined,
             loading: false,
@@ -501,11 +514,11 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
             progress: 0
           });
         } else {
-          // 图片/视频/音频，或 ComfyUI 返回的媒体 URL
+          // 图片/视频/音频统一写入 outputUrl，多输出写入 outputUrls
           updateNodeData(id, {
-            outputUrl: result,
+            outputUrl: result.outputUrl,
+            outputUrls: result.outputUrls.length > 1 ? result.outputUrls : undefined,
             textOutput: undefined,
-            outputUrls: undefined,
             loading: false,
             configMode: false,
             progress: 0
@@ -536,10 +549,22 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
           progress: 0
         });
       } else {
+        // 检测多输出：HTTP 返回可能是 JSON 数组
+        let outputUrls: string[] | undefined;
+        let outputUrl = result;
+        try {
+          const parsed = JSON.parse(result);
+          if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+            outputUrls = parsed as string[];
+            outputUrl = outputUrls[0]!;
+          }
+        } catch {
+          // 非 JSON 数组，保持单值
+        }
         updateNodeData(id, {
-          outputUrl: result,
+          outputUrl,
+          outputUrls,
           textOutput: undefined,
-          outputUrls: undefined,
           loading: false,
           configMode: false,
           progress: 0
@@ -569,31 +594,36 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
     });
   }, [config, addTemplate]);
 
+  // 计算有效的输出类型（用于 accent color）
+  const effectiveOutputType = config.executionType === 'comfyui'
+    ? (config.comfyuiOutputType ?? 'auto')
+    : (config.outputType ?? 'auto');
+  const accentColor = HANDLE_COLORS[effectiveOutputType];
+
   return (
-    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360}>
-      <Handle type="target" position={Position.Left} id="custom-input" className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]" data-handletype="any" />
-      <div className="flex flex-col gap-2 p-2 min-w-[320px]">
-        {/* 标题 + 配置/运行切换 */}
-        <div className="flex items-center justify-between">
+    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360} accentColor={accentColor}>
+      <Handle type="target" position={Position.Left} id="custom-input" data-handletype="any" />
+      <div className="flex flex-col h-full min-h-[180px]">
+        {/* 标题栏 - 配置/运行按钮紧跟标题 */}
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0">
           <span className="text-[10px] text-text-secondary font-medium">{data.label || '万能节点'}</span>
-          <div className="flex gap-1">
-            <button
-              onClick={() => updateNodeData(id, { configMode: true })}
-              className={`text-[9px] px-1.5 py-0.5 rounded ${configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
-            >
-              配置
-            </button>
-            <button
-              onClick={() => updateNodeData(id, { configMode: false })}
-              className={`text-[9px] px-1.5 py-0.5 rounded ${!configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
-            >
-              运行
-            </button>
-          </div>
+          <button
+            onClick={() => updateNodeData(id, { configMode: true })}
+            className={`text-[9px] px-1.5 py-0.5 rounded ${configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
+          >
+            配置
+          </button>
+          <button
+            onClick={() => updateNodeData(id, { configMode: false })}
+            className={`text-[9px] px-1.5 py-0.5 rounded ${!configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
+          >
+            运行
+          </button>
         </div>
 
+        {/* 配置模式内容区 - 可滚动 */}
         {configMode && (
-          <>
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
             {/* ========== 模式选择（首位） ========== */}
             <select
               value={config.executionType ?? 'http'}
@@ -631,12 +661,14 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                   </select>
                   <select
                     value={config.outputType}
-                    onChange={(e) => updateConfig({ outputType: e.target.value as CustomNodeConfig['outputType'] })}
+                    onChange={(e) => updateConfig({ outputType: e.target.value as OmniNodeConfig['outputType'] })}
                     className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
                   >
-                    {['text', 'image', 'video', 'audio'].map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
+                    <option value="auto">Auto</option>
+                    <option value="text">text</option>
+                    <option value="image">image</option>
+                    <option value="video">video</option>
+                    <option value="audio">audio</option>
                   </select>
                   <select
                     value={config.executionMode}
@@ -713,10 +745,23 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
               </>
             )}
 
-            {/* ========== ComfyUI 模式 ========== */}
+            {/* ========== ComfyUI 模式 - 样式与 HTTP 对齐 ========== */}
             {config.executionType === 'comfyui' && (
-              <div className="flex flex-col gap-1 p-1.5 bg-[#1a1a1a] rounded border border-[#555]">
-                <span className="text-[9px] text-green-400 font-medium">ComfyUI</span>
+              <div className="flex flex-col gap-2">
+                  {/* 输出类型选择 - auto 默认自动判断 */}
+                  <div className="flex gap-1">
+                    <select
+                      value={config.comfyuiOutputType ?? 'auto'}
+                      onChange={(e) => updateConfig({ comfyuiOutputType: e.target.value as 'auto' | 'text' | 'image' | 'video' | 'audio' })}
+                      className="flex-1 bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+                    >
+                      <option value="auto">Auto（自动判断）</option>
+                      <option value="image">图片</option>
+                      <option value="video">视频</option>
+                      <option value="audio">音频</option>
+                      <option value="text">文本</option>
+                    </select>
+                  </div>
                 <select
                   value={subType}
                   onChange={(e) => {
@@ -739,7 +784,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                     <select
                       value={selectedWorkflow}
                       onChange={(e) => handleSelectWorkflow(e.target.value)}
-                      className="w-full bg-surface text-text text-[9px] rounded px-1 py-0.5 border border-border"
+                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
                     >
                       <option value="">— 选择工作流 —</option>
                         {(subType === 'local' ? comfyuiConfig.localWorkflows : comfyuiConfig.cloudWorkflows).map((w) => (
@@ -749,7 +794,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
                     {/* 节点参数（可调节） */}
                     {parsedNodes.length > 0 && (
-                      <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto bg-[#111] rounded p-1">
+                      <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto bg-[#1a1a1a] rounded p-1 border border-border">
                         {parsedNodes.map((node) => (
                           <div key={node.nodeId} className="flex flex-col gap-0.5 p-1 bg-surface rounded">
                             <span className="text-[8px] text-primary font-mono">[{node.nodeId}] {node.classType}</span>
@@ -794,9 +839,38 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 )}
               </div>
             )}
+          </div>
+        )}
 
-            {/* AI 辅助 + 保存模板 */}
-            <div className="flex gap-1">
+        {/* 运行模式 - 预览区最大化填充 */}
+        {!configMode && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 flex items-center justify-center p-1">
+              <OutputPreview
+                loading={loading}
+                errorMessage=""
+                outputUrl={outputUrl}
+                textOutput={textOutput}
+                outputType={config.executionType === 'comfyui' ? (config.comfyuiOutputType ?? 'image') : config.outputType}
+              />
+            </div>
+            {/* 进度条 */}
+            {loading && progress > 0 && (
+              <div className="w-full bg-surface rounded-full h-1.5 shrink-0 mx-2">
+                <div
+                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round(progress * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 底部按钮区 - 固定在底部 */}
+        <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
+          {/* AI 辅助 + 保存模板 - 仅配置模式显示 */}
+          {configMode && (
+            <div className="flex gap-1 mb-1.5">
               <button
                 onClick={handleAIAssist}
                 className="flex-1 bg-purple-600 hover:bg-purple-700 text-text text-[10px] py-1 rounded font-medium flex items-center justify-center gap-1"
@@ -812,61 +886,37 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 保存模板
               </button>
             </div>
-          </>
-        )}
-
-        {/* 运行模式 */}
-        {!configMode && (
-          <>
-            {/* 输出预览区 */}
-            <OutputPreview
-              loading={loading}
-              errorMessage={errorMessage}
-              outputUrl={outputUrl}
-              textOutput={textOutput}
-              outputType={config.outputType}
-            />
-            
-            {/* 进度条 */}
-            {loading && progress > 0 && (
-              <div className="w-full bg-surface rounded-full h-1.5">
-                <div
-                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.round(progress * 100)}%` }}
-                />
-              </div>
-            )}
-          </>
-        )}
-        
-        {/* 底部按钮区 - 始终显示 */}
-        <div className="flex gap-1 mt-1 pt-1 border-t border-border">
-          <button
-            onClick={handleExecute}
-            disabled={loading}
-            className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1 rounded font-medium"
-          >
-            {loading ? '执行中...' : '▶ 执行'}
-          </button>
-          {loading && (
-            <button
-              onClick={handleStop}
-              className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1 rounded font-medium"
-            >
-              ⏹ 停止
-            </button>
           )}
+          {/* 执行按钮 */}
+          <div className="flex gap-1">
+            <button
+              onClick={handleExecute}
+              disabled={loading}
+              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
+            >
+              {loading ? '执行中...' : '▶ 执行'}
+            </button>
+            {loading && (
+              <button
+                onClick={handleStop}
+                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
+              >
+                ⏹ 停止
+              </button>
+            )}
+          </div>
         </div>
       </div>
+      {/* 万能输出 handle — data-handletype="any" 可连接任意类型下游节点 */}
       <Handle
         type="source"
         position={Position.Right}
         id="custom-output"
-        className="!bg-[#555] !w-3 !h-3 !border-2 !border-[#222]"
-        data-handletype={config.outputType || 'text'}
+        data-handletype="any"
+        style={{ top: '50%', zIndex: 10, backgroundColor: accentColor ?? '#525252', width: 12, height: 12, border: '2px solid #1e1e1e' }}
       />
     </BaseNodeWrapper>
   );
 }
 
-export default memo(UniversalNodeComponent);
+export default memo(OmniNodeComponent);

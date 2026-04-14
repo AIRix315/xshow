@@ -57,6 +57,8 @@ export interface SystemSettings {
   configSavePath: string;
   embedBase64: boolean;
   saveDirectory: string;
+  /** 调试模式 - 显示节点调试信息 */
+  debugMode: boolean;
 }
 
 const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
@@ -82,6 +84,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   configSavePath: '',
   embedBase64: false,
   saveDirectory: '',
+  debugMode: true, // 默认开启，生产发布时改为 false
 };
 
 const DEFAULT_COMFYUI_CONFIG: ComfyUIConfig = {

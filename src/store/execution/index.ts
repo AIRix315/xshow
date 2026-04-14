@@ -21,6 +21,7 @@ export {
   executeVideoTrim,
   executeVideoStitch,
   executeImageCompare,
+  executeGridSplit,
 } from './simpleNodeExecutors';
 
 // 生成节点执行器
@@ -32,7 +33,7 @@ export {
 } from './generateNodeExecutors';
 
 // 万能节点执行器
-export { executeUniversalNode } from './universalExecutor';
+export { executeOmniNode } from './omniExecutor';
 
 import type { NodeExecutor, NodeExecutorRegistry } from './types';
 import {
@@ -48,6 +49,7 @@ import {
   executeVideoTrim,
   executeVideoStitch,
   executeImageCompare,
+  executeGridSplit,
 } from './simpleNodeExecutors';
 import {
   executeImageNode,
@@ -55,7 +57,7 @@ import {
   executeVideoNode,
   executeAudioNode,
 } from './generateNodeExecutors';
-import { executeUniversalNode } from './universalExecutor';
+import { executeOmniNode } from './omniExecutor';
 
 /**
  * 节点类型到执行器的映射表
@@ -97,9 +99,10 @@ export const nodeExecutors: NodeExecutorRegistry = {
   videoTrimNode: executeVideoTrim,
   videoStitchNode: executeVideoStitch,
   imageCompareNode: executeImageCompare,
+  gridSplitNode: executeGridSplit,
 
   // 万能节点
-  omniNode: executeUniversalNode,
+  omniNode: executeOmniNode,
 };
 
 /**

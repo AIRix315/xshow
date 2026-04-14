@@ -1,14 +1,15 @@
 // Ref: §6.7 + node-banana SplitGridNode.tsx — 九宫格分拆（含 Canvas 图像处理）
 // Ref: §4.2 — 节点数据回写 Store + 上游数据读取
-import { memo, useCallback, useEffect } from 'react';
+// Ref: node-banana SplitGridNode.tsx — reference handle + 子节点机制
+import { memo, useCallback, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { GridSplitNode } from '@/types';
+import type { GridSplitNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { getUpstreamNodes } from '@/stores/useFlowStore';
-import { splitImageToGrid, loadImage } from '@/utils/imageProcessing';
 import BaseNodeWrapper from './BaseNode';
+import SplitGridSettingsModal from './SplitGridSettingsModal';
 
-function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>) {
+function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   // Store-only: 业务数据从 data 读取
   const gridCount = data.gridCount ?? 3;
@@ -16,6 +17,10 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
   const loading = data.loading ?? false;
   const errorMessage = data.errorMessage ?? '';
   const splitResults = (data.splitResults ?? []) as string[];
+  const isConfigured = data.isConfigured ?? false;
+
+  // 子节点创建弹窗状态
+  const [showSettings, setShowSettings] = useState(false);
 
   // 从 Store 读取上游图片节点的 imageUrl
   const upstream = getUpstreamNodes(id);
@@ -32,26 +37,22 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
     updateNodeData(id, { cellSize: val });
   }, [id, updateNodeData]);
 
-  // 自动执行拆图：当源图变化时
+  // 拆图由执行器驱动（executeGridSplit），组件不再使用 useEffect 自动拆分
+  // 当 sourceImageUrl 变化时仅清空旧结果，等待执行器写入 splitResults
   useEffect(() => {
     if (!sourceImageUrl) {
       updateNodeData(id, { splitResults: [], loading: false, errorMessage: '' });
-      return;
     }
-    let cancelled = false;
-    updateNodeData(id, { loading: true, errorMessage: '' });
-    loadImage(sourceImageUrl)
-      .then((img) => {
-        if (cancelled) return;
-        const results = splitImageToGrid(img, gridCount, cellSize);
-        updateNodeData(id, { splitResults: results, loading: false });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        updateNodeData(id, { loading: false, errorMessage: err instanceof Error ? err.message : '图片分拆失败' });
-      });
-    return () => { cancelled = true; };
-  }, [sourceImageUrl, gridCount, cellSize, id, updateNodeData]);
+  }, [sourceImageUrl, id, updateNodeData]);
+
+  // 首次创建且未配置时，弹出设置弹窗
+  useEffect(() => {
+    if (!isConfigured) {
+      setShowSettings(true);
+    }
+  }, [isConfigured]);
+
+  const totalCells = gridCount * gridCount;
 
   const minimalContent = (
     <>
@@ -66,7 +67,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
             gap: '2px',
           }}
         >
-          {Array.from({ length: gridCount * gridCount }, (_, i) => (
+          {Array.from({ length: totalCells }, (_, i) => (
             <div
               key={i}
               className="bg-surface-hover flex items-center justify-center text-text-muted"
@@ -81,7 +82,17 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
         </div>
       </div>
       
-      {Array.from({ length: gridCount * gridCount }, (_, idx) => {
+      {/* 参考连接线 — 虚线连接到子 ImageInput 节点 */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="reference"
+        data-handletype="reference"
+        style={{ top: '50%', zIndex: 10 }}
+      />
+
+      {/* 向后兼容：保留 cell handles 供直接连线使用 */}
+      {Array.from({ length: totalCells }, (_, idx) => {
         const row = Math.floor(idx / gridCount);
         const col = idx % gridCount;
         return (
@@ -90,7 +101,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
             type="source"
             position={Position.Right}
             id={`cell-${row}-${col}`}
-            style={{ top: `${((idx + 1) / (gridCount * gridCount + 1)) * 100}%`, zIndex: 10 }}
+            style={{ top: `${((idx + 1) / (totalCells + 1)) * 100}%`, zIndex: 10, opacity: 0.3 }}
             data-handletype="image"
           />
         );
@@ -179,10 +190,30 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
               ✓ 已拆分为 {splitResults.length} 格
             </div>
           )}
+
+          {/* 子节点管理按钮 */}
+          <div className="flex gap-1 mt-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="flex-1 bg-surface-hover hover:bg-[#333] text-text-secondary text-[10px] py-1 rounded"
+            >
+              {isConfigured ? '重新配置子节点' : '创建子节点'}
+            </button>
+          </div>
         </div>
       </div>
       
-      {Array.from({ length: gridCount * gridCount }, (_, idx) => {
+      {/* 参考连接线 — 虚线连接到子 ImageInput 节点 */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="reference"
+        data-handletype="reference"
+        style={{ top: '50%', zIndex: 10 }}
+      />
+
+      {/* 向后兼容：保留 cell handles */}
+      {Array.from({ length: totalCells }, (_, idx) => {
         const row = Math.floor(idx / gridCount);
         const col = idx % gridCount;
         return (
@@ -191,7 +222,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
             type="source"
             position={Position.Right}
             id={`cell-${row}-${col}`}
-            style={{ top: `${((idx + 1) / (gridCount * gridCount + 1)) * 100}%`, zIndex: 10 }}
+            style={{ top: `${((idx + 1) / (totalCells + 1)) * 100}%`, zIndex: 10, opacity: 0.3 }}
             data-handletype="image"
           />
         );
@@ -200,16 +231,25 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNode>
   );
 
   return (
-    <BaseNodeWrapper 
-      selected={!!selected} 
-      loading={loading} 
-      errorMessage={errorMessage}
-      title="分割"
-      minWidth={260}
-      hoverContent={hoverContent}
-    >
-      {minimalContent}
-    </BaseNodeWrapper>
+    <>
+      <BaseNodeWrapper 
+        selected={!!selected} 
+        loading={loading} 
+        errorMessage={errorMessage}
+        title="分割"
+        minWidth={260}
+        hoverContent={hoverContent}
+      >
+        {minimalContent}
+      </BaseNodeWrapper>
+      {showSettings && (
+        <SplitGridSettingsModal
+          nodeId={id}
+          gridCount={gridCount}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </>
   );
 }
 

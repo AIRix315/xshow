@@ -1,5 +1,6 @@
 // Ref: node-banana Output Node
 // 输出节点：从上游节点读取数据并显示结果
+// 图片/视频/音频填充整个节点区域，仅留顶部标题栏和底部下载按钮
 import { memo, useMemo, useEffect, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { OutputNodeType } from '@/types';
@@ -27,13 +28,11 @@ function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
   const prevUpstreamRef = useRef<typeof upstreamData | null>(null);
   
   useEffect(() => {
-    // 首次运行，记录基线
     if (prevUpstreamRef.current === null) {
       prevUpstreamRef.current = upstreamData;
       return;
     }
 
-    // 上游数据变化时，更新本地 data
     const prev = prevUpstreamRef.current;
     if (
       prev.images[0] !== upstreamData.images[0] ||
@@ -55,6 +54,7 @@ function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
   const hasVideo = !!inputVideoUrl;
   const hasAudio = !!inputAudioUrl;
   const hasText = !!inputValue;
+  const hasMedia = hasImage || hasVideo || hasAudio;
 
   // 下载功能
   const handleDownload = () => {
@@ -71,39 +71,54 @@ function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
 
   return (
     <BaseNodeWrapper selected={!!selected} title="输出">
-      <Handle type="target" position={Position.Left} id="any" style={{ top: '50%' }} data-handletype="any" />
-      <div className="flex flex-col gap-2 p-2 min-w-[180px]">
-        <span className="text-[10px] text-text-secondary font-medium">Output</span>
-        
-        {/* 显示内容 */}
-        <div className="h-16 bg-surface rounded border border-dashed border-border flex items-center justify-center text-[10px] text-text-muted overflow-hidden">
+      {/* 多类型输入 handle — 各类型独立入口 */}
+      <Handle type="target" position={Position.Left} id="image" style={{ top: '25%', zIndex: 10 }} data-handletype="image" />
+      <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <Handle type="target" position={Position.Left} id="text" style={{ top: '75%', zIndex: 10 }} data-handletype="text" />
+      {/* Handle 标签 */}
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', color: 'var(--color-handle-image)', zIndex: 10 }}>Image</div>
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', color: 'var(--color-handle-video)', zIndex: 10 }}>Video</div>
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', color: 'var(--color-handle-text)', zIndex: 10 }}>Text</div>
+
+      {/* 内容区域 — flex-1 填满剩余空间 */}
+      <div className="flex flex-col h-full">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {hasImage && (
             <img
               src={inputImageUrl!}
               alt="输出图片"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
           )}
-          {hasVideo && <span className="text-blue-400">🎬 视频输出</span>}
-          {hasAudio && <span className="text-purple-400">🔊 音频输出</span>}
-          {hasText && (
-            <span className="truncate max-w-[140px] text-text">
-              {String(inputValue).slice(0, 50)}
-            </span>
+          {hasVideo && !hasImage && (
+            <div className="w-full h-full flex items-center justify-center bg-surface rounded">
+              <span className="text-blue-400 text-sm">🎬 视频输出</span>
+            </div>
           )}
-          {!hasImage && !hasVideo && !hasAudio && !hasText && '等待输出'}
+          {hasAudio && !hasImage && !hasVideo && (
+            <div className="w-full h-full flex items-center justify-center bg-surface rounded">
+              <span className="text-purple-400 text-sm">🔊 音频输出</span>
+            </div>
+          )}
+          {hasText && !hasMedia && (
+            <div className="w-full h-full flex items-center justify-center p-2 overflow-auto">
+              <span className="text-text text-[11px] break-words">
+                {String(inputValue).slice(0, 200)}
+              </span>
+            </div>
+          )}
+          {!hasImage && !hasVideo && !hasAudio && !hasText && (
+            <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
+              <span className="text-text-muted text-[10px]">等待输出</span>
+            </div>
+          )}
         </div>
 
-        {/* 标签 */}
-        {data.label && (
-          <span className="text-[10px] text-text-muted text-center">{data.label}</span>
-        )}
-
-        {/* 下载按钮 */}
-        {(hasImage || hasVideo || hasAudio) && (
+        {/* 下载按钮 — 固定底部 */}
+        {hasMedia && (
           <button
             onClick={handleDownload}
-            className="w-full text-[9px] text-text-secondary hover:text-text py-1 bg-surface-hover rounded"
+            className="w-full text-[9px] text-text-secondary hover:text-text py-1 bg-surface-hover rounded shrink-0"
           >
             ⬇ 下载
           </button>

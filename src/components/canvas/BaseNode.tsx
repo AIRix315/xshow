@@ -23,6 +23,8 @@ export interface BaseNodeWrapperProps {
   status?: NodeStatus;
   /** 错误消息 */
   errorMessage?: string;
+  /** 调试信息（仅在 debugMode 下显示） */
+  debugInfo?: string;
   /** 默认精简内容（始终显示）- 如图片预览 */
   children: ReactNode;
   /** 悬停时显示的完整参数内容（替代 children） */
@@ -35,11 +37,16 @@ export interface BaseNodeWrapperProps {
   minWidth?: number;
   /** 最小高度 */
   minHeight?: number;
+  /** 节点主题色（影响标题栏底边和选中态边框高亮） */
+  accentColor?: string;
 }
 
 // =============================================================================
 // BaseNodeWrapper 包装器 - 统一处理状态 + 错误显示 + 悬停展开 + 设置面板
 // =============================================================================
+
+// Ref: 对标 node-banana styles
+import { useSettingsStore } from '@/stores/useSettingsStore';
 
 function BaseNodeWrapper({
   selected,
@@ -47,15 +54,20 @@ function BaseNodeWrapper({
   loading = false,
   status,
   errorMessage,
+  debugInfo,
   children,
   hoverContent,
   settingsPanel,
   onSettings,
   minWidth = 180,
   minHeight = 100,
+  accentColor,
 }: BaseNodeWrapperProps) {
   // 状态优先：如果传入 status 则使用 status，否则用 loading 推断
   const nodeStatus: NodeStatus = status ?? (loading ? 'loading' : 'idle');
+  
+  // 调试模式开关
+  const debugMode = useSettingsStore((s) => s.systemSettings.debugMode);
   
   // 设置面板展开状态
   const [settingsExpanded, setSettingsExpanded] = useState(false);
@@ -71,6 +83,24 @@ function BaseNodeWrapper({
         handleClassName="!w-5 !h-5 !bg-transparent !border-none"
       />
 
+      {/* 错误消息提示 - 显示在节点上方 */}
+      {errorMessage && (
+        <div className="absolute -top-7 left-0 right-0 z-20">
+          <div className="bg-red-500/95 text-white text-[10px] px-2 py-1 rounded truncate max-w-full shadow-lg">
+            {errorMessage}
+          </div>
+        </div>
+      )}
+
+      {/* 调试信息 - 显示在节点上方（紧贴错误信息下方） */}
+      {debugMode && debugInfo && (
+        <div className={`absolute ${errorMessage ? '-top-14' : '-top-7'} left-0 right-0 z-10`}>
+          <div className="bg-yellow-500/90 text-black text-[9px] px-2 py-0.5 rounded truncate max-w-full shadow-lg font-mono">
+            {debugInfo}
+          </div>
+        </div>
+      )}
+
       {/* 节点容器 - 对标 node-banana 样式: bg=#262626, border=#333, rounded=8px */}
       <div
         className={`
@@ -83,14 +113,23 @@ function BaseNodeWrapper({
               : nodeStatus === 'error'
               ? 'border-red-500'
               : selected
-              ? 'border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/25'
+              ? `ring-2 shadow-lg ${accentColor ? '' : 'shadow-blue-500/25'}`
               : 'border-[#333]'
           }
         `}
+        style={{
+          ...(accentColor ? {
+            borderColor: selected ? accentColor : undefined,
+            boxShadow: selected ? `0 0 0 2px ${accentColor}40, 0 4px 12px ${accentColor}25` : undefined,
+          } : selected ? undefined : undefined),
+        }}
       >
-        {/* 标题栏 - 对标: bg=#262626, border-bottom=#333 */}
+        {/* 标题栏 - 对标: bg=#262626, border-bottom 使用 accentColor */}
         {title && (
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#333] bg-[#262626] rounded-t-lg">
+          <div
+            className="flex items-center justify-between px-3 py-1.5 border-b bg-[#262626] rounded-t-lg"
+            style={{ borderBottomColor: accentColor ?? '#333' }}
+          >
             <span className="text-[10px] font-semibold uppercase text-[#9ca3af] truncate">{title}</span>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {settingsPanel && (
@@ -127,15 +166,6 @@ function BaseNodeWrapper({
             {nodeStatus === 'error' && (
               <XCircle className="w-4 h-4 text-red-500" />
             )}
-          </div>
-        )}
-
-        {/* 错误消息提示 */}
-        {errorMessage && (
-          <div className="absolute top-2 left-2 right-8 z-10">
-            <div className="bg-red-500/90 text-white text-[10px] px-2 py-1 rounded truncate max-w-full">
-              {errorMessage}
-            </div>
           </div>
         )}
 

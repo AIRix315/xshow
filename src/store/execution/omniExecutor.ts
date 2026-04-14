@@ -1,5 +1,5 @@
 /**
- * UniversalNode Executor
+ * OmniNode Executor
  *
  * 万能节点执行器，支持两种模式：
  * 1. HTTP 模式：自定义 API 调用
@@ -7,8 +7,8 @@
  */
 
 import type { NodeExecutionContext } from './types';
-import type { CustomNodeConfig, ComfyUISubType, ComfyUINodeInfo } from '@/types';
-import { executeComfyWorkflow } from '@/api/comfyApi';
+import type { OmniNodeConfig, ComfyUISubType, ComfyUINodeInfo } from '@/types';
+import { executeComfyWorkflow, type ComfyWorkflowResult } from '@/api/comfyApi';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 
 /**
@@ -42,7 +42,7 @@ function extractByPath(obj: unknown, path: string): unknown {
  * 同步执行万能节点 HTTP 请求
  */
 async function executeSync(
-  config: CustomNodeConfig,
+  config: OmniNodeConfig,
   variables: Record<string, string>,
   signal?: AbortSignal
 ): Promise<string> {
@@ -78,7 +78,7 @@ async function executeSync(
  * 异步执行万能节点（提交任务 -> 轮询状态 -> 返回结果）
  */
 async function executeAsync(
-  config: CustomNodeConfig,
+  config: OmniNodeConfig,
   variables: Record<string, string>,
   onProgress?: (progress: number) => void,
   signal?: AbortSignal
@@ -170,15 +170,15 @@ async function executeAsync(
 }
 
 /**
- * UniversalNode 执行器
+ * OmniNode 执行器
  */
-export async function executeUniversalNode(ctx: NodeExecutionContext): Promise<void> {
+export async function executeOmniNode(ctx: NodeExecutionContext): Promise<void> {
   const { node, getConnectedInputs, updateNodeData, signal, getFreshNode } = ctx;
 
   // 获取最新节点数据
   const freshNode = getFreshNode(node.id);
   const nodeData = freshNode?.data ?? node.data;
-  const config = nodeData.config as CustomNodeConfig;
+  const config = nodeData.config as OmniNodeConfig;
 
   if (!config) {
     throw new Error('万能节点配置缺失');
@@ -208,20 +208,42 @@ export async function executeUniversalNode(ctx: NodeExecutionContext): Promise<v
   updateNodeData(node.id, { loading: true, errorMessage: '', progress: 0 });
 
   try {
-    let result: string;
+    let outputUrl: string;
+    let outputUrls: string[] | undefined;
 
     // ComfyUI 执行模式
     if (config.executionType === 'comfyui') {
-      result = await executeComfyMode(config, variables, updateNodeData, node.id, signal);
+      const comfyResult = await executeComfyMode(config, variables, updateNodeData, node.id, signal);
+      outputUrl = comfyResult.outputUrl;
+      outputUrls = comfyResult.outputUrls.length > 1 ? comfyResult.outputUrls : undefined;
     } else {
       // HTTP 执行模式
-      result = await executeHttpMode(config, variables, updateNodeData, node.id, signal);
+      outputUrl = await executeHttpMode(config, variables, updateNodeData, node.id, signal);
+      // HTTP 模式检测是否返回了 JSON 数组（多输出场景）
+      try {
+        const parsed = JSON.parse(outputUrl);
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+          outputUrls = parsed as string[];
+          outputUrl = outputUrls[0]!;
+        }
+      } catch {
+        // 非 JSON 数组，保持单值
+      }
     }
 
-    // 根据 outputType 写入正确的输出字段
-    if (config.outputType === 'text') {
+    // 根据 executionType 和配置写入正确的输出字段
+    // ComfyUI 模式使用独立配置 comfyuiOutputType，HTTP 模式使用 outputType
+    const effectiveOutputType = config.executionType === 'comfyui'
+      ? (config.comfyuiOutputType ?? 'image')
+      : (config.outputType ?? 'text');
+    
+    // 智能判断：如果是媒体 URL，强制使用 outputUrl
+    const isMediaUrl = outputUrl.includes('/view?') || 
+      /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(outputUrl);
+    
+    if (effectiveOutputType === 'text' && !isMediaUrl) {
       updateNodeData(node.id, {
-        textOutput: result,
+        textOutput: outputUrl,
         outputUrl: undefined,
         outputUrls: undefined,
         loading: false,
@@ -230,7 +252,8 @@ export async function executeUniversalNode(ctx: NodeExecutionContext): Promise<v
     } else {
       // image/video/audio
       updateNodeData(node.id, {
-        outputUrl: result,
+        outputUrl,
+        outputUrls,
         textOutput: undefined,
         loading: false,
         progress: 0,
@@ -247,12 +270,12 @@ export async function executeUniversalNode(ctx: NodeExecutionContext): Promise<v
  * ComfyUI 模式执行
  */
 async function executeComfyMode(
-  config: CustomNodeConfig,
+  config: OmniNodeConfig,
   variables: Record<string, string>,
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void,
   nodeId: string,
   signal?: AbortSignal
-): Promise<string> {
+): Promise<ComfyWorkflowResult> {
   const subType = config.comfyuiSubType ?? 'local';
   const comfyuiConfig = useSettingsStore.getState().comfyuiConfig;
 
@@ -309,7 +332,7 @@ async function executeComfyMode(
  * HTTP 模式执行
  */
 async function executeHttpMode(
-  config: CustomNodeConfig,
+  config: OmniNodeConfig,
   variables: Record<string, string>,
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void,
   nodeId: string,

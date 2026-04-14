@@ -3,7 +3,7 @@
 // 模式：默认只显示图片预览，hover 显示完整参数
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { ImageNode as ImageNodeType } from '@/types';
+import type { ImageNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { generateImage } from '@/api/imageApi';

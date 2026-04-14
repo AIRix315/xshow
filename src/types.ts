@@ -171,10 +171,21 @@ export interface GenerateAudioNodeData extends BaseNodeData {
 // §3.8 九宫格分拆节点
 export interface GridSplitNodeData extends BaseNodeData {
   gridCount: number;
+  /** 行数（默认等于 gridCount） */
+  gridRows?: number;
+  /** 列数（默认等于 gridCount） */
+  gridCols?: number;
   cellSize: number;
   aspectRatio: string;
   titlePattern: string;
   splitResults?: string[];
+  /** 要创建的子节点组数（默认 = gridRows * gridCols） */
+  targetCount?: number;
+  /** 参考连接的子节点 ID 列表（拆分后自动创建的 ImageInput 节点） */
+  childNodeIds?: Array<{ imageInputId: string }>;
+  /** 是否已配置子节点 */
+  isConfigured?: boolean;
+  [key: string]: unknown;
 }
 
 // §3.9 九宫格合拼节点
@@ -186,12 +197,12 @@ export interface GridMergeNodeData extends BaseNodeData {
 }
 
 // §3.10 万能节点配置
-export interface CustomNodeConfig {
+export interface OmniNodeConfig {
   apiUrl: string;
   method: string;
   headers: string;          // JSON 字符串
   body: string;             // 支持 {{变量名}}
-  outputType: 'text' | 'image' | 'video' | 'audio';
+  outputType: 'auto' | 'text' | 'image' | 'video' | 'audio';
   executionMode: 'sync' | 'async';
   resultPath: string;
   taskIdPath?: string;
@@ -210,6 +221,8 @@ export interface CustomNodeConfig {
   // ComfyUI 执行配置
   executionType?: 'http' | 'comfyui';
   comfyuiSubType?: ComfyUISubType;
+  // ComfyUI 独立的输出类型（不继承 HTTP 模式）
+  comfyuiOutputType?: 'auto' | 'text' | 'image' | 'video' | 'audio';
   // 工作流标识
   workflowId?: string;           // RunningHub workflowId
   workflowJson?: string;         // 本地/Cloud 工作流 JSON
@@ -229,10 +242,10 @@ export interface ComfyUINodeInfo {
   defaultValue?: string;
 }
 
-export interface UniversalNodeData extends BaseNodeData {
+export interface OmniNodeData extends BaseNodeData {
   label: string;
   configMode: boolean;
-  config: CustomNodeConfig;
+  config: OmniNodeConfig;
   loading: boolean;
   progress?: number;
   resultData?: string;       // 原始返回数据（兼容）
@@ -241,9 +254,9 @@ export interface UniversalNodeData extends BaseNodeData {
   outputUrls?: string[];     // 多图/多输出 URL 数组
   textOutput?: string;       // 文本输出
   errorMessage?: string;
-  onAIAssist?: (desc: string, config: CustomNodeConfig) => Promise<string>;
+  onAIAssist?: (desc: string, config: OmniNodeConfig) => Promise<string>;
   onGenerateCustom?: (nodeId: string) => void;
-  onSaveTemplate?: (name: string, config: CustomNodeConfig) => void;
+  onSaveTemplate?: (name: string, config: OmniNodeConfig) => void;
   onShowToast?: (msg: string) => void;
   onStop?: (nodeId: string) => void;
 }
@@ -280,7 +293,7 @@ export interface AnnotateNodeData extends BaseNodeData { inputImageUrl?: string;
 export interface ConditionalSwitchNodeData extends BaseNodeData { rules?: Array<{ id: string; name: string; operator: string; value: string; outputIndex: number }>; }
 export interface EaseCurveNodeData extends BaseNodeData { curveType?: string; }
 export interface FrameGrabNodeData extends BaseNodeData { inputVideoUrl?: string; framePosition?: number; resultImageUrl?: string; }
-export interface ImageCompareNodeData extends BaseNodeData { imageLeft?: string; imageRight?: string; mode?: string; }
+export interface ImageCompareNodeData extends BaseNodeData { imageLeft?: string; imageRight?: string; mode?: string; outputImageUrl?: string; }
 export interface OutputGalleryNodeData extends BaseNodeData {
   items?: Array<{ type: 'image' | 'video' | 'audio' | 'text'; url?: string; content?: string }>;
   columns?: number;
@@ -306,26 +319,25 @@ export interface Project {
 export interface CustomNodeTemplate {
   id: string;
   name: string;
-  config: CustomNodeConfig;
+  config: OmniNodeConfig;
 }
 
 // §3.15 ReactFlow Node 类型别名
-// 命名规范：功能 + 类型 + Node（如 imageInputNode, imageNode）
+// 命名规范：功能 + 类型 + NodeType（如 ImageNodeType, AudioInputNodeType）
 // Input 后缀 = 输入节点，无后缀 = 生成节点
-export type ImageNode = Node<ImageNodeData, 'imageNode'>;
-export type PromptNode = Node<TextNodeData, 'promptNode'>; // promptNode 与 textNode 共用数据结构
+export type ImageNodeType = Node<ImageNodeData, 'imageNode'>;
+export type PromptNodeType = Node<TextNodeData, 'promptNode'>; // promptNode 与 textNode 共用数据结构
 export type TextNodeType = Node<TextNodeData, 'textNode'>;
-export type VideoNode = Node<VideoNodeData, 'videoNode'>;
+export type VideoNodeType = Node<VideoNodeData, 'videoNode'>;
 export type AudioInputNodeType = Node<AudioNodeData, 'audioInputNode'>; // 音频输入节点
-export type AudioNode = Node<GenerateAudioNodeData, 'audioNode'>; // 音频生成节点（TTS）
-export type GridSplitNode = Node<GridSplitNodeData, 'gridSplitNode'>;
+export type AudioNodeType = Node<GenerateAudioNodeData, 'audioNode'>; // 音频生成节点（TTS）
+export type GridSplitNodeType = Node<GridSplitNodeData, 'gridSplitNode'>;
 export type GridMergeNodeType = Node<GridMergeNodeData, 'gridMergeNode'>;
 export type CropNodeType = Node<CropNodeData, 'cropNode'>;
-export type OmniNodeType = Node<UniversalNodeData, 'omniNode'>; // 万能节点
+export type OmniNodeType = Node<OmniNodeData, 'omniNode'>; // 万能节点
 export type TextInputNodeType = Node<TextInputNodeData, 'textInputNode'>;
 export type VideoInputNodeType = Node<VideoInputNodeData, 'videoInputNode'>;
 export type ImageInputNodeType = Node<ImageInputNodeData, 'imageInputNode'>;
-export type ImageInputNode = ImageInputNodeType;
 export type D3NodeType = Node<Generate3DNodeData, 'd3Node'>; // 3D 生成节点
 export type Viewer3DNodeType = Node<Viewer3DNodeData, 'viewer3DNode'>; // 3D 查看节点
 export type PromptConstructorNodeType = Node<PromptConstructorNodeData, 'promptConstructorNode'>;
@@ -341,13 +353,7 @@ export type SwitchNodeType = Node<SwitchNodeData, 'switchNode'>;
 export type VideoStitchNodeType = Node<VideoStitchNodeData, 'videoStitchNode'>;
 export type VideoTrimNodeType = Node<VideoTrimNodeData, 'videoTrimNode'>;
 
-// 兼容旧类型别名（过渡期保留）
-export type AudioNodeType = AudioNode;
-export type UniversalNodeType = OmniNodeType;
-export type Generate3DNodeType = D3NodeType;
-export type GenerateAudioNodeType = AudioNode;
-
-export type AppNode = ImageNode | PromptNode | TextNodeType | VideoNode | AudioNode | GridSplitNode | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType;
+export type AppNode = ImageNodeType | PromptNodeType | TextNodeType | VideoNodeType | AudioNodeType | GridSplitNodeType | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {

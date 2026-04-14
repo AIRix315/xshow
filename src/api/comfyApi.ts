@@ -49,13 +49,24 @@ interface ComfyWorkflowParams {
   signal?: AbortSignal;
 }
 
+/**
+ * ComfyUI 工作流执行结果
+ * 支持单一输出（outputUrl）和批量输出（outputUrls）
+ */
+export interface ComfyWorkflowResult {
+  /** 主要输出 URL（向后兼容，取 outputUrls[0]） */
+  outputUrl: string;
+  /** 所有输出 URL 数组（ComfyUI 批量输出场景） */
+  outputUrls: string[];
+}
+
 // =============================================================================
 // ComfyUI 本地 / Cloud 执行
 // =============================================================================
 
 async function executeComfyLocalOrCloud(
   params: ComfyWorkflowParams,
-): Promise<string> {
+): Promise<ComfyWorkflowResult> {
   const { channelUrl, channelKey, workflowId, workflowJson: providedJson, nodeInfoList, onProgress, signal } = params;
   const baseUrl = channelUrl.replace(/\/$/, '');
 
@@ -116,17 +127,51 @@ async function executeComfyLocalOrCloud(
     }
   }
 
+  // 2.5 强制重新执行：破坏缓存
+  // ComfyUI 会缓存执行结果，相同输入不重新执行
+  // 添加动态参数确保每次都生成新文件
+  const timestamp = Date.now();
+  const randomSeed = Math.floor(Math.random() * 2 ** 32);
+  
+  for (const nodeId of Object.keys(workflow)) {
+    const node = workflow[nodeId] as Record<string, unknown>;
+    const classType = node?.class_type as string | undefined;
+    const inputs = node?.inputs as Record<string, unknown> | undefined;
+    
+    if (!inputs) continue;
+    
+    // KSampler 等采样器节点：修改 seed 强制重新生成
+    if (classType && /KSampler|Sampler|CustomSampler/i.test(classType)) {
+      if ('seed' in inputs) {
+        inputs.seed = randomSeed;
+      }
+      if ('noise_seed' in inputs) {
+        inputs.noise_seed = randomSeed;
+      }
+    }
+    
+    // SaveImage 节点：修改文件名前缀避免覆盖
+    if (classType === 'SaveImage' || classType === 'Save image') {
+      inputs.filename_prefix = `output_${timestamp}`;
+    }
+  }
+
   // 3. 提交任务
   const promptId = `${Date.now()}`;
+  const submitBody = JSON.stringify({ prompt: workflow, prompt_id: promptId });
+  console.log('[ComfyAPI] Submitting workflow:', { promptId, workflowSize: submitBody.length });
+  
   const submitResponse = await extensionFetch(`${baseUrl}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, prompt_id: promptId }),
+    body: submitBody,
     signal,
   });
 
   if (!submitResponse.ok) {
-    throw new Error(`提交任务失败: ${submitResponse.status}`);
+    const errorText = await submitResponse.text();
+    console.error('[ComfyAPI] Submit failed:', submitResponse.status, errorText);
+    throw new Error(`提交任务失败: ${submitResponse.status} - ${errorText.substring(0, 500)}`);
   }
 
   // 4. 轮询结果
@@ -148,33 +193,41 @@ async function executeComfyLocalOrCloud(
 
     if (historyResponse.ok) {
       const historyJson = await historyResponse.json();
-      if (historyJson[promptId]) {
-        // 任务完成
-        const result = historyJson[promptId];
-        const outputs = result.outputs ?? {};
-        
-        // 查找第一个图片输出
-        for (const nodeId of Object.keys(outputs)) {
-          const output = outputs[nodeId];
-          if (output?.images) {
-            const img = output.images[0];
-            if (img && typeof img === 'object' && 'filename' in img) {
-              const subfolder = img.subfolder ? `&subfolder=${encodeURIComponent(img.subfolder)}` : '';
-              return `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&type=${img.type ?? 'output'}${subfolder}`;
+        if (historyJson[promptId]) {
+          // 任务完成
+          const result = historyJson[promptId];
+          const outputs = result.outputs ?? {};
+          const allUrls: string[] = [];
+          
+          // 收集所有图片输出
+          for (const nodeId of Object.keys(outputs)) {
+            const output = outputs[nodeId];
+            if (output?.images) {
+              for (const img of output.images) {
+                if (img && typeof img === 'object' && 'filename' in img) {
+                  const subfolder = img.subfolder ? `&subfolder=${encodeURIComponent(img.subfolder)}` : '';
+                  allUrls.push(`${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&type=${img.type ?? 'output'}${subfolder}`);
+                }
+              }
+            }
+            if (output?.audio) {
+              for (const aud of output.audio) {
+                if (aud && typeof aud === 'object' && 'filename' in aud) {
+                  const subfolder = aud.subfolder ? `&subfolder=${encodeURIComponent(aud.subfolder)}` : '';
+                  allUrls.push(`${baseUrl}/view?filename=${encodeURIComponent(aud.filename)}&type=${aud.type ?? 'output'}${subfolder}`);
+                }
+              }
             }
           }
-          if (output?.audio) {
-            const aud = output.audio[0];
-            if (aud && typeof aud === 'object' && 'filename' in aud) {
-              const subfolder = aud.subfolder ? `&subfolder=${encodeURIComponent(aud.subfolder)}` : '';
-              return `${baseUrl}/view?filename=${encodeURIComponent(aud.filename)}&type=${aud.type ?? 'output'}${subfolder}`;
-            }
+          
+          if (allUrls.length > 0) {
+            return { outputUrl: allUrls[0]!, outputUrls: allUrls };
           }
+          
+          // 没有找到媒体输出，返回完整结果 JSON
+          const jsonStr = JSON.stringify(result);
+          return { outputUrl: jsonStr, outputUrls: [jsonStr] };
         }
-        
-        // 没有找到输出，返回完整结果
-        return JSON.stringify(result);
-      }
     }
   }
 
@@ -187,7 +240,7 @@ async function executeComfyLocalOrCloud(
 
 async function executeComfyRunninghub(
   params: ComfyWorkflowParams,
-): Promise<string> {
+): Promise<ComfyWorkflowResult> {
   const { channelKey, workflowId, nodeInfoList, onProgress, signal } = params;
   // RunningHub API 固定地址
   const rhBaseUrl = 'https://www.runninghub.cn';
@@ -263,10 +316,14 @@ async function executeComfyRunninghub(
       const statusJson = await statusResponse.json();
       if (statusJson.data?.status === 'SUCCESS') {
         const outputs = statusJson.data.outputs ?? [];
-        if (outputs.length > 0) {
-          return outputs[0].fileUrl ?? JSON.stringify(outputs);
+        const allUrls: string[] = outputs
+          .map((o: { fileUrl?: string }) => o.fileUrl)
+          .filter((url: string | undefined): url is string => !!url);
+        if (allUrls.length > 0) {
+          return { outputUrl: allUrls[0]!, outputUrls: allUrls };
         }
-        return JSON.stringify(statusJson.data);
+        const jsonStr = JSON.stringify(statusJson.data);
+        return { outputUrl: jsonStr, outputUrls: [jsonStr] };
       }
       if (statusJson.data?.status === 'FAILED') {
         throw new Error(`任务失败: ${statusJson.msg ?? '未知错误'}`);
@@ -283,7 +340,7 @@ async function executeComfyRunninghub(
 
 export async function executeComfyWorkflow(
   params: ComfyWorkflowParams,
-): Promise<string> {
+): Promise<ComfyWorkflowResult> {
   const { subType } = params;
 
   if (subType === 'runninghub' || subType === 'runninghubApp') {

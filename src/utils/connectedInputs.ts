@@ -2,7 +2,18 @@
 // 从上游节点提取数据，统一类型映射
 
 import type { Node, Edge } from '@xyflow/react';
-import type { UniversalNodeData } from '@/types';
+import type { OmniNodeData } from '@/types';
+
+/**
+ * 源节点输出数据
+ * getSourceOutput 的返回类型，支持多值输出
+ */
+export interface SourceOutput {
+  type: 'image' | 'video' | 'audio' | 'text' | '3d';
+  value: string | null;
+  /** 多值输出（如 OmniNode 的 outputUrls 数组、GridSplitNode 的 splitResults） */
+  additionalValues?: string[];
+}
 
 /**
  * 连接输入数据结构
@@ -57,13 +68,27 @@ export function isAudioHandle(handleId: string | null | undefined): boolean {
 }
 
 /**
+ * 从 handle ID 推断目标 handle 的数据类型
+ * 用于 getSourceOutput 按下游需要分发数据
+ */
+function inferHandleType(handleId: string | null | undefined): 'image' | 'video' | 'audio' | 'text' | 'any' {
+  if (!handleId) return 'any';
+  if (handleId === 'image' || handleId.startsWith('image-') || handleId.startsWith('cell-') || handleId === 'source-image' || handleId === 'cropped-image') return 'image';
+  if (handleId === 'video' || handleId.startsWith('video-')) return 'video';
+  if (handleId === 'audio' || handleId.startsWith('audio-')) return 'audio';
+  if (handleId === 'text' || handleId.startsWith('text-') || handleId.includes('prompt')) return 'text';
+  return 'any';
+}
+
+/**
  * 从源节点提取输出数据和类型
  * 统一映射各节点类型的输出字段
  */
 function getSourceOutput(
   sourceNode: Node,
-  _sourceHandle?: string | null
-): { type: 'image' | 'video' | 'audio' | 'text' | '3d'; value: string | null } {
+  _sourceHandle?: string | null,
+  targetHandleType?: 'image' | 'video' | 'audio' | 'text' | 'any'
+): SourceOutput {
   const data = sourceNode.data as Record<string, unknown>;
   const nodeType = sourceNode.type;
 
@@ -103,37 +128,136 @@ function getSourceOutput(
     case 'gridMergeNode':
       return { type: 'image', value: (data.mergedImageUrl as string) || null };
 
+    // 九宫格拆分节点：多图输出
+    case 'gridSplitNode': {
+      const splitResults = data.splitResults as string[] | undefined;
+      if (splitResults && splitResults.length > 0) {
+        return {
+          type: 'image',
+          value: splitResults[0] || null,
+          additionalValues: splitResults.length > 1 ? splitResults.slice(1) : undefined,
+        };
+      }
+      return { type: 'image', value: null };
+    }
+
     // 万能节点（omniNode）
     case 'omniNode': {
-      const config = data.config as UniversalNodeData['config'] | undefined;
-      const outputType = config?.outputType || 'text';
+      const config = data.config as OmniNodeData['config'] | undefined;
+      const executionType = config?.executionType;
+      // ComfyUI 模式使用独立配置，HTTP 模式使用 outputType
+      const outputType = executionType === 'comfyui'
+        ? (config?.comfyuiOutputType || 'auto')
+        : (config?.outputType || 'auto');
       const outputUrl = data.outputUrl as string | undefined;
+      const outputUrls = data.outputUrls as string[] | undefined;
       const textOutput = data.textOutput as string | undefined;
-      
-      // 智能推断：如果 outputUrl 存在，优先使用并推断类型
-      if (outputUrl) {
-        // 先按显式 outputType 判断
-        if (outputType !== 'text') {
-          if (outputType === 'image') return { type: 'image', value: outputUrl };
-          if (outputType === 'video') return { type: 'video', value: outputUrl };
-          if (outputType === 'audio') return { type: 'audio', value: outputUrl };
+
+      // 辅助函数：根据 URL 推断媒体类型
+      const inferType = (url: string): SourceOutput['type'] => {
+        const lower = url.toLowerCase();
+        if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
+        if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
+        if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
+        if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
+        // URL 推断不出时，按 outputType 推断
+        if (outputType === 'video') return 'video';
+        if (outputType === 'audio') return 'audio';
+        return 'image';
+      };
+
+      // 辅助函数：根据 URL + 期望类型判断 URL 是否匹配
+      const urlMatchesType = (url: string, want: 'image' | 'video' | 'audio'): boolean => {
+        const actual = inferType(url);
+        return actual === want;
+      };
+
+      // ─── 显式类型模式：只输出对应类型数据（过滤器） ───
+      if (outputType !== 'auto') {
+        if (outputType === 'text') {
+          return { type: 'text', value: textOutput || null };
         }
-        // 未指定类型或 text 类型时，根据 URL 推断
-        const lower = outputUrl.toLowerCase();
-        if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return { type: 'video', value: outputUrl };
-        if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return { type: 'audio', value: outputUrl };
-        if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return { type: 'image', value: outputUrl };
-        // ComfyUI view 端点返回图片
-        if (lower.includes('/view?') || lower.includes('/view?filename=')) return { type: 'image', value: outputUrl };
-        // 默认当作图片
-        return { type: 'image', value: outputUrl };
+        // image / video / audio：检查 outputUrl 是否匹配该类型
+        if (outputUrl && urlMatchesType(outputUrl, outputType)) {
+          const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+          return { type: outputType, value: outputUrl, additionalValues: additional };
+        }
+        // outputUrl 不匹配，检查 outputUrls 中是否有匹配的
+        if (outputUrls) {
+          const matching = outputUrls.filter((u) => urlMatchesType(u, outputType));
+          if (matching.length > 0) {
+            return { type: outputType, value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
+          }
+        }
+        // 没有匹配数据，返回 null
+        return { type: outputType, value: null, additionalValues: undefined };
       }
-      
-      // 文本输出
+
+      // ─── auto 模式：万能分发，根据下游需要返回对应类型 ───
+      const want = targetHandleType ?? 'any';
+
+      if (want === 'text') {
+        // 下游要文本
+        if (textOutput) return { type: 'text', value: textOutput };
+        // 没有纯文本，检查 outputUrl 是否不是图片/视频/音频
+        if (outputUrl && !urlMatchesType(outputUrl, 'image') && !urlMatchesType(outputUrl, 'video') && !urlMatchesType(outputUrl, 'audio')) {
+          return { type: 'text', value: outputUrl };
+        }
+        return { type: 'text', value: null };
+      }
+
+      if (want === 'image') {
+        // 下游要图片
+        if (outputUrl && urlMatchesType(outputUrl, 'image')) {
+          const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+          return { type: 'image', value: outputUrl, additionalValues: additional };
+        }
+        if (outputUrls) {
+          const matching = outputUrls.filter((u) => urlMatchesType(u, 'image'));
+          if (matching.length > 0) {
+            return { type: 'image', value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
+          }
+        }
+        return { type: 'image', value: null };
+      }
+
+      if (want === 'video') {
+        // 下游要视频
+        if (outputUrl && urlMatchesType(outputUrl, 'video')) {
+          return { type: 'video', value: outputUrl };
+        }
+        if (outputUrls) {
+          const matching = outputUrls.filter((u) => urlMatchesType(u, 'video'));
+          if (matching.length > 0) return { type: 'video', value: matching[0]! };
+        }
+        return { type: 'video', value: null };
+      }
+
+      if (want === 'audio') {
+        // 下游要音频
+        if (outputUrl && urlMatchesType(outputUrl, 'audio')) {
+          return { type: 'audio', value: outputUrl };
+        }
+        if (outputUrls) {
+          const matching = outputUrls.filter((u) => urlMatchesType(u, 'audio'));
+          if (matching.length > 0) return { type: 'audio', value: matching[0]! };
+        }
+        return { type: 'audio', value: null };
+      }
+
+      // want === 'any'：返回主输出（outputUrl 优先，其次 textOutput）
+      if (outputUrl) {
+        const inferred = inferType(outputUrl);
+        const additional = (outputUrls && outputUrls.length > 0) ? outputUrls : undefined;
+        return { type: inferred, value: outputUrl, additionalValues: additional };
+      }
+      if (outputUrls && outputUrls.length > 0) {
+        const primaryType = inferType(outputUrls[0]!);
+        return { type: primaryType, value: outputUrls[0]!, additionalValues: outputUrls.length > 1 ? outputUrls.slice(1) : undefined };
+      }
       if (textOutput) {
         return { type: 'text', value: textOutput };
       }
-      
       return { type: 'text', value: null };
     }
 
@@ -141,6 +265,10 @@ function getSourceOutput(
     case 'd3Node':
     case 'viewer3DNode':
       return { type: '3d', value: (data.modelUrl as string) || null };
+
+    // 图片比较节点
+    case 'imageCompareNode':
+      return { type: 'image', value: (data.outputImageUrl as string) || null };
 
     // 默认：尝试通用字段
     default:
@@ -307,21 +435,33 @@ export function getConnectedInputs(
 
       // 普通节点：提取输出数据
       const handleId = edge.targetHandle;
-      const { type, value } = getSourceOutput(sourceNode, edge.sourceHandle);
+      // 推断下游 target handle 的数据类型（万能节点按此分发数据）
+      const targetHandleType = inferHandleType(handleId);
+      const { type, value, additionalValues } = getSourceOutput(sourceNode, edge.sourceHandle, targetHandleType);
 
       if (!value) return;
 
       // 根据类型分发到对应数组
+      // 优先使用 getSourceOutput 返回的 type（已做精确推断），
+      // 仅当 type 不明确时才用 handleId 兜底
       if (type === '3d') {
         model3d = value;
       } else if (type === 'video') {
         videos.push(value);
+        additionalValues?.forEach((v) => videos.push(v));
       } else if (type === 'audio') {
         audio.push(value);
-      } else if (type === 'text' || isTextHandle(handleId)) {
+        additionalValues?.forEach((v) => audio.push(v));
+      } else if (type === 'image') {
+        images.push(value);
+        additionalValues?.forEach((v) => images.push(v));
+      } else if (type === 'text') {
+        text = typeof value === 'string' ? value : String(value);
+      } else if (isTextHandle(handleId)) {
         text = typeof value === 'string' ? value : String(value);
       } else if (isImageHandle(handleId) || !handleId) {
         images.push(value);
+        additionalValues?.forEach((v) => images.push(v));
       }
     });
 

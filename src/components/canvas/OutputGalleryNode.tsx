@@ -1,5 +1,6 @@
 // Ref: node-banana Output Gallery Node
 // 图集输出节点：从上游节点读取多个数据并显示
+// 网格填充整个节点区域，仅留顶部标题和底部信息行
 import { memo, useMemo, useEffect, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { OutputGalleryNodeType } from '@/types';
@@ -27,22 +28,15 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
   const displayItems = useMemo(() => {
     const items: Array<{ type: 'image' | 'video' | 'audio' | 'text'; url?: string; content?: string }> = [];
 
-    // 添加图片
     inputImages.forEach((url) => {
       if (url) items.push({ type: 'image', url });
     });
-
-    // 添加视频
     inputVideos.forEach((url) => {
       if (url) items.push({ type: 'video', url });
     });
-
-    // 添加音频
     inputAudio.forEach((url) => {
       if (url) items.push({ type: 'audio', url });
     });
-
-    // 添加文本
     if (inputText) {
       items.push({ type: 'text', content: inputText });
     }
@@ -54,13 +48,11 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
   const prevUpstreamRef = useRef<typeof upstreamData | null>(null);
 
   useEffect(() => {
-    // 首次运行，记录基线
     if (prevUpstreamRef.current === null) {
       prevUpstreamRef.current = upstreamData;
       return;
     }
 
-    // 上游数据变化时，更新本地 data
     const prev = prevUpstreamRef.current;
     const imagesChanged =
       prev.images.length !== upstreamData.images.length ||
@@ -103,40 +95,53 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
 
   return (
     <BaseNodeWrapper selected={!!selected} title="图集">
-      <Handle type="target" position={Position.Left} id="any" style={{ top: '50%' }} data-handletype="any" />
-      <div className="flex flex-col gap-2 p-2 min-w-[220px]">
-        <span className="text-[10px] text-text-secondary font-medium">Output Gallery</span>
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
-          {items.length > 0 ? (
-            items.map((item, i) => (
-              <div
-                key={i}
-                className="h-12 bg-surface rounded border border-border flex items-center justify-center text-[9px] text-text-muted overflow-hidden"
-              >
-                {item.type === 'image' && item.url && (
-                  <img src={item.url} alt={`输出 ${i + 1}`} className="w-full h-full object-cover" />
-                )}
-                {item.type === 'video' && '🎬'}
-                {item.type === 'audio' && '🔊'}
-                {item.type === 'text' && '📝'}
-              </div>
-            ))
-          ) : (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-12 bg-surface rounded border border-border" />
-            ))
-          )}
+      {/* 多类型输入 handle — 支持同时接收图片、视频、文本 */}
+      <Handle type="target" position={Position.Left} id="image" style={{ top: '25%', zIndex: 10 }} data-handletype="image" />
+      <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <Handle type="target" position={Position.Left} id="text" style={{ top: '75%', zIndex: 10 }} data-handletype="text" />
+      {/* Handle 标签 */}
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', color: 'var(--color-handle-image)', zIndex: 10 }}>Image</div>
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', color: 'var(--color-handle-video)', zIndex: 10 }}>Video</div>
+      <div className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', color: 'var(--color-handle-text)', zIndex: 10 }}>Text</div>
+
+      {/* 内容区域 — flex-1 填满 */}
+      <div className="flex flex-col h-full">
+        {/* 网格填充区域 */}
+        <div className="flex-1 min-h-0">
+          <div className="w-full h-full grid gap-1" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
+            {items.length > 0 ? (
+              items.map((item, i) => (
+                <div
+                  key={i}
+                  className="aspect-square bg-surface rounded border border-border flex items-center justify-center text-[9px] text-text-muted overflow-hidden"
+                >
+                  {item.type === 'image' && item.url && (
+                    <img src={item.url} alt={`输出 ${i + 1}`} className="w-full h-full object-cover" />
+                  )}
+                  {item.type === 'video' && '🎬'}
+                  {item.type === 'audio' && '🔊'}
+                  {item.type === 'text' && '📝'}
+                </div>
+              ))
+            ) : (
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="aspect-square bg-surface rounded border border-border" />
+              ))
+            )}
+          </div>
         </div>
+
+        {/* 底部紧凑信息行 */}
         {items.length > 0 && (
-          <>
-            <span className="text-[9px] text-text-muted text-center">{items.length} 项</span>
+          <div className="flex items-center justify-between py-1 shrink-0">
+            <span className="text-[9px] text-text-muted">{items.length} 项</span>
             <button
               onClick={handleDownloadAll}
-              className="w-full text-[9px] text-text-secondary hover:text-text py-1 bg-surface-hover rounded"
+              className="text-[9px] text-text-secondary hover:text-text"
             >
               ⬇ 全部下载
             </button>
-          </>
+          </div>
         )}
       </div>
     </BaseNodeWrapper>

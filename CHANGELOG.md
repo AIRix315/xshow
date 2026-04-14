@@ -2,6 +2,65 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.2] - 2026-04-15
+
+### 万能节点数据流 & UI 改进
+
+#### 万能节点（OmniNode）"万能 handle" 机制
+- 新增 `auto` 输出类型（默认），自动根据下游节点需要分发数据：连 image 入口给图片、连 text 入口给文本、连 video 入口给视频
+- 显式类型（image/video/audio/text）：仅输出对应类型数据，其他类型丢弃（过滤器模式）
+- `getSourceOutput` 新增 `targetHandleType` 参数，万能节点按下游 handle 类型按需返回
+- Handle 颜色随 outputType 动态变化（image=绿、video=橙、audio=紫、text=蓝、auto=灰）
+- `BaseNodeWrapper` 新增 `accentColor` prop，节点标题栏底边和选中态边框随类型着色
+- `outputType`/`comfyuiOutputType` 类型定义扩展为 `'auto' | 'text' | 'image' | 'video' | 'audio'`
+
+#### 输出节点显示优化
+- **OutputNode**：移除冗余 "Output" 英文标题，图片/视频/音频区域从固定 `h-16`(64px) 改为 `flex-1` 填满节点，下载按钮固定底部
+- **OutputGalleryNode**：移除冗余 "Output Gallery" 英文标题，网格项从固定 `h-12`(48px) 改为 `aspect-square` 自适应，底部信息行合为一行
+
+#### 九宫格拆分节点（GridSplitNode）执行器 & 子节点
+- 注册 `executeGridSplit` 执行器（BFS 引擎统一驱动），移除组件内 useEffect 自动拆分
+- 新增 `SplitGridSettingsModal` 弹窗：配置子节点数量 → 一键创建 ImageInput 子节点 + reference 引用线
+- `GridSplitNodeData` 新增 `gridRows`/`gridCols`/`targetCount` 字段
+- `ImageInputNode` 新增 `image` + `reference` target handle
+
+#### 万能节点（OmniNode）批量输出
+- `executeComfyWorkflow` 返回类型从 `string` 改为 `ComfyWorkflowResult`（含 `outputUrl` + `outputUrls[]`）
+- Local/Cloud 模式收集所有图片/音频输出 URL，RunningHub 模式收集所有 `fileUrl`
+- `omniExecutor` 在多结果时写入 `outputUrls` 数组
+- `OmniNode` 组件内手动执行同步写入 `outputUrls`
+
+#### 版本号自动读取
+- `App.tsx` 版本号从 `package.json` 通过 Vite `define` 注入，UI 自动展示
+- `manifest.json` 版本同步至 `0.1.2`
+
+### 修改文件
+
+- `src/types.ts` — outputType 扩展、OmniNodeData、GridSplitNodeData
+- `src/utils/connectedInputs.ts` — 万能 handle 分发逻辑、inferHandleType
+- `src/utils/nodeFactory.ts` — omniNode 默认 outputType='auto'
+- `src/utils/executionEngine.ts` — 无变更
+- `src/api/comfyApi.ts` — ComfyWorkflowResult、多输出收集
+- `src/store/execution/simpleNodeExecutors.ts` — executeGridSplit
+- `src/store/execution/omniExecutor.ts` — outputUrls 写入
+- `src/store/execution/index.ts` — 注册 gridSplitNode 执行器
+- `src/components/canvas/BaseNode.tsx` — accentColor prop
+- `src/components/canvas/OmniNode.tsx` — any handle + accentColor + auto 选项
+- `src/components/canvas/OutputNode.tsx` — 布局重构
+- `src/components/canvas/OutputGalleryNode.tsx` — 布局重构
+- `src/components/canvas/GridSplitNode.tsx` — 拆分设置弹窗 + useEffect 移除
+- `src/components/canvas/ImageInputNode.tsx` — 新增 target handles
+- `src/components/canvas/SplitGridSettingsModal.tsx` — 新增文件
+- `src/App.tsx` — 版本号自动读取
+- `vite.config.ts` — define __APP_VERSION__
+- `src/vite-env.d.ts` — 类型声明
+- `package.json`、`public/manifest.json` — 版本 0.1.2
+
+### 质量保证
+
+- TypeScript 编译通过
+- 206 个单元测试通过（含 3 个新增万能 handle 分发测试）
+
 ## [0.1.1] - 2026-04-14
 
 ### 节点命名体系统一
