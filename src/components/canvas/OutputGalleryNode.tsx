@@ -95,13 +95,15 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
 
   return (
     <BaseNodeWrapper selected={!!selected} title="图集">
-      {/* 多类型输入 handle — 支持同时接收图片、视频、文本 */}
-      <Handle type="target" position={Position.Left} id="image" style={{ top: '25%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', zIndex: 10 }}>Image</div>
-      <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '75%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', zIndex: 10 }}>Text</div>
+      {/* 多类型输入 handle — 支持同时接收图片、视频、音频、文本 */}
+      <Handle type="target" position={Position.Left} id="image" style={{ top: '20%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(20% - 8px)', zIndex: 10 }}>Image</div>
+      <Handle type="target" position={Position.Left} id="video" style={{ top: '45%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(45% - 8px)', zIndex: 10 }}>Video</div>
+      <Handle type="target" position={Position.Left} id="audio" style={{ top: '70%', zIndex: 10 }} data-handletype="audio" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="audio" style={{ right: 'calc(100% + 8px)', top: 'calc(70% - 8px)', zIndex: 10 }}>Audio</div>
+      <Handle type="target" position={Position.Left} id="text" style={{ top: '90%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(90% - 8px)', zIndex: 10 }}>Text</div>
 
       {/* 内容区域 — flex-1 填满 */}
       <div className="flex flex-col h-full">
@@ -117,9 +119,22 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
                   {item.type === 'image' && item.url && (
                     <img src={item.url} alt={`输出 ${i + 1}`} className="w-full h-full object-cover" />
                   )}
-                  {item.type === 'video' && '🎬'}
-                  {item.type === 'audio' && '🔊'}
-                  {item.type === 'text' && '📝'}
+                  {item.type === 'video' && item.url && (
+                    <video src={item.url} className="w-full h-full object-cover" muted />
+                  )}
+                  {item.type === 'audio' && item.url && (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#1a1a1a] p-2">
+                      <div className="text-orange-500 text-lg mb-1">🔊</div>
+                      <audio src={item.url} controls className="w-full max-w-full h-6" />
+                    </div>
+                  )}
+                  {item.type === 'text' && item.content && (
+                    <div className="w-full h-full p-2 overflow-auto bg-[#1a1a1a]">
+                      <pre className="text-[8px] text-text-secondary whitespace-pre-wrap break-all font-mono">
+                        {item.content.length > 100 ? item.content.slice(0, 100) + '...' : item.content}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               ))
             ) : (

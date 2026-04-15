@@ -462,10 +462,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
               return { url: currentComfyConfig.localUrl, key: '' };
             case 'cloud':
               return { url: currentComfyConfig.cloudUrl, key: '' };
-            case 'runninghub':
-              return { url: '', key: currentComfyConfig.runninghubApiKey };
-            case 'runninghubApp':
-              return { url: '', key: currentComfyConfig.runninghubApiKey };
             default:
               return { url: '', key: '' };
           }
@@ -475,9 +471,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
 
         if ((subType === 'local' || subType === 'cloud') && !config.workflowJson) {
           throw new Error('请先选择工作流');
-        }
-        if ((subType === 'runninghub' || subType === 'runninghubApp') && !config.workflowId) {
-          throw new Error('请输入工作流 ID');
         }
 
         // 生成 nodeInfoList（保留工作流默认值）
@@ -880,8 +873,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                 >
                   <option value="local">本地 ComfyUI</option>
                   <option value="cloud">ComfyUI Cloud</option>
-                  <option value="runninghub">RunningHub</option>
-                  <option value="runninghubApp">RunningHub APP</option>
                 </select>
 
                 {/* 本地/Cloud: 工作流下拉 */}
@@ -920,26 +911,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
                           </div>
                         ))}
                       </div>
-                    )}
-                  </>
-                )}
-
-                {/* RunningHub: 工作流 ID */}
-                {(subType === 'runninghub' || subType === 'runninghubApp') && (
-                  <>
-                    <input
-                      value={config.workflowId ?? ''}
-                      onChange={(e) => updateConfig({ workflowId: e.target.value })}
-                      placeholder="工作流 ID"
-                      className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                    />
-                    {subType === 'runninghubApp' && (
-                      <input
-                        value={config.runninghubAppId ?? ''}
-                        onChange={(e) => updateConfig({ runninghubAppId: e.target.value })}
-                        placeholder="WebAPP ID (可选)"
-                        className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border focus:border-blue-500 outline-none"
-                      />
                     )}
                   </>
                 )}

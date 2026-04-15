@@ -3,7 +3,7 @@
 import type { Node, Edge } from '@xyflow/react';
 
 // §3.1 通道配置与全局 API 配置
-export type ComfyUISubType = 'local' | 'cloud' | 'runninghub' | 'runninghubApp';
+export type ComfyUISubType = 'local' | 'cloud';
 
 // 模型条目（单个模型配置）
 export interface ModelEntry {
@@ -239,18 +239,52 @@ export interface OmniNodeConfig {
   variables?: Record<string, string>;
   // ComfyUI 执行配置
   executionType?: 'http' | 'comfyui';
-  comfyuiSubType?: ComfyUISubType;
+  comfyuiSubType?: 'local' | 'cloud';
   // ComfyUI 独立的输出类型（不继承 HTTP 模式）
   comfyuiOutputType?: 'auto' | 'text' | 'image' | 'video' | 'audio';
   // 工作流标识
   workflowId?: string;           // RunningHub workflowId
   workflowJson?: string;         // 本地/Cloud 工作流 JSON
   workflowName?: string;          // 工作流显示名称
-  // RunningHub APP 模式
-  runninghubAppId?: string;       // webappId
-  runninghubQuickCreateCode?: string;  // quickCreateCode
   // 节点字段映射
   nodeInfoList?: ComfyUINodeInfo[];
+}
+
+// §3.10.1 RunningHub APP 节点配置
+export interface RhAppNodeConfig {
+  /** 选中的 APP ID（webappId） */
+  appId?: string;
+  /** APP 显示名称 */
+  appName?: string;
+  /** 输出类型 */
+  outputType?: 'auto' | 'text' | 'image' | 'video' | 'audio';
+  /** 节点字段映射（nodeInfoList）- AI App 完整格式 */
+  nodeInfoList?: Array<{
+    nodeId: string;
+    nodeName: string;
+    fieldName: string;
+    fieldValue: string;
+    fieldType: string;
+    description: string;
+    fieldData?: string;       // LIST 类型的选项数据（JSON 字符串）
+    descriptionEn?: string;   // 英文描述
+  }>;
+}
+
+// §3.10.2 RunningHub Workflow 节点配置
+export interface RhWfNodeConfig {
+  /** 选中的 Workflow ID */
+  workflowId?: string;
+  /** Workflow 显示名称 */
+  workflowName?: string;
+  /** 输出类型 */
+  outputType?: 'auto' | 'text' | 'image' | 'video' | 'audio';
+  /** 节点字段映射（nodeInfoList）- 提交时使用 */
+  nodeInfoList?: ComfyUINodeInfo[];
+  /** 节点字段值缓存（用于画布级执行，存储用户编辑的值） */
+  nodeValues?: Record<string, Record<string, unknown>>;
+  /** 工作流 JSON（缓存） */
+  workflowJson?: string;
 }
 
 // ComfyUI 节点字段映射
@@ -280,6 +314,38 @@ export interface OmniNodeData extends BaseNodeData {
   onSaveTemplate?: (name: string, config: OmniNodeConfig) => void;
   onShowToast?: (msg: string) => void;
   onStop?: (nodeId: string) => void;
+}
+
+// §3.10.1 RunningHub APP 节点数据
+export interface RhAppNodeData extends BaseNodeData {
+  label: string;
+  configMode: boolean;
+  config: RhAppNodeConfig;
+  loading: boolean;
+  progress?: number;
+  // 标准化输出字段
+  outputUrl?: string;
+  outputUrls?: string[];
+  textOutput?: string;
+  errorMessage?: string;
+  /** 节点字段值缓存 */
+  nodeValues?: Record<string, Record<string, unknown>>;
+}
+
+// §3.10.2 RunningHub Workflow 节点数据
+export interface RhWfNodeData extends BaseNodeData {
+  label: string;
+  configMode: boolean;
+  config: RhWfNodeConfig;
+  loading: boolean;
+  progress?: number;
+  // 标准化输出字段
+  outputUrl?: string;
+  outputUrls?: string[];
+  textOutput?: string;
+  errorMessage?: string;
+  /** 节点字段值缓存 */
+  nodeValues?: Record<string, Record<string, unknown>>;
 }
 
 // §3.11 全局任务追踪
@@ -386,8 +452,10 @@ export type RouterNodeType = Node<RouterNodeData, 'routerNode'>;
 export type SwitchNodeType = Node<SwitchNodeData, 'switchNode'>;
 export type VideoStitchNodeType = Node<VideoStitchNodeData, 'videoStitchNode'>;
 export type VideoTrimNodeType = Node<VideoTrimNodeData, 'videoTrimNode'>;
+export type RhAppNodeType = Node<RhAppNodeData, 'rhAppNode'>;
+export type RhWfNodeType = Node<RhWfNodeData, 'rhWfNode'>;
 
-export type AppNode = ImageNodeType | PromptNodeType | TextNodeType | VideoNodeType | AudioNodeType | GridSplitNodeType | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType;
+export type AppNode = ImageNodeType | PromptNodeType | TextNodeType | VideoNodeType | AudioNodeType | GridSplitNodeType | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType | RhAppNodeType | RhWfNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {

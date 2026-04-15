@@ -1,6 +1,6 @@
 // Ref: connectedInputs.ts — 核心数据流函数测试
 import { describe, it, expect } from 'vitest';
-import { getConnectedInputs, getUpstreamNodes, isVideoHandle, isAudioHandle } from './connectedInputs';
+import { getConnectedInputs, getUpstreamNodes, getInputsByHandle, isVideoHandle, isAudioHandle } from './connectedInputs';
 import type { Node, Edge } from '@xyflow/react';
 
 // 测试辅助函数
@@ -574,6 +574,174 @@ describe('connectedInputs', () => {
       expect(result.images[0]).toBe('https://example.com/first.png');
       expect(result.images[1]).toBe('https://example.com/second.png');
       expect(result.images[2]).toBe('https://example.com/third.png');
+    });
+  });
+
+  // ========================================================================
+  // rhAppNode / rhWfNode 输出推断（与 omniNode 共享 inferMediaOutput）
+  // ========================================================================
+  describe('rhAppNode and rhWfNode output inference', () => {
+    it('extracts image from rhAppNode outputUrl', () => {
+      const nodes = [
+        makeNode('n1', 'rhAppNode', {
+          outputUrl: 'https://rh.cn/result.png',
+          config: { outputType: 'auto' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://rh.cn/result.png');
+    });
+
+    it('extracts multiple images from rhAppNode outputUrls', () => {
+      const nodes = [
+        makeNode('n1', 'rhAppNode', {
+          outputUrl: 'https://rh.cn/img1.png',
+          outputUrls: ['https://rh.cn/img1.png', 'https://rh.cn/img2.png', 'https://rh.cn/img3.png'],
+          config: { outputType: 'auto' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(3);
+      expect(result.images[0]).toBe('https://rh.cn/img1.png');
+      expect(result.images[1]).toBe('https://rh.cn/img2.png');
+      expect(result.images[2]).toBe('https://rh.cn/img3.png');
+    });
+
+    it('extracts video from rhAppNode when outputType=video', () => {
+      const nodes = [
+        makeNode('n1', 'rhAppNode', {
+          outputUrl: 'https://rh.cn/result.mp4',
+          config: { outputType: 'video' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.videos).toHaveLength(1);
+      expect(result.videos[0]).toBe('https://rh.cn/result.mp4');
+    });
+
+    it('extracts audio from rhWfNode when outputType=audio', () => {
+      const nodes = [
+        makeNode('n1', 'rhWfNode', {
+          outputUrl: 'https://rh.cn/result.mp3',
+          config: { outputType: 'audio' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.audio).toHaveLength(1);
+      expect(result.audio[0]).toBe('https://rh.cn/result.mp3');
+    });
+
+    it('extracts textOutput from rhWfNode when outputType=text', () => {
+      const nodes = [
+        makeNode('n1', 'rhWfNode', {
+          outputUrl: 'https://rh.cn/ignore.png',
+          textOutput: 'some json text',
+          config: { outputType: 'text' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(0);
+      expect(result.text).toBe('some json text');
+    });
+
+    it('returns null when rhAppNode has no output', () => {
+      const nodes = [
+        makeNode('n1', 'rhAppNode', {
+          config: { outputType: 'auto' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(0);
+    });
+
+    it('filters outputUrls by type when outputType is explicit', () => {
+      // outputType=image 但 outputUrls 包含视频和图片，只返回图片
+      const nodes = [
+        makeNode('n1', 'rhWfNode', {
+          outputUrl: 'https://rh.cn/img1.png',
+          outputUrls: ['https://rh.cn/img1.png', 'https://rh.cn/vid.mp4', 'https://rh.cn/img2.png'],
+          config: { outputType: 'image' },
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(2);
+      expect(result.images[0]).toBe('https://rh.cn/img1.png');
+      expect(result.images[1]).toBe('https://rh.cn/img2.png');
+    });
+  });
+
+  // ========================================================================
+  // getInputsByHandle — 多类型 handle 支持
+  // ========================================================================
+  describe('getInputsByHandle — extended handle types', () => {
+    it('collects video-* handle inputs', () => {
+      const nodes = [
+        makeNode('n1', 'videoNode', { videoUrl: 'https://example.com/vid.mp4' }),
+        makeNode('n2', 'rhWfNode', { config: {} }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'video', 'video-0')];
+
+      const result = getInputsByHandle!( 'n2', nodes, edges);
+
+      expect(result['video-0']).toBeDefined();
+      expect(result['video-0']).toHaveLength(1);
+      expect(result['video-0']![0]).toBe('https://example.com/vid.mp4');
+    });
+
+    it('collects audio-* handle inputs', () => {
+      const nodes = [
+        makeNode('n1', 'audioInputNode', { audioUrl: 'https://example.com/audio.mp3' }),
+        makeNode('n2', 'rhWfNode', { config: {} }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'audio', 'audio-0')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['audio-0']).toBeDefined();
+      expect(result['audio-0']).toHaveLength(1);
+      expect(result['audio-0']![0]).toBe('https://example.com/audio.mp3');
+    });
+
+    it('ignores any-input handle in getInputsByHandle', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/img.png' }),
+        makeNode('n2', 'rhAppNode', { config: {} }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'custom-output', 'any-input')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      // any-input 不应被收录
+      expect(result['any-input']).toBeUndefined();
     });
   });
 });

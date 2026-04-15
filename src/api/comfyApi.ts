@@ -235,118 +235,14 @@ async function executeComfyLocalOrCloud(
 }
 
 // =============================================================================
-// RunningHub 执行
-// =============================================================================
-
-async function executeComfyRunninghub(
-  params: ComfyWorkflowParams,
-): Promise<ComfyWorkflowResult> {
-  const { channelKey, workflowId, nodeInfoList, onProgress, signal } = params;
-  // RunningHub API 固定地址
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
-  // 1. 提交任务
-  const submitResponse = await extensionFetch(`${rhBaseUrl}/task/openapi/create`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Host': 'www.runninghub.cn',
-    },
-    body: JSON.stringify({
-      apiKey: channelKey,
-      workflowId,
-      nodeInfoList: nodeInfoList?.map((n) => ({
-        nodeId: n.nodeId,
-        fieldName: n.fieldName,
-        fieldValue: n.defaultValue ?? '',
-      })) ?? [],
-    }),
-    signal,
-  });
-
-  if (!submitResponse.ok) {
-    throw new Error(`提交任务失败: ${submitResponse.status}`);
-  }
-
-  const submitJson = await submitResponse.json();
-  if (submitJson.code !== 0) {
-    throw new Error(`提交任务失败: ${submitJson.msg}`);
-  }
-
-  const { taskId } = submitJson.data;
-  const promptTips = submitJson.data.promptTips;
-  
-  // 检查是否有节点错误
-  if (promptTips) {
-    try {
-      const tips = JSON.parse(promptTips);
-      if (tips.node_errors && Object.keys(tips.node_errors).length > 0) {
-        throw new Error(`工作流错误: ${JSON.stringify(tips.node_errors)}`);
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith('工作流错误')) throw e;
-    }
-  }
-
-  // 2. 轮询任务状态
-  const pollInterval = 3000;
-  const maxAttempts = 200;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    if (signal?.aborted) throw new Error('任务已取消');
-
-    if (onProgress) {
-      onProgress((i / maxAttempts) * 0.9);
-    }
-
-    await new Promise((r) => setTimeout(r, pollInterval));
-
-    // 查询任务状态
-    const statusResponse = await extensionFetch(`${rhBaseUrl}/task/openapi/getResult`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Host': 'www.runninghub.cn',
-      },
-      body: JSON.stringify({ apiKey: channelKey, taskId }),
-      signal,
-    });
-
-    if (statusResponse.ok) {
-      const statusJson = await statusResponse.json();
-      if (statusJson.data?.status === 'SUCCESS') {
-        const outputs = statusJson.data.outputs ?? [];
-        const allUrls: string[] = outputs
-          .map((o: { fileUrl?: string }) => o.fileUrl)
-          .filter((url: string | undefined): url is string => !!url);
-        if (allUrls.length > 0) {
-          return { outputUrl: allUrls[0]!, outputUrls: allUrls };
-        }
-        const jsonStr = JSON.stringify(statusJson.data);
-        return { outputUrl: jsonStr, outputUrls: [jsonStr] };
-      }
-      if (statusJson.data?.status === 'FAILED') {
-        throw new Error(`任务失败: ${statusJson.msg ?? '未知错误'}`);
-      }
-    }
-  }
-
-  throw new Error('任务超时: 轮询次数达到上限');
-}
-
-// =============================================================================
 // 统一入口
 // =============================================================================
 
 export async function executeComfyWorkflow(
   params: ComfyWorkflowParams,
 ): Promise<ComfyWorkflowResult> {
-  const { subType } = params;
-
-  if (subType === 'runninghub' || subType === 'runninghubApp') {
-    return executeComfyRunninghub(params);
-  }
-
+  // RH 模式已迁移到独立的 RhAppNode/RhWfNode
+  // 此处只处理 local 和 cloud 模式
   return executeComfyLocalOrCloud(params);
 }
 
@@ -365,7 +261,7 @@ export interface ComfyConnectionTestResult {
 export async function testComfyConnection(
   subType: ComfyUISubType,
   url: string,
-  apiKey: string,
+  _apiKey: string = '',
 ): Promise<ComfyConnectionTestResult> {
   const baseUrl = url.replace(/\/$/, '');
 
@@ -396,51 +292,35 @@ export async function testComfyConnection(
         };
       }
 
-      case 'runninghub': {
-        // 测试 RunningHub API Key（通过 extensionFetch 代理避免 SidePanel CORS 限制）
-        // 正确端点：/uc/openapi/accountStatus，认证用 Bearer Token
-        const resp = await extensionFetch('https://www.runninghub.cn/uc/openapi/accountStatus', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({ apikey: apiKey }),
-        });
-        const json = await resp.json();
-        if (json.code === 0) {
-          return {
-            ok: true,
-            message: `已连接 RunningHub: 余额 ${json.data?.remainCoins ?? '?'} 币，${json.data?.remainMoney ?? '?'} 元`,
-          };
-        }
-        return { ok: false, message: json.msg ?? 'API Key 无效' };
-      }
-
-      case 'runninghubApp': {
-        // 测试 RunningHub APP 模式，同时获取 APP 列表（通过 extensionFetch 代理避免 SidePanel CORS 限制）
-        // 正确端点：/uc/openapi/accountStatus
-        const resp = await extensionFetch('https://www.runninghub.cn/uc/openapi/accountStatus', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({ apikey: apiKey }),
-        });
-        const json = await resp.json();
-        if (json.code === 0) {
-          return {
-            ok: true,
-            message: `已连接 RunningHub: 余额 ${json.data?.remainCoins ?? '?'} 币，${json.data?.remainMoney ?? '?'} 元`,
-          };
-        }
-        return { ok: false, message: json.msg ?? 'API Key 无效' };
-      }
-
       default:
         return { ok: false, message: '未知模式' };
     }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : '连接失败' };
+  }
+}
+
+/** 测试 RunningHub 连接（API Key 验证） */
+export async function testRunninghubConnection(
+  apiKey: string,
+): Promise<ComfyConnectionTestResult> {
+  try {
+    const resp = await extensionFetch('https://www.runninghub.cn/uc/openapi/accountStatus', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ apikey: apiKey }),
+    });
+    const json = await resp.json();
+    if (json.code === 0) {
+      return {
+        ok: true,
+        message: `已连接 RunningHub: 余额 ${json.data?.remainCoins ?? '?'} 币，${json.data?.remainMoney ?? '?'} 元`,
+      };
+    }
+    return { ok: false, message: json.msg ?? 'API Key 无效' };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : '连接失败' };
   }

@@ -2,6 +2,48 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.6] - 2026-04-15
+
+### RunningHub 独立节点 & 全栈测试覆盖
+
+#### 新增
+
+- **RhAppNode** (`src/components/canvas/RhAppNode.tsx`) — RunningHub APP 快捷创作节点
+  - 选择 APP 后自动获取 nodeInfoList，渲染 STRING/LIST/IMAGE 字段编辑器
+  - any-input 智能映射：text→STRING, image→IMAGE, video→VIDEO, audio→AUDIO
+  - IMAGE 字段 >2 时自动暴露 image-N 独立 handle
+  - 支持 ZIP 包（多图/混合媒体）自动解压
+- **RhWfNode** (`src/components/canvas/RhWfNode.tsx`) — RunningHub 工作流节点
+  - 与 rhAppNode 同架构，workflowId 驱动
+  - any-input + image-N handle 支持
+- **rhAppExecutor** / **rhWfExecutor** — 对应执行器，含 ANY 智能填充 + ZIP 解压 + blob URL 清理
+- **rhApi.ts** — RunningHub API 封装（APP 信息获取 / 任务提交 / 轮询 / 文件上传）
+- **zipExtractor.ts** — ZIP 媒体检工具（isBlobUrl / revokeMediaUrls）
+- **inferMediaOutput()** — 共享函数，omniNode/rhAppNode/rhWfNode 输出类型推断
+
+#### 修改
+
+- `connectedInputs.ts` — getSourceOutput 新增 rhAppNode/rhWfNode 分支；getInputsByHandle 扩展 video-/audio- 前缀；新增 inferMediaOutput
+- `types.ts` — 新增 RhAppNodeType/RhWfNodeType/RhAppNodeConfig/RhWfNodeConfig 等类型；fieldData/descriptionEn 字段
+- `nodeFactory.ts` — 注册 RhAppNode/RhWfNode 节点工厂
+- `store/execution/index.ts` — 注册 rhAppNode/rhWfNode 执行器
+- `comfyApi.ts` — 移除 RunningHub 逻辑（独立为 rhApi）
+- `OmniNode.tsx` — 移除 inline RH 配置 UI
+- `NodeSidebar.tsx` — 侧边栏新增 RhApp/RhWf 入口
+- `FloatingActionBar.tsx` / `SettingsPanel.tsx` / `OutputGalleryNode.tsx` — 小幅适配
+
+#### 全栈测试（335 pass / 19 skip）
+
+- `connectedInputs.test.ts` — 新增 10 个 rhAppNode/rhWfNode 测试（51 total）
+- `rhExecutors.test.ts` — 18 个 RH 执行器纯逻辑测试
+- `dataFlow.integration.test.ts` — 19 个跨节点数据流集成测试
+- `rhExecutor.e2e.test.ts` — 10 逻辑 + 9 条件 E2E（RH_E2E=1 启用）
+- `RhAppNode.test.tsx` — 14 个组件渲染测试
+- `RhWfNode.test.tsx` — 12 个组件渲染测试
+- `OmniNode.test.tsx` — 20 个组件渲染测试
+- `setup-tests.ts` / `vitest.config.ts` — RTL + jsdom + setup 配置
+- 新增依赖：@testing-library/react, @testing-library/jest-dom, @testing-library/user-event, jsdom
+
 ## [0.1.5] - 2026-04-15
 
 ### 资源文件系统 & 自动保存

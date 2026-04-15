@@ -10,6 +10,8 @@ import type {
   GridMergeNodeData,
   CropNodeData,
   OmniNodeData,
+  RhAppNodeData,
+  RhWfNodeData,
 } from '@/types';
 
 // Ref: §6.11 — 懒加载节点组件
@@ -21,6 +23,8 @@ const AudioNode = lazy(() => import('@/components/canvas/AudioNode')); // 音频
 const GridSplitNode = lazy(() => import('@/components/canvas/GridSplitNode'));
 const GridMergeNode = lazy(() => import('@/components/canvas/GridMergeNode'));
 const OmniNode = lazy(() => import('@/components/canvas/OmniNode')); // 万能节点
+const RhAppNode = lazy(() => import('@/components/canvas/RhAppNode')); // RunningHub APP 节点
+const RhWfNode = lazy(() => import('@/components/canvas/RhWfNode')); // RunningHub Workflow 节点
 
 // 输入节点
 const TextInputNode = lazy(() => import('@/components/canvas/TextInputNode'));
@@ -53,6 +57,8 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   audioNode: GenerateAudioNode as unknown as ComponentType<NodeProps>, // 音频生成（TTS）
   d3Node: D3Node as unknown as ComponentType<NodeProps>, // 3D 生成
   omniNode: OmniNode as unknown as ComponentType<NodeProps>, // 万能节点
+  rhAppNode: RhAppNode as unknown as ComponentType<NodeProps>, // RunningHub APP 节点
+  rhWfNode: RhWfNode as unknown as ComponentType<NodeProps>, // RunningHub Workflow 节点
   
   // 输入节点（Input 后缀）
   textInputNode: TextInputNode as unknown as ComponentType<NodeProps>,
@@ -93,6 +99,8 @@ const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   audioNode: { width: 320, height: 280 },
   d3Node: { width: 320, height: 300 },
   omniNode: { width: 400, height: 300 },
+  rhAppNode: { width: 360, height: 320 },
+  rhWfNode: { width: 400, height: 320 },
   
   // 输入节点
   textInputNode: { width: 300, height: 200 },
@@ -204,6 +212,26 @@ function getDefaultData(type: string): Record<string, unknown> {
         },
         loading: false,
       } as OmniNodeData;
+    
+    case 'rhAppNode':
+      return {
+        label: 'RH APP',
+        configMode: true,
+        config: {
+          outputType: 'auto',
+        },
+        loading: false,
+      } as RhAppNodeData;
+    
+    case 'rhWfNode':
+      return {
+        label: 'RH Workflow',
+        configMode: true,
+        config: {
+          outputType: 'auto',
+        },
+        loading: false,
+      } as RhWfNodeData;
     
     // 九宫格拆分
     case 'gridSplitNode':

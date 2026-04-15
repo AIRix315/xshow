@@ -2,7 +2,7 @@
 // 从上游节点提取数据，统一类型映射
 
 import type { Node, Edge } from '@xyflow/react';
-import type { OmniNodeData } from '@/types';
+// OmniNodeData 类型不再需要单独导入，inferMediaOutput 通过 data.config 动态读取
 
 /**
  * 源节点输出数据
@@ -81,6 +81,117 @@ function inferHandleType(handleId: string | null | undefined): 'image' | 'video'
 }
 
 /**
+ * 推断媒体输出类型和分发数据
+ * OmniNode / RhAppNode / RhWfNode 共享的输出推断逻辑
+ *
+ * 设计规则：
+ * - 显式 outputType（非 auto）→ 只输出该类型数据
+ * - auto 模式 → 根据下游 targetHandleType 需求分发
+ * - additionalValues 携带 outputUrls 中的同类型其余 URL
+ */
+function inferMediaOutput(
+  outputUrl: string | undefined,
+  outputUrls: string[] | undefined,
+  textOutput: string | undefined,
+  outputType: string,
+  targetHandleType: 'image' | 'video' | 'audio' | 'text' | 'any',
+): SourceOutput {
+  // ─── 辅助：根据 URL 推断媒体类型 ───
+  const inferType = (url: string): SourceOutput['type'] => {
+    const lower = url.toLowerCase();
+    if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
+    if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
+    if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
+    if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
+    if (outputType === 'video') return 'video';
+    if (outputType === 'audio') return 'audio';
+    return 'image';
+  };
+
+  // ─── 辅助：URL 是否匹配期望类型 ───
+  const urlMatchesType = (url: string, want: 'image' | 'video' | 'audio'): boolean => {
+    return inferType(url) === want;
+  };
+
+  // ─── 显式类型模式 ───
+  if (outputType !== 'auto') {
+    if (outputType === 'text') {
+      return { type: 'text', value: textOutput || null };
+    }
+    // image / video / audio
+    if (outputUrl && urlMatchesType(outputUrl, outputType as 'image' | 'video' | 'audio')) {
+      const additional = (outputUrls && outputUrls.length > 0)
+        ? outputUrls.filter((u) => u !== outputUrl && urlMatchesType(u, outputType as 'image' | 'video' | 'audio'))
+        : undefined;
+      return { type: outputType as SourceOutput['type'], value: outputUrl, additionalValues: additional };
+    }
+    if (outputUrls) {
+      const matching = outputUrls.filter((u) => urlMatchesType(u, outputType as 'image' | 'video' | 'audio'));
+      if (matching.length > 0) {
+        return { type: outputType as SourceOutput['type'], value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
+      }
+    }
+    return { type: outputType as SourceOutput['type'], value: null, additionalValues: undefined };
+  }
+
+  // ─── auto 模式：万能分发 ───
+  const want = targetHandleType ?? 'any';
+
+  if (want === 'text') {
+    if (textOutput) return { type: 'text', value: textOutput };
+    if (outputUrl && !urlMatchesType(outputUrl, 'image') && !urlMatchesType(outputUrl, 'video') && !urlMatchesType(outputUrl, 'audio')) {
+      return { type: 'text', value: outputUrl };
+    }
+    return { type: 'text', value: null };
+  }
+
+  if (want === 'image') {
+    if (outputUrl && urlMatchesType(outputUrl, 'image')) {
+      const additional = outputUrls ? outputUrls.filter((u) => u !== outputUrl && urlMatchesType(u, 'image')) : undefined;
+      return { type: 'image', value: outputUrl, additionalValues: additional };
+    }
+    if (outputUrls) {
+      const matching = outputUrls.filter((u) => urlMatchesType(u, 'image'));
+      if (matching.length > 0) {
+        return { type: 'image', value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
+      }
+    }
+    return { type: 'image', value: null };
+  }
+
+  if (want === 'video') {
+    if (outputUrl && urlMatchesType(outputUrl, 'video')) return { type: 'video', value: outputUrl };
+    if (outputUrls) {
+      const matching = outputUrls.filter((u) => urlMatchesType(u, 'video'));
+      if (matching.length > 0) return { type: 'video', value: matching[0]! };
+    }
+    return { type: 'video', value: null };
+  }
+
+  if (want === 'audio') {
+    if (outputUrl && urlMatchesType(outputUrl, 'audio')) return { type: 'audio', value: outputUrl };
+    if (outputUrls) {
+      const matching = outputUrls.filter((u) => urlMatchesType(u, 'audio'));
+      if (matching.length > 0) return { type: 'audio', value: matching[0]! };
+    }
+    return { type: 'audio', value: null };
+  }
+
+  // want === 'any'：返回主输出
+  if (outputUrl) {
+    const inferred = inferType(outputUrl);
+    const additional = outputUrls ? outputUrls.filter((u) => u !== outputUrl) : undefined;
+    return { type: inferred, value: outputUrl, additionalValues: additional };
+  }
+  if (outputUrls && outputUrls.length > 0) {
+    const primaryType = inferType(outputUrls[0]!);
+    return { type: primaryType, value: outputUrls[0]!, additionalValues: outputUrls.length > 1 ? outputUrls.slice(1) : undefined };
+  }
+  if (textOutput) return { type: 'text', value: textOutput };
+  return { type: 'text', value: null };
+}
+
+/**
  * 从源节点提取输出数据和类型
  * 统一映射各节点类型的输出字段
  */
@@ -143,131 +254,37 @@ function getSourceOutput(
 
     // 万能节点（omniNode）
     case 'omniNode': {
-      const config = data.config as OmniNodeData['config'] | undefined;
-      const executionType = config?.executionType;
-      // ComfyUI 模式使用独立配置，HTTP 模式使用 outputType
-      const outputType = executionType === 'comfyui'
-        ? (config?.comfyuiOutputType || 'auto')
-        : (config?.outputType || 'auto');
-      const outputUrl = data.outputUrl as string | undefined;
-      const outputUrls = data.outputUrls as string[] | undefined;
-      const textOutput = data.textOutput as string | undefined;
+      return inferMediaOutput(
+        data.outputUrl as string | undefined,
+        data.outputUrls as string[] | undefined,
+        data.textOutput as string | undefined,
+        (data.config as Record<string, unknown> | undefined)?.executionType === 'comfyui'
+          ? ((data.config as Record<string, unknown> | undefined)?.comfyuiOutputType as string || 'auto')
+          : ((data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto'),
+        targetHandleType ?? 'any',
+      );
+    }
 
-      // 辅助函数：根据 URL 推断媒体类型
-      const inferType = (url: string): SourceOutput['type'] => {
-        const lower = url.toLowerCase();
-        if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
-        if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
-        if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
-        if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
-        // URL 推断不出时，按 outputType 推断
-        if (outputType === 'video') return 'video';
-        if (outputType === 'audio') return 'audio';
-        return 'image';
-      };
+    // RunningHub APP 节点（rhAppNode）
+    case 'rhAppNode': {
+      return inferMediaOutput(
+        data.outputUrl as string | undefined,
+        data.outputUrls as string[] | undefined,
+        data.textOutput as string | undefined,
+        (data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto',
+        targetHandleType ?? 'any',
+      );
+    }
 
-      // 辅助函数：根据 URL + 期望类型判断 URL 是否匹配
-      const urlMatchesType = (url: string, want: 'image' | 'video' | 'audio'): boolean => {
-        const actual = inferType(url);
-        return actual === want;
-      };
-
-      // ─── 显式类型模式：只输出对应类型数据（过滤器） ───
-      if (outputType !== 'auto') {
-        if (outputType === 'text') {
-          return { type: 'text', value: textOutput || null };
-        }
-        // image / video / audio：检查 outputUrl 是否匹配该类型
-        if (outputUrl && urlMatchesType(outputUrl, outputType)) {
-          // additionalValues 排除 outputUrl（避免重复）
-          const additional = (outputUrls && outputUrls.length > 0)
-            ? outputUrls.filter((u) => u !== outputUrl)
-            : undefined;
-          return { type: outputType, value: outputUrl, additionalValues: additional };
-        }
-        // outputUrl 不匹配，检查 outputUrls 中是否有匹配的
-        if (outputUrls) {
-          const matching = outputUrls.filter((u) => urlMatchesType(u, outputType));
-          if (matching.length > 0) {
-            return { type: outputType, value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
-          }
-        }
-        // 没有匹配数据，返回 null
-        return { type: outputType, value: null, additionalValues: undefined };
-      }
-
-      // ─── auto 模式：万能分发，根据下游需要返回对应类型 ───
-      const want = targetHandleType ?? 'any';
-
-      if (want === 'text') {
-        // 下游要文本
-        if (textOutput) return { type: 'text', value: textOutput };
-        // 没有纯文本，检查 outputUrl 是否不是图片/视频/音频
-        if (outputUrl && !urlMatchesType(outputUrl, 'image') && !urlMatchesType(outputUrl, 'video') && !urlMatchesType(outputUrl, 'audio')) {
-          return { type: 'text', value: outputUrl };
-        }
-        return { type: 'text', value: null };
-      }
-
-      if (want === 'image') {
-        // 下游要图片
-        if (outputUrl && urlMatchesType(outputUrl, 'image')) {
-          // additionalValues 排除 outputUrl（避免重复）
-          const additional = (outputUrls && outputUrls.length > 0)
-            ? outputUrls.filter((u) => u !== outputUrl)
-            : undefined;
-          return { type: 'image', value: outputUrl, additionalValues: additional };
-        }
-        if (outputUrls) {
-          const matching = outputUrls.filter((u) => urlMatchesType(u, 'image'));
-          if (matching.length > 0) {
-            return { type: 'image', value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
-          }
-        }
-        return { type: 'image', value: null };
-      }
-
-      if (want === 'video') {
-        // 下游要视频
-        if (outputUrl && urlMatchesType(outputUrl, 'video')) {
-          return { type: 'video', value: outputUrl };
-        }
-        if (outputUrls) {
-          const matching = outputUrls.filter((u) => urlMatchesType(u, 'video'));
-          if (matching.length > 0) return { type: 'video', value: matching[0]! };
-        }
-        return { type: 'video', value: null };
-      }
-
-      if (want === 'audio') {
-        // 下游要音频
-        if (outputUrl && urlMatchesType(outputUrl, 'audio')) {
-          return { type: 'audio', value: outputUrl };
-        }
-        if (outputUrls) {
-          const matching = outputUrls.filter((u) => urlMatchesType(u, 'audio'));
-          if (matching.length > 0) return { type: 'audio', value: matching[0]! };
-        }
-        return { type: 'audio', value: null };
-      }
-
-      // want === 'any'：返回主输出（outputUrl 优先，其次 textOutput）
-      if (outputUrl) {
-        const inferred = inferType(outputUrl);
-        // additionalValues 排除 outputUrl（避免重复）
-        const additional = (outputUrls && outputUrls.length > 0)
-          ? outputUrls.filter((u) => u !== outputUrl)
-          : undefined;
-        return { type: inferred, value: outputUrl, additionalValues: additional };
-      }
-      if (outputUrls && outputUrls.length > 0) {
-        const primaryType = inferType(outputUrls[0]!);
-        return { type: primaryType, value: outputUrls[0]!, additionalValues: outputUrls.length > 1 ? outputUrls.slice(1) : undefined };
-      }
-      if (textOutput) {
-        return { type: 'text', value: textOutput };
-      }
-      return { type: 'text', value: null };
+    // RunningHub Workflow 节点（rhWfNode）
+    case 'rhWfNode': {
+      return inferMediaOutput(
+        data.outputUrl as string | undefined,
+        data.outputUrls as string[] | undefined,
+        data.textOutput as string | undefined,
+        (data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto',
+        targetHandleType ?? 'any',
+      );
     }
 
     // 3D 节点
@@ -286,7 +303,6 @@ function getSourceOutput(
       if (data.audioUrl) return { type: 'audio', value: data.audioUrl as string };
       if (data.text) return { type: 'text', value: data.text as string };
       if (data.outputUrl) {
-        // 根据上下文推断类型
         const url = data.outputUrl as string;
         if (/\.(mp4|webm|mov|avi)(\?|$)/i.test(url)) return { type: 'video', value: url };
         if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(url)) return { type: 'audio', value: url };
@@ -497,9 +513,10 @@ export function getUpstreamNodes(
 }
 
 /**
- * 按 targetHandle 收集上游图片
- * 用于 OmniNode 等支持多图片输入的节点
- * 返回格式: { "image-0": ["url1"], "image-1": ["url2"] }
+ * 按 targetHandle 收集上游数据
+ * 用于 OmniNode/RhWfNode 等支持多输入的节点
+ * 支持所有媒体类型的 handle: image-*, video-*, audio-*
+ * 返回格式: { "image-0": ["url1"], "video-0": ["url2"], "audio-0": ["url3"] }
  */
 export function getInputsByHandle(
   nodeId: string,
@@ -510,9 +527,14 @@ export function getInputsByHandle(
 
   // 遍历所有指向当前节点的边
   edges
-    .filter((e) => e.target === nodeId && e.targetHandle?.startsWith('image-'))
+    .filter((e) => e.target === nodeId && e.targetHandle)
     .forEach((edge) => {
-      const handleId = edge.targetHandle!; // 如 "image-0"
+      const handleId = edge.targetHandle!;
+      // 只处理 image-*, video-*, audio-* 类型的 handle
+      if (!handleId.startsWith('image-') &&
+          !handleId.startsWith('video-') &&
+          !handleId.startsWith('audio-')) return;
+
       if (!result[handleId]) result[handleId] = [];
 
       const sourceNode = nodes.find((n) => n.id === edge.source);

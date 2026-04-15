@@ -35,6 +35,10 @@ export {
 // 万能节点执行器
 export { executeOmniNode } from './omniExecutor';
 
+// RH 节点执行器
+export { executeRhAppNode } from './rhAppExecutor';
+export { executeRhWfNode } from './rhWfExecutor';
+
 import type { NodeExecutor, NodeExecutorRegistry } from './types';
 import {
   executeOutput,
@@ -58,6 +62,8 @@ import {
   executeAudioNode,
 } from './generateNodeExecutors';
 import { executeOmniNode } from './omniExecutor';
+import { executeRhAppNode } from './rhAppExecutor';
+import { executeRhWfNode } from './rhWfExecutor';
 
 /**
  * 节点类型到执行器的映射表
@@ -103,6 +109,10 @@ export const nodeExecutors: NodeExecutorRegistry = {
 
   // 万能节点
   omniNode: executeOmniNode,
+
+  // RH 节点
+  rhAppNode: executeRhAppNode,
+  rhWfNode: executeRhWfNode,
 };
 
 /**

@@ -17,6 +17,8 @@ import {
   Square,
   ChevronDown,
   Loader2,
+  Cloud,
+  GitBranch,
 } from 'lucide-react';
 
 // 节点类型定义 - 对齐 NodeSidebar.tsx
@@ -55,7 +57,10 @@ type NodeType =
   | 'outputNode'
   | 'outputGalleryNode'
   // Custom 自定义
-  | 'omniNode';
+  | 'omniNode'
+  // RH RunningHub
+  | 'rhAppNode'
+  | 'rhWfNode';
 
 // 节点分类 - 对齐 NodeSidebar.tsx
 const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; icon: string }[] }[] = [
@@ -121,6 +126,13 @@ const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; 
       { type: 'omniNode', label: 'Omni', icon: 'settings' },
     ],
   },
+  {
+    label: 'RH',
+    nodes: [
+      { type: 'rhAppNode', label: 'RH APP', icon: 'cloud' },
+      { type: 'rhWfNode', label: 'RH Workflow', icon: 'workflow' },
+    ],
+  },
 ];
 
 // 图标映射 - 使用字符串 key 获取图标组件
@@ -179,6 +191,11 @@ const getIcon = (iconName: string) => {
     // Custom
     case 'settings':
       return Settings;
+    // RH RunningHub
+    case 'cloud':
+      return Cloud;
+    case 'workflow':
+      return GitBranch;
     default:
       return Settings;
   }

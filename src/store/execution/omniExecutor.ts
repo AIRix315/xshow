@@ -222,9 +222,6 @@ async function executeComfyMode(
         return { url: comfyuiConfig.localUrl, key: '' };
       case 'cloud':
         return { url: comfyuiConfig.cloudUrl, key: '' };
-      case 'runninghub':
-      case 'runninghubApp':
-        return { url: '', key: comfyuiConfig.runninghubApiKey };
       default:
         return { url: '', key: '' };
     }
@@ -234,9 +231,6 @@ async function executeComfyMode(
 
   if ((subType === 'local' || subType === 'cloud') && !config.workflowJson) {
     throw new Error('请先选择工作流');
-  }
-  if ((subType === 'runninghub' || subType === 'runninghubApp') && !config.workflowId) {
-    throw new Error('请输入工作流 ID');
   }
 
   // Step 1: 解析工作流节点

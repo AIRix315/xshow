@@ -9,7 +9,7 @@ import {
   PenTool, Grid3x3, Scissors, Clock, Frame, GitCompare,
   GitBranch, ToggleLeft, GitMerge,
   Download, GalleryHorizontal,
-  Settings, X, ChevronDown,
+  Settings, X, ChevronDown, Workflow,
 } from 'lucide-react';
 
 // 按 node-banana 分类组织
@@ -74,6 +74,13 @@ const NODE_CATEGORIES = [
     title: 'Custom 自定义',
     items: [
       { type: 'omniNode', label: '万能节点', icon: Settings },
+    ],
+  },
+  {
+    title: 'RunningHub',
+    items: [
+      { type: 'rhAppNode', label: 'RH APP', icon: Workflow },
+      { type: 'rhWfNode', label: 'RH Workflow', icon: Workflow },
     ],
   },
 ] as const;

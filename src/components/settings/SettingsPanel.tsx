@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import type { CanvasSettings } from '@/stores/useSettingsStore';
 import type { PresetPrompt } from '@/types';
-import { testComfyConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
+import { testComfyConnection, testRunninghubConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
 import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload, Box } from 'lucide-react';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { importProjectFile } from '@/utils/projectManager';
@@ -512,7 +512,7 @@ function RunningHubSection() {
   const handleTestRH = useCallback(async () => {
     setTestingRH(true);
     setTestResultRH(null);
-    const result = await testComfyConnection('runninghub', '', comfyuiConfig.runninghubApiKey ?? '');
+    const result = await testRunninghubConnection(comfyuiConfig.runninghubApiKey ?? '');
     setTestResultRH(result);
     setTestingRH(false);
   }, [comfyuiConfig.runninghubApiKey]);
@@ -521,7 +521,7 @@ function RunningHubSection() {
   const handleTestRHApp = useCallback(async () => {
     setTestingRHApp(true);
     setTestResultRHApp(null);
-    const result = await testComfyConnection('runninghubApp', '', comfyuiConfig.runninghubApiKey ?? '');
+    const result = await testRunninghubConnection(comfyuiConfig.runninghubApiKey ?? '');
     setTestResultRHApp(result);
     setTestingRHApp(false);
   }, [comfyuiConfig.runninghubApiKey]);
