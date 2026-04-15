@@ -116,11 +116,96 @@ function validateConnection(connection: Connection): boolean {
   return true;
 }
 
+// =============================================================================
+// 自动连接映射：根据源 handle 类型 + 目标节点类型，确定目标 handle ID
+// =============================================================================
+
+/** 给定源 handle 数据类型和目标节点类型，推导目标节点的输入 handle ID */
+function resolveTargetHandleId(handleType: HandleDataType, nodeType: string): string | null {
+  // 特殊节点：逻辑/路由节点透传
+  if (nodeType === 'routerNode') return handleType as string;
+  if (nodeType === 'switchNode') return 'input';
+  if (nodeType === 'conditionalSwitchNode') return 'input';
+  if (nodeType === 'omniNode' || nodeType === 'rhAppNode' || nodeType === 'rhWfNode') return 'any-input';
+
+  // 输出节点：多类型输入
+  if (nodeType === 'outputNode') {
+    if (handleType === 'video') return 'video';
+    if (handleType === 'audio') return 'audio';
+    return 'image'; // image/text/any 都接 image handle
+  }
+  if (nodeType === 'outputGalleryNode') {
+    if (handleType === 'video') return 'video';
+    if (handleType === 'audio') return 'audio';
+    if (handleType === 'text') return 'text';
+    return 'image';
+  }
+
+  // 特殊 ID 映射
+  if (nodeType === 'gridSplitNode') return 'source-image';
+  if (nodeType === 'videoStitchNode') return 'video-0';
+  if (nodeType === 'imageCompareNode') return 'image-left';
+  if (nodeType === 'viewer3DNode') return handleType === 'model' ? 'image' : null;
+
+  // 通用匹配：handleType 与节点默认输入同名（image→image, text→text, video→video, audio→audio）
+  if (handleType === 'image') {
+    if (['annotateNode', 'imageInputNode'].includes(nodeType)) return 'image';
+    if (nodeType === 'gridMergeNode') return 'source-image';
+    return 'image';
+  }
+  if (handleType === 'text') {
+    if (['generateAudioNode', 'generate3DNode', 'promptConstructorNode', 'textInputNode'].includes(nodeType)) return 'text';
+    return 'text';
+  }
+  if (handleType === 'video') {
+    if (['videoTrimNode', 'frameGrabNode', 'videoInputNode'].includes(nodeType)) return 'video';
+    return 'video';
+  }
+  if (handleType === 'audio') {
+    return 'audio';
+  }
+  // any 或未知类型：尝试匹配节点默认输入
+  if (handleType === 'any' || handleType === 'value') {
+    // 对于 any 类型，找节点的第一个输入 handle
+    if (nodeType === 'videoStitchNode') return 'video-0';
+    if (nodeType === 'imageCompareNode') return 'image-left';
+    return null; // 无法确定，让用户手动连接
+  }
+  return null;
+}
+
+/** 给定源 handle 数据类型和新节点类型，推导新节点的输出 handle ID（反向拖拽用） */
+function resolveSourceHandleId(handleType: HandleDataType, nodeType: string): string | null {
+  // 输入节点：输出类型固定
+  if (nodeType === 'imageInputNode') return 'image';
+  if (nodeType === 'textInputNode') return 'text';
+  if (nodeType === 'videoInputNode') return 'video';
+  if (nodeType === 'generateAudioNode') return 'audio';
+  if (nodeType === 'generate3DNode') return 'model';
+  if (nodeType === 'promptConstructorNode') return 'text';
+  if (nodeType === 'easeCurveNode') return 'value';
+  if (nodeType === 'annotateNode') return 'image';
+  if (nodeType === 'frameGrabNode') return 'image';
+  if (nodeType === 'imageCompareNode') return 'image';
+
+  // 路由/逻辑节点透传
+  if (nodeType === 'routerNode') return handleType as string;
+
+  // 通用匹配：输出 handle ID = handleType
+  return handleType as string | null;
+}
+
 function FlowCanvasInner() {
   const [dropMenuState, setDropMenuState] = useState<{
     position: { x: number; y: number } | null;
     sourceHandleType: string | null;
-  }>({ position: null, sourceHandleType: null });
+    /** 拖拽起点的节点 ID */
+    sourceNodeId: string | null;
+    /** 拖拽起点的 handle ID（如 "any-output", "image" 等） */
+    sourceHandleId: string | null;
+    /** 拖拽方向：从 output(source) 拖出 vs 从 input(target) 拖出 */
+    connectionType: 'source' | 'target' | null;
+  }>({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null });
   // 追踪选中节点 ID（用于复制/粘贴）
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 
@@ -299,7 +384,7 @@ function FlowCanvasInner() {
       return;
     }
     setHighlightedNode(null);
-    setDropMenuState({ position: null, sourceHandleType: null });
+    setDropMenuState({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null });
   }, [setHighlightedNode]);
 
   // 连接拖拽结束时，如果未连接到目标节点，弹出 ConnectionDropMenu
@@ -322,29 +407,68 @@ function FlowCanvasInner() {
       const fromHandleId = connectionState.fromHandle?.id || null;
       const handleType = getHandleType(fromHandleId);
 
+      // 从 fromHandle 判断拖拽方向
+      const isFromSource = connectionState.fromHandle?.type === 'source';
+
       setDropMenuState({
         position: { x: clientX, y: clientY },
         sourceHandleType: handleType,
+        sourceNodeId: connectionState.fromNode.id,
+        sourceHandleId: fromHandleId,
+        connectionType: isFromSource ? 'source' : 'target',
       });
       menuOpenedByConnectEnd.current = true;
     },
     [],
   );
 
-  // 从 ConnectionDropMenu 选择节点后创建节点并连接
+  // 从 ConnectionDropMenu 选择节点后创建节点并自动连接
   const handleDropMenuSelect = useCallback(
     (nodeType: string) => {
       if (!dropMenuState.position || !reactFlowInstance.current) {
-        setDropMenuState({ position: null, sourceHandleType: null });
+        setDropMenuState({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null });
         return;
       }
       const instance = reactFlowInstance.current as { screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number } };
       const position = instance.screenToFlowPosition(dropMenuState.position);
       const newNode = createNode(nodeType, position);
       flowAddNode(newNode);
-      setDropMenuState({ position: null, sourceHandleType: null });
+
+      // 自动连接：从源节点到新创建的节点
+      const { sourceNodeId, sourceHandleId, sourceHandleType, connectionType } = dropMenuState;
+      if (sourceNodeId && connectionType) {
+        const handleType = sourceHandleType as HandleDataType;
+
+        if (connectionType === 'source') {
+          // 正向拖拽：从 output handle 拖出 → 新节点的输入
+          const targetHandleId = resolveTargetHandleId(handleType, nodeType);
+          if (targetHandleId) {
+            addEdge({
+              id: `${sourceNodeId}-${sourceHandleId ?? ''}-${newNode.id}-${targetHandleId}-${Date.now()}`,
+              source: sourceNodeId,
+              sourceHandle: sourceHandleId ?? undefined,
+              target: newNode.id,
+              targetHandle: targetHandleId,
+            });
+          }
+        } else {
+          // 反向拖拽：从 input handle 拖出 → 新节点的输出
+          const sourceHandleForNewNode = resolveSourceHandleId(handleType, nodeType);
+          if (sourceHandleForNewNode) {
+            addEdge({
+              id: `${newNode.id}-${sourceHandleForNewNode}-${sourceNodeId}-${sourceHandleId ?? ''}-${Date.now()}`,
+              source: newNode.id,
+              sourceHandle: sourceHandleForNewNode,
+              target: sourceNodeId,
+              targetHandle: sourceHandleId ?? undefined,
+            });
+          }
+        }
+      }
+
+      setDropMenuState({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null });
     },
-    [dropMenuState.position, flowAddNode],
+    [dropMenuState, flowAddNode, addEdge],
   );
 
   // Ref: §6.12 — 高亮节点样式：应用到 node style 中
@@ -475,7 +599,7 @@ function FlowCanvasInner() {
         sourceHandleType={dropMenuState.sourceHandleType}
         nodes={nodes}
         onSelect={handleDropMenuSelect}
-        onClose={() => setDropMenuState({ position: null, sourceHandleType: null })}
+        onClose={() => setDropMenuState({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null })}
       />
     </div>
   );

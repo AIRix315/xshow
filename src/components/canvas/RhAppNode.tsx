@@ -17,8 +17,9 @@ import type { RhAppNodeType, RhAppNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
-import { fetchRhAppNodeInfo, uploadFileToRunningHub } from '@/api/rhApi';
+import { fetchRhAppNodeInfo } from '@/api/rhApi';
 import type { RhNodeInfo } from '@/api/rhApi';
+import { getConnectedInputs } from '@/utils/connectedInputs';
 
 const OUTPUT_TYPE_OPTIONS = [
   { value: 'auto', label: 'Auto（自动）' },
@@ -54,15 +55,12 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [fetchError, setFetchError] = useState('');
 
-  // 上传状态
-  const [uploadingField, setUploadingField] = useState<string>('');
-
   // 计算 IMAGE 字段数量（用于决定是否显示额外 image handles）
   const imageFieldCount = useMemo(() => {
     return fetchedNodeInfoList.filter(n => n.fieldType === 'IMAGE').length;
   }, [fetchedNodeInfoList]);
 
-  // 仅当 IMAGE 字段数量 > 2 时，才显示额外 handle
+  // 对齐 OmniNode: 仅当 IMAGE 字段数量 > 2 时，才显示额外 handle（>2 意味着有3+个，默认 any 不够用）
   const extraImageHandleCount = imageFieldCount > 2 ? imageFieldCount : 0;
 
   // 监听 handles 变化
@@ -72,9 +70,11 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
 
   const updateConfig = useCallback(
     (patch: Partial<RhAppNodeConfig>) => {
-      updateNodeData(id, { config: { ...config, ...patch } });
+      // 从 store 实时读取最新 config，避免 stale closure
+      const freshConfig = (useFlowStore.getState().nodes.find(n => n.id === id)?.data?.config ?? {}) as RhAppNodeConfig;
+      updateNodeData(id, { config: { ...freshConfig, ...patch } });
     },
-    [id, config, updateNodeData]
+    [id, updateNodeData]
   );
 
   // 切换配置模式
@@ -132,32 +132,7 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     updateConfig({ nodeInfoList: updatedList });
   }, [config.nodeInfoList, updateConfig]);
 
-  // IMAGE/AUDIO/VIDEO 字段上传
-  const handleFileUpload = useCallback(async (nodeId: string, fieldName: string, fieldType: string, file: File) => {
-    if (!apiKey) {
-      setFetchError('请先在设置中配置 RunningHub API Key');
-      return;
-    }
-    setUploadingField(`${nodeId}.${fieldName}`);
-    try {
-      const rhFileType = fieldType === 'IMAGE' ? 'image' : fieldType === 'VIDEO' ? 'video' : fieldType === 'AUDIO' ? 'audio' : 'input';
-      const fileName = await uploadFileToRunningHub(apiKey, file, rhFileType as 'input' | 'output');
-      // 更新 fieldValue
-      const currentList = config.nodeInfoList ?? [];
-      const updatedList = currentList.map(n =>
-        n.nodeId === nodeId && n.fieldName === fieldName
-          ? { ...n, fieldValue: fileName }
-          : n
-      );
-      updateConfig({ nodeInfoList: updatedList });
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : '上传文件失败');
-    } finally {
-      setUploadingField('');
-    }
-  }, [apiKey, config.nodeInfoList, updateConfig]);
-
-  // 执行
+  // 验证运行（单节点执行）
   const handleExecute = useCallback(async () => {
     if (loading) return;
     if (!config.appId) {
@@ -169,27 +144,60 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
       return;
     }
 
-    updateNodeData(id, { loading: true, errorMessage: '', progress: 0 });
     abortRef.current = new AbortController();
-    // Note: actual execution is handled by rhAppExecutor (画布级执行)
-    // The button click triggers the store's execute flow
-    // Here we just validate and signal readiness
-  }, [loading, config, apiKey, id, updateNodeData]);
+
+    // 动态导入 executor，构造执行上下文
+    const { executeRhAppNode } = await import('@/store/execution/rhAppExecutor');
+    const currentNodes = useFlowStore.getState().nodes;
+    const currentEdges = useFlowStore.getState().edges;
+    const freshNode = currentNodes.find(n => n.id === id);
+    if (!freshNode) return;
+
+    const ctx = {
+      node: freshNode,
+      nodes: currentNodes,
+      edges: currentEdges,
+      getConnectedInputs: (nodeId: string) => getConnectedInputs(nodeId, currentNodes, currentEdges),
+      updateNodeData: (nodeId: string, patch: Record<string, unknown>) => {
+        useFlowStore.getState().updateNodeData(nodeId, patch);
+      },
+      getFreshNode: (nodeId: string) => useFlowStore.getState().nodes.find(n => n.id === nodeId),
+      signal: abortRef.current.signal,
+    };
+
+    try {
+      await executeRhAppNode(ctx);
+    } catch (err) {
+      // executor 内部已处理 errorMessage，此处忽略
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        console.warn('[RhAppNode] 验证运行失败:', err);
+      }
+    }
+  }, [loading, config.appId, apiKey, id, updateNodeData]);
 
   // 停止
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  // 判断输出类型
+  // 判断输出类型 — 对齐 OmniNode OutputPreview 逻辑
   const effectiveOutputType = config.outputType ?? 'auto';
+  const outputUrlTypes = data.outputUrlTypes as string[] | undefined;
+  // blob URL type from metadata (ZIP extraction result), fallback to URL extension inference
+  const blobMediaType = outputUrl?.startsWith('blob:') && outputUrlTypes?.[0]
+    ? outputUrlTypes[0] : undefined;
   const isMediaUrl =
+    !!blobMediaType ||
+    outputUrl?.startsWith('blob:') ||
     outputUrl?.includes('/view?') ||
     /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(outputUrl ?? '');
   const displayOutputType =
     effectiveOutputType === 'auto'
       ? isMediaUrl
-        ? 'image'
+        ? blobMediaType && ['video', 'audio', 'image'].includes(blobMediaType) ? blobMediaType
+          : /\.(mp4|webm|mov)(\?|$)/i.test(outputUrl ?? '') ? 'video'
+          : /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(outputUrl ?? '') ? 'audio'
+          : 'image'
         : 'text'
       : effectiveOutputType;
 
@@ -198,7 +206,6 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     const { fieldType, fieldValue, fieldName, nodeId } = nodeInfo;
     const currentList = config.nodeInfoList ?? [];
     const currentValue = currentList.find(n => n.nodeId === nodeId && n.fieldName === fieldName)?.fieldValue ?? fieldValue;
-    const isUploading = uploadingField === `${nodeId}.${fieldName}`;
 
     // LIST 字段：下拉选择
     if (fieldType === 'LIST' && nodeInfo.fieldData) {
@@ -222,28 +229,16 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
       );
     }
 
-    // IMAGE/AUDIO/VIDEO 字段：文件上传 + 预览
+    // IMAGE/AUDIO/VIDEO 字段：通过 Handle 传入，显示当前值
     if (['IMAGE', 'AUDIO', 'VIDEO'].includes(fieldType)) {
+      const hasValue = currentValue && currentValue !== fieldValue;
       return (
         <div className="flex items-center gap-1">
-          <label className="flex-1 text-[8px] text-text-muted truncate">{fieldName}</label>
-          <label className={`px-1.5 py-0.5 text-[8px] rounded cursor-pointer ${
-            isUploading ? 'bg-surface-hover text-text-muted' : 'bg-primary hover:bg-primary-hover text-text'
-          }`}>
-            {isUploading ? '上传中...' : '上传'}
-            <input
-              type="file"
-              className="hidden"
-              accept={fieldType === 'IMAGE' ? 'image/*' : fieldType === 'AUDIO' ? 'audio/*' : 'video/*'}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(nodeId, fieldName, fieldType, file);
-              }}
-              disabled={isUploading}
-            />
-          </label>
-          {currentValue && currentValue !== fieldValue && (
-            <span className="text-[7px] text-green-400 truncate max-w-[60px]">✓</span>
+          <span className="text-[7px] text-text-muted truncate flex-1">{fieldName}</span>
+          {hasValue ? (
+            <span className="text-[7px] text-green-400 truncate max-w-[80px]">✓ {String(currentValue).slice(-20)}</span>
+          ) : (
+            <span className="text-[7px] text-text-muted italic">通过 {fieldType} 接口传入</span>
           )}
         </div>
       );
@@ -297,7 +292,7 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <span className="text-[10px]">执行中...</span>
+            <span className="text-[10px]">运行中...</span>
           </div>
         ) : errorMessage ? (
           <span className="text-[10px] text-error px-2 text-center">{errorMessage}</span>
@@ -345,11 +340,13 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
       errorMessage={errorMessage}
       settingsPanel={settingsPanel}
       onSettings={toggleConfigMode}
+      minHeight={200}
+      minWidth={200}
     >
-      <div className="flex flex-col gap-2 min-h-0 flex-1">
-        {/* 配置模式 */}
+      <div className="flex flex-col h-full min-h-[180px]">
+        {/* 配置模式内容区 - 可滚动 */}
         {configMode && (
-          <div className="flex flex-col gap-2 px-1">
+          <div className="flex-1 min-h-0 overflow-y-auto px-1 flex flex-col gap-2">
             {/* 输出类型 */}
             <select
               value={config.outputType ?? 'auto'}
@@ -401,7 +398,7 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
 
             {/* 节点参数编辑 */}
             {fetchedNodeInfoList.length > 0 && (
-              <div className="flex flex-col gap-0.5 bg-[#1a1a1a] rounded p-1 border border-border max-h-48 overflow-y-auto">
+              <div className="flex flex-col gap-0.5 bg-[#1a1a1a] rounded p-1 border border-border">
                 {fetchedNodeInfoList.map((nodeInfo) => (
                   <div key={`${nodeInfo.nodeId}.${nodeInfo.fieldName}`} className="flex flex-col gap-0.5 p-1 bg-surface rounded">
                     <div className="flex items-center gap-1">
@@ -432,11 +429,34 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
           </div>
         )}
 
-        {/* 预览模式 */}
-        {!configMode && previewContent}
-      </div>
+        {/* 预览模式 - 最大化填充 */}
+        {!configMode && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {previewContent}
+          </div>
+        )}
 
-      {/* 输入 Handle - any-input（智能映射所有类型） */}
+        {/* 运行按钮 - 固定在底部 */}
+        <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
+          <div className="flex gap-1">
+            <button
+              onClick={handleExecute}
+              disabled={loading}
+              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
+            >
+              {loading ? '运行中...' : '▶ 运行'}
+            </button>
+            {loading && (
+              <button
+                onClick={handleStop}
+                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
+              >
+                ⏹ 停止
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
       <Handle
         type="target"
         position={Position.Left}
@@ -452,7 +472,7 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
         }}
       />
       <div
-        className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+        className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
         data-type="any"
         style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}
       >
@@ -485,15 +505,15 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
             if (Math.abs(position - 50) < 15) {
               position = position < 50 ? position - 10 : position + 10;
             }
-            return (
-              <div
-                key={`image-label-${i}`}
-                className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right text-green-500"
-                data-type="image"
-                style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
-              >
-                Img {i}
-              </div>
+              return (
+                <div
+                  key={`image-label-${i}`}
+                  className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+                  data-type="image"
+                  style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+                >
+                  Img {i}
+                </div>
             );
           })}
         </>
@@ -515,32 +535,11 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
         }}
       />
       <div
-        className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none"
+        className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none"
         data-type="any"
         style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}
       >
         Any
-      </div>
-
-      {/* 执行按钮 */}
-      <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
-        <div className="flex gap-1">
-          <button
-            onClick={handleExecute}
-            disabled={loading}
-            className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
-          >
-            {loading ? '执行中...' : '▶ 执行'}
-          </button>
-          {loading && (
-            <button
-              onClick={handleStop}
-              className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
-            >
-              ⏹ 停止
-            </button>
-          )}
-        </div>
       </div>
     </BaseNodeWrapper>
   );

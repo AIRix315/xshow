@@ -11,8 +11,7 @@ import RhWfNodeComponent from './RhWfNode';
 const mockUpdateNodeData = vi.fn();
 const mockFetchRhWorkflowJson = vi.fn();
 const mockParseRhWorkflowNodes = vi.fn();
-const mockExecuteRhWorkflowApi = vi.fn();
-const mockUploadFileToRunningHub = vi.fn();
+const mockExecuteRhWfNode = vi.fn();
 
 const mockWorkflows = [
   { id: 'wf1', name: 'Test Workflow 1' },
@@ -20,6 +19,8 @@ const mockWorkflows = [
 ];
 
 const mockApiKey = 'test-api-key';
+
+let storeNodes: any[] = [];
 
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual('@xyflow/react');
@@ -37,16 +38,26 @@ vi.mock('@xyflow/react', async () => {
   };
 });
 
-vi.mock('@/stores/useFlowStore', () => ({
-  useFlowStore: (selector: any) => {
-    const state = {
-      updateNodeData: mockUpdateNodeData,
-      nodes: [],
-      edges: [],
-    };
-    return selector(state);
-  },
-}));
+vi.mock('@/stores/useFlowStore', () => {
+  const mockUpdate = (nodeId: string, patch: Record<string, unknown>) => {
+    mockUpdateNodeData(nodeId, patch);
+    const idx = storeNodes.findIndex((n: any) => n.id === nodeId);
+    if (idx >= 0) {
+      storeNodes[idx] = { ...storeNodes[idx], data: { ...storeNodes[idx].data, ...patch } };
+    }
+  };
+  const getStoreState = () => ({
+    updateNodeData: mockUpdate,
+    nodes: storeNodes,
+    edges: [],
+  });
+  return {
+    useFlowStore: Object.assign(
+      (selector: any) => selector(getStoreState()),
+      { getState: () => getStoreState() }
+    ),
+  };
+});
 
 vi.mock('@/stores/useSettingsStore', () => ({
   useSettingsStore: (selector: any) => {
@@ -63,18 +74,14 @@ vi.mock('@/stores/useSettingsStore', () => ({
 vi.mock('@/api/rhApi', () => ({
   fetchRhWorkflowJson: (...args: any[]) => mockFetchRhWorkflowJson(...args),
   parseRhWorkflowNodes: (...args: any[]) => mockParseRhWorkflowNodes(...args),
-  executeRhWorkflowApi: (...args: any[]) => mockExecuteRhWorkflowApi(...args),
-  uploadFileToRunningHub: (...args: any[]) => mockUploadFileToRunningHub(...args),
+}));
+
+vi.mock('@/store/execution/rhWfExecutor', () => ({
+  executeRhWfNode: (...args: any[]) => mockExecuteRhWfNode(...args),
 }));
 
 vi.mock('@/utils/connectedInputs', () => ({
   getConnectedInputs: vi.fn(() => ({ images: [], videos: [], audio: [], text: null, textItems: [], model3d: null })),
-  getInputsByHandle: vi.fn(() => ({})),
-}));
-
-vi.mock('@/utils/zipExtractor', () => ({
-  extractZipContents: vi.fn(),
-  classifyMedia: vi.fn(),
 }));
 
 vi.mock('./BaseNode', () => ({
@@ -100,6 +107,7 @@ function renderRhWfNode(overrides: Record<string, unknown> = {}) {
     nodeValues: {},
     ...overrides,
   };
+  storeNodes = [{ id: 'wf1', data: defaultData, type: 'rhWf' }];
   return render(
     <RhWfNodeComponent
       id="wf1"
@@ -235,8 +243,8 @@ describe('RhWfNode', () => {
     });
   });
 
-  // Test 6: renders image handles when IMAGE fields > 2
-  it('renders image handles when IMAGE fields > 2', async () => {
+  // Test 6: renders image handles when IMAGE fields > 1 (aligned with OmniNode)
+  it('renders image handles when IMAGE fields > 1', async () => {
     const mockParsedNodes = [
       {
         nodeId: '6',
@@ -247,13 +255,6 @@ describe('RhWfNode', () => {
       },
       {
         nodeId: '7',
-        classType: 'LoadImage',
-        inputs: {
-          image: { name: 'image', value: '', type: 'IMAGE' },
-        },
-      },
-      {
-        nodeId: '8',
         classType: 'LoadImage',
         inputs: {
           image: { name: 'image', value: '', type: 'IMAGE' },
@@ -275,22 +276,14 @@ describe('RhWfNode', () => {
     await waitFor(() => {
       expect(screen.getByTestId('handle-image-0')).toBeInTheDocument();
       expect(screen.getByTestId('handle-image-1')).toBeInTheDocument();
-      expect(screen.getByTestId('handle-image-2')).toBeInTheDocument();
     });
   });
 
-  // Test 7: renders no extra image handles when IMAGE fields <= 2
-  it('renders no extra image handles when IMAGE fields <= 2', async () => {
+  // Test 7: renders no extra image handles when IMAGE fields <= 1
+  it('renders no extra image handles when IMAGE fields <= 1', async () => {
     const mockParsedNodes = [
       {
         nodeId: '6',
-        classType: 'LoadImage',
-        inputs: {
-          image: { name: 'image', value: '', type: 'IMAGE' },
-        },
-      },
-      {
-        nodeId: '7',
         classType: 'LoadImage',
         inputs: {
           image: { name: 'image', value: '', type: 'IMAGE' },
@@ -314,9 +307,9 @@ describe('RhWfNode', () => {
     });
   });
 
-  // Test 8: execute button calls executeRhWorkflowApi
-  it('execute button calls executeRhWorkflowApi', async () => {
-    mockExecuteRhWorkflowApi.mockResolvedValue({ outputUrl: 'http://example.com/output.png' });
+  // Test 8: execute button calls executeRhWfNode
+  it('execute button calls executeRhWfNode', async () => {
+    mockExecuteRhWfNode.mockResolvedValue(undefined);
 
     renderRhWfNode({
       config: { workflowId: 'wf1', workflowJson: '{}' },
@@ -326,13 +319,13 @@ describe('RhWfNode', () => {
     });
 
     const buttons = screen.getAllByRole('button');
-    const executeButton = buttons.find((btn) => btn.textContent?.includes('执行'));
+    const executeButton = buttons.find((btn) => btn.textContent?.includes('运行'));
     expect(executeButton).toBeDefined();
 
     fireEvent.click(executeButton!);
 
     await waitFor(() => {
-      expect(mockExecuteRhWorkflowApi).toHaveBeenCalled();
+      expect(mockExecuteRhWfNode).toHaveBeenCalled();
     });
   });
 
@@ -342,7 +335,7 @@ describe('RhWfNode', () => {
       loading: true,
     });
 
-    expect(screen.getByText('执行中...')).toBeInTheDocument();
+    expect(screen.getByText('运行中...')).toBeInTheDocument();
   });
 
   // Test 10: renders error message

@@ -142,47 +142,103 @@ export async function executeRhAppNode(ctx: NodeExecutionContext): Promise<void>
       signal
     );
 
-    // 处理返回结果（可能是 ZIP）
+    // 处理返回结果
     let finalOutputUrl = result.outputUrl;
     let finalOutputUrls = result.outputUrls;
+    // 记录是否为 ZIP 结果
+    let wasZipExtracted = false;
 
-    // 检查是否是 ZIP 文件
-    if (finalOutputUrl.endsWith('.zip') || finalOutputUrl.includes('.zip?')) {
+    // 判断是否需要 ZIP 解压：检查 URL 后缀 + API 返回的 fileType 字段
+    const isZipResult =
+      finalOutputUrl.endsWith('.zip') ||
+      finalOutputUrl.includes('.zip?') ||
+      !!(result.fileTypes?.some(t => t === 'zip'));
+
+    // 简单 URL 类型推断（用于非 ZIP 结果）
+    const inferTypeSimple = (url: string): string => {
+      const lower = url.toLowerCase();
+      if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
+      if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
+      if (lower.includes('/view?')) return 'image';
+      if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
+      return 'image';
+    };
+
+    let allUrlTypes: string[] = [];
+    if (isZipResult) {
       try {
         const mediaFiles = await extractZipContents(finalOutputUrl, signal);
         const classified = classifyMedia(mediaFiles);
-        const allUrls: string[] = [
-          ...classified.images.map(f => f.url),
-          ...classified.videos.map(f => f.url),
-          ...classified.audio.map(f => f.url),
-        ];
+        const allUrls: string[] = [];
+        for (const f of classified.images) { allUrls.push(f.url); allUrlTypes.push('image'); }
+        for (const f of classified.videos) { allUrls.push(f.url); allUrlTypes.push('video'); }
+        for (const f of classified.audio) { allUrls.push(f.url); allUrlTypes.push('audio'); }
         if (allUrls.length > 0) {
           finalOutputUrl = allUrls[0]!;
           finalOutputUrls = allUrls;
+          wasZipExtracted = true;
         }
       } catch (extractErr) {
-        console.warn('[RhAppExecutor] ZIP 解压失败，使用原始 URL:', extractErr);
+        console.warn('[RhAppExecutor] ZIP 解压失败，输出 ZIP URL 文本，可连接下游 ZIP 节点:', extractErr);
+        // 解压失败：将 ZIP URL 作为 textOutput 输出，同时保留 outputUrl 供下游 ZIP 节点连线
+        // 下游 ZIP 节点通过 any-input 接收 text 字段的 URL
+        updateNodeData(node.id, {
+          outputUrl: finalOutputUrl,
+          outputUrls: undefined,
+          outputUrlTypes: undefined,
+          textOutput: finalOutputUrl,
+          loading: false,
+          progress: 0,
+        });
+        return;
+      }
+    } else if (finalOutputUrls.length > 0) {
+      // 非 ZIP 结果：从 API fileTypes 获取类型，或从 URL 推断
+      if (result.fileTypes && result.fileTypes.length > 0) {
+        allUrlTypes = result.fileTypes.map(t => t || 'image');
+      } else {
+        allUrlTypes = finalOutputUrls.map(url => inferTypeSimple(url));
       }
     }
 
     // 判断输出类型
     const effectiveOutputType = config.outputType ?? 'auto';
+    // isMediaUrl: URL 后缀匹配 + blob URL (ZIP 解压产物) + ComfyUI view 端点
     const isMediaUrl =
+      wasZipExtracted ||
+      finalOutputUrl.startsWith('blob:') ||
       finalOutputUrl.includes('/view?') ||
       /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(finalOutputUrl);
+    // 对于 ZIP 解压产物，使用 allUrlTypes[0] 获取精确类型
+    const inferredMediaType = wasZipExtracted
+      ? (allUrlTypes[0] ?? 'image')
+      : undefined;
 
     if (effectiveOutputType === 'text' || (!isMediaUrl && effectiveOutputType === 'auto')) {
       updateNodeData(node.id, {
         textOutput: finalOutputUrl,
         outputUrl: undefined,
         outputUrls: undefined,
+        outputUrlTypes: undefined,
+        loading: false,
+        progress: 0,
+      });
+    } else if (effectiveOutputType === 'auto' && inferredMediaType) {
+      // ZIP 解压场景：使用推断的精确媒体类型，而非笼统归为 image
+      updateNodeData(node.id, {
+        outputUrl: finalOutputUrl,
+        outputUrls: finalOutputUrls.length > 0 ? finalOutputUrls : undefined,
+        outputUrlTypes: allUrlTypes.length > 0 ? allUrlTypes : undefined,
+        textOutput: undefined,
+        config: { ...config, outputType: inferredMediaType } as Partial<RhAppNodeConfig>,
         loading: false,
         progress: 0,
       });
     } else {
       updateNodeData(node.id, {
         outputUrl: finalOutputUrl,
-        outputUrls: finalOutputUrls.length > 1 ? finalOutputUrls : undefined,
+        outputUrls: finalOutputUrls.length > 0 ? finalOutputUrls : undefined,
+        outputUrlTypes: allUrlTypes.length > 0 ? allUrlTypes : undefined,
         textOutput: undefined,
         loading: false,
         progress: 0,

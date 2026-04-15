@@ -10,7 +10,7 @@ import RhAppNodeComponent from './RhAppNode';
 
 const mockUpdateNodeData = vi.fn();
 const mockFetchRhAppNodeInfo = vi.fn();
-const mockUploadFile = vi.fn();
+const mockExecuteRhAppNode = vi.fn();
 
 const mockApps = [
   { id: 'app1', name: 'Test App 1', category: 'image' },
@@ -18,6 +18,15 @@ const mockApps = [
 ];
 
 let mockApiKey = 'test-api-key';
+let storeNodes: any[] = [];
+
+// mockUpdateNodeData should also update storeNodes so getState() returns fresh data
+mockUpdateNodeData.mockImplementation((nodeId: string, patch: Record<string, unknown>) => {
+  const idx = storeNodes.findIndex((n: any) => n.id === nodeId);
+  if (idx >= 0) {
+    storeNodes[idx] = { ...storeNodes[idx], data: { ...storeNodes[idx].data, ...patch } };
+  }
+});
 
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual('@xyflow/react');
@@ -35,16 +44,19 @@ vi.mock('@xyflow/react', async () => {
   };
 });
 
-vi.mock('@/stores/useFlowStore', () => ({
-  useFlowStore: (selector: any) => {
-    const state = {
-      updateNodeData: mockUpdateNodeData,
-      nodes: [],
-      edges: [],
-    };
-    return selector(state);
-  },
-}));
+vi.mock('@/stores/useFlowStore', () => {
+  const getStoreState = () => ({
+    updateNodeData: mockUpdateNodeData,
+    nodes: storeNodes,
+    edges: [],
+  });
+  return {
+    useFlowStore: Object.assign(
+      (selector: any) => selector(getStoreState()),
+      { getState: () => getStoreState() }
+    ),
+  };
+});
 
 vi.mock('@/stores/useSettingsStore', () => ({
   useSettingsStore: (selector: any) => {
@@ -60,7 +72,10 @@ vi.mock('@/stores/useSettingsStore', () => ({
 
 vi.mock('@/api/rhApi', () => ({
   fetchRhAppNodeInfo: (...args: any[]) => mockFetchRhAppNodeInfo(...args),
-  uploadFileToRunningHub: (...args: any[]) => mockUploadFile(...args),
+}));
+
+vi.mock('@/store/execution/rhAppExecutor', () => ({
+  executeRhAppNode: (...args: any[]) => mockExecuteRhAppNode(...args),
 }));
 
 vi.mock('./BaseNode', () => ({
@@ -89,6 +104,8 @@ function renderRhAppNode(overrides: Record<string, unknown> = {}) {
     errorMessage: '',
     ...overrides,
   };
+  // Reset and populate mock store nodes so getState() returns fresh data
+  storeNodes = [{ id: 'rh1', data: defaultData, type: 'rhApp' }];
   return render(
     <RhAppNodeComponent
       id="rh1"
@@ -215,8 +232,8 @@ describe('RhAppNode', () => {
     });
   });
 
-  // Test 6: renders IMAGE upload button after APP selected
-  it('renders IMAGE upload button after APP selected', async () => {
+  // Test 6: renders IMAGE interface hint after APP selected
+  it('renders IMAGE interface hint after APP selected', async () => {
     const mockNodeInfoList = [
       {
         nodeId: 'node1',
@@ -239,16 +256,15 @@ describe('RhAppNode', () => {
     fireEvent.change(appSelect!, { target: { value: 'app1' } });
 
     await waitFor(() => {
-      expect(screen.getByText('上传')).toBeInTheDocument();
+      expect(screen.getByText(/通过 IMAGE 接口传入/)).toBeInTheDocument();
     });
   });
 
-  // Test 7: renders image-N handles when IMAGE fields > 2
-  it('renders image-N handles when IMAGE fields > 2', async () => {
+  // Test 7: renders image-N handles when IMAGE fields > 1 (aligned with OmniNode)
+  it('renders image-N handles when IMAGE fields > 1', async () => {
     const mockNodeInfoList = [
       { nodeId: 'node1', nodeName: 'Img1', fieldName: 'image1', fieldValue: '', fieldType: 'IMAGE' },
       { nodeId: 'node2', nodeName: 'Img2', fieldName: 'image2', fieldValue: '', fieldType: 'IMAGE' },
-      { nodeId: 'node3', nodeName: 'Img3', fieldName: 'image3', fieldValue: '', fieldType: 'IMAGE' },
     ];
     mockFetchRhAppNodeInfo.mockResolvedValue({ nodeInfoList: mockNodeInfoList });
 
@@ -264,15 +280,13 @@ describe('RhAppNode', () => {
     await waitFor(() => {
       expect(screen.getByTestId('handle-image-0')).toBeInTheDocument();
       expect(screen.getByTestId('handle-image-1')).toBeInTheDocument();
-      expect(screen.getByTestId('handle-image-2')).toBeInTheDocument();
     });
   });
 
-  // Test 8: renders no extra image handles when IMAGE fields <= 2
-  it('renders no extra image handles when IMAGE fields <= 2', async () => {
+  // Test 8: renders no extra image handles when IMAGE fields <= 1
+  it('renders no extra image handles when IMAGE fields <= 1', async () => {
     const mockNodeInfoList = [
       { nodeId: 'node1', nodeName: 'Img1', fieldName: 'image1', fieldValue: '', fieldType: 'IMAGE' },
-      { nodeId: 'node2', nodeName: 'Img2', fieldName: 'image2', fieldValue: '', fieldType: 'IMAGE' },
     ];
     mockFetchRhAppNodeInfo.mockResolvedValue({ nodeInfoList: mockNodeInfoList });
 
@@ -308,7 +322,7 @@ describe('RhAppNode', () => {
       loading: true,
     });
 
-    expect(screen.getByText('执行中...')).toBeInTheDocument();
+    expect(screen.getByText('运行中...')).toBeInTheDocument();
   });
 
   // Test 11: renders error message
@@ -365,7 +379,7 @@ describe('RhAppNode', () => {
     });
 
     const buttons = screen.getAllByRole('button');
-    const executeButton = buttons.find((btn) => btn.textContent === '▶ 执行');
+    const executeButton = buttons.find((btn) => btn.textContent === '▶ 运行');
     expect(executeButton).toBeDefined();
 
     fireEvent.click(executeButton!);
@@ -375,20 +389,22 @@ describe('RhAppNode', () => {
     });
   });
 
-  // Test 14: execute button with appId triggers loading
-  it('execute button with appId sets loading true', async () => {
+  // Test 14: execute button with appId triggers execution
+  it('execute button with appId triggers execution', async () => {
+    mockExecuteRhAppNode.mockResolvedValue(undefined);
+
     renderRhAppNode({
       config: { appId: 'app1', nodeInfoList: [] },
     });
 
     const buttons = screen.getAllByRole('button');
-    const executeButton = buttons.find((btn) => btn.textContent === '▶ 执行');
+    const executeButton = buttons.find((btn) => btn.textContent === '▶ 运行');
     expect(executeButton).toBeDefined();
 
     fireEvent.click(executeButton!);
 
     await waitFor(() => {
-      expect(mockUpdateNodeData).toHaveBeenCalledWith('rh1', expect.objectContaining({ loading: true }));
+      expect(mockExecuteRhAppNode).toHaveBeenCalled();
     });
   });
 });

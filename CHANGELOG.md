@@ -2,6 +2,49 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.7] - 2026-04-16
+
+### ZIP 解压节点 & 类型感知路由 & 智能连线
+
+#### 新增
+
+- **RhZipNode** (`src/components/canvas/RhZipNode.tsx`) — ZIP 解压节点
+  - 三种输入方式：上游连线传入 ZIP URL、粘贴 URL、本地/拖拽上传 ZIP 文件
+  - 解压后自动输出媒体文件（outputUrl/outputUrls/outputUrlTypes）
+  - 支持多文件预览（网格布局）
+  - 分类逻辑由下游路由节点负责
+- **rhZipExecutor** (`src/store/execution/rhZipExecutor.ts`) — ZIP 解压执行器
+  - `executeRhZipNode()` — 画布级执行（处理远程 URL）
+  - `executeRhZipLocal()` — 本地上传解压
+
+#### RouterNode 重构
+
+- **类型感知路由**：Handle ID 即类型名（image/video/audio/text）
+- **动态推导**：从 incoming edges 推断活跃输入类型，动态渲染对应 handles
+- **泛型输入**：支持 any-input/generic-input 连接，自动透传所有上游数据
+- **双向 handle**：左侧输入、右侧输出，一一对应
+
+#### FlowCanvas 增强
+
+- **自动连接映射**：`resolveTargetHandleId()` / `resolveSourceHandleId()`
+  - 拖拽创建节点时自动推断目标输入 handle
+  - 支持从 source 和 target 双向拖拽
+- **智能连线**：选择节点后自动建立源到目标的边
+
+#### connectedInputs 增强
+
+- `inferMediaOutput()` 新增 `outputUrlTypes` 参数 — 精确类型元数据
+- `getSourceOutput()` 新增 `rhZipNode` 分支
+- RouterNode 泛型输出透传：generic-output 透传所有上游数据
+
+#### 修改文件
+
+- `src/types.ts` — 新增 RhZipNodeType/RhZipNodeConfig/RhZipNodeData 类型
+- `src/utils/nodeFactory.ts` — 注册 RhZipNode 节点工厂
+- `src/store/execution/index.ts` — 注册 rhZipNodeExecutor
+- `src/utils/zipExtractor.ts` — outputUrlTypes 支持
+- `src/components/canvas/NodeSidebar.tsx` — 侧边栏新增 ZIP 解压入口
+
 ## [0.1.6] - 2026-04-15
 
 ### RunningHub 独立节点 & 全栈测试覆盖

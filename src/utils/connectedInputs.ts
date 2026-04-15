@@ -88,6 +88,7 @@ function inferHandleType(handleId: string | null | undefined): 'image' | 'video'
  * - 显式 outputType（非 auto）→ 只输出该类型数据
  * - auto 模式 → 根据下游 targetHandleType 需求分发
  * - additionalValues 携带 outputUrls 中的同类型其余 URL
+ * - outputUrlTypes 提供每个 URL 的精确类型元数据（优先于 URL 推断）
  */
 function inferMediaOutput(
   outputUrl: string | undefined,
@@ -95,10 +96,23 @@ function inferMediaOutput(
   textOutput: string | undefined,
   outputType: string,
   targetHandleType: 'image' | 'video' | 'audio' | 'text' | 'any',
+  outputUrlTypes?: string[],
 ): SourceOutput {
   // ─── 辅助：根据 URL 推断媒体类型 ───
-  const inferType = (url: string): SourceOutput['type'] => {
+  const inferType = (url: string, index?: number): SourceOutput['type'] => {
+    // Priority 1: Use explicit type metadata if available
+    if (outputUrlTypes && index !== undefined && outputUrlTypes[index]) {
+      const t = outputUrlTypes[index]!;
+      if (t === 'image' || t === 'video' || t === 'audio' || t === 'text') return t;
+    }
+    // Priority 2: URL extension inference
     const lower = url.toLowerCase();
+    if (url.startsWith('blob:')) {
+      // blob URL without metadata — fallback based on outputType
+      if (outputType === 'video') return 'video';
+      if (outputType === 'audio') return 'audio';
+      return 'image'; // default fallback for blob
+    }
     if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(lower)) return 'video';
     if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
     if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
@@ -109,8 +123,12 @@ function inferMediaOutput(
   };
 
   // ─── 辅助：URL 是否匹配期望类型 ───
-  const urlMatchesType = (url: string, want: 'image' | 'video' | 'audio'): boolean => {
-    return inferType(url) === want;
+  const urlMatchesType = (url: string, want: 'image' | 'video' | 'audio', index?: number): boolean => {
+    // Check metadata first
+    if (outputUrlTypes && index !== undefined && outputUrlTypes[index]) {
+      return outputUrlTypes[index] === want;
+    }
+    return inferType(url, index) === want;
   };
 
   // ─── 显式类型模式 ───
@@ -121,12 +139,12 @@ function inferMediaOutput(
     // image / video / audio
     if (outputUrl && urlMatchesType(outputUrl, outputType as 'image' | 'video' | 'audio')) {
       const additional = (outputUrls && outputUrls.length > 0)
-        ? outputUrls.filter((u) => u !== outputUrl && urlMatchesType(u, outputType as 'image' | 'video' | 'audio'))
+        ? outputUrls.filter((u, i) => u !== outputUrl && urlMatchesType(u, outputType as 'image' | 'video' | 'audio', i))
         : undefined;
       return { type: outputType as SourceOutput['type'], value: outputUrl, additionalValues: additional };
     }
     if (outputUrls) {
-      const matching = outputUrls.filter((u) => urlMatchesType(u, outputType as 'image' | 'video' | 'audio'));
+      const matching = outputUrls.filter((u, i) => urlMatchesType(u, outputType as 'image' | 'video' | 'audio', i));
       if (matching.length > 0) {
         return { type: outputType as SourceOutput['type'], value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
       }
@@ -147,11 +165,11 @@ function inferMediaOutput(
 
   if (want === 'image') {
     if (outputUrl && urlMatchesType(outputUrl, 'image')) {
-      const additional = outputUrls ? outputUrls.filter((u) => u !== outputUrl && urlMatchesType(u, 'image')) : undefined;
+      const additional = outputUrls ? outputUrls.filter((u, i) => u !== outputUrl && urlMatchesType(u, 'image', i)) : undefined;
       return { type: 'image', value: outputUrl, additionalValues: additional };
     }
     if (outputUrls) {
-      const matching = outputUrls.filter((u) => urlMatchesType(u, 'image'));
+      const matching = outputUrls.filter((u, i) => urlMatchesType(u, 'image', i));
       if (matching.length > 0) {
         return { type: 'image', value: matching[0]!, additionalValues: matching.length > 1 ? matching.slice(1) : undefined };
       }
@@ -162,7 +180,7 @@ function inferMediaOutput(
   if (want === 'video') {
     if (outputUrl && urlMatchesType(outputUrl, 'video')) return { type: 'video', value: outputUrl };
     if (outputUrls) {
-      const matching = outputUrls.filter((u) => urlMatchesType(u, 'video'));
+      const matching = outputUrls.filter((u, i) => urlMatchesType(u, 'video', i));
       if (matching.length > 0) return { type: 'video', value: matching[0]! };
     }
     return { type: 'video', value: null };
@@ -171,7 +189,7 @@ function inferMediaOutput(
   if (want === 'audio') {
     if (outputUrl && urlMatchesType(outputUrl, 'audio')) return { type: 'audio', value: outputUrl };
     if (outputUrls) {
-      const matching = outputUrls.filter((u) => urlMatchesType(u, 'audio'));
+      const matching = outputUrls.filter((u, i) => urlMatchesType(u, 'audio', i));
       if (matching.length > 0) return { type: 'audio', value: matching[0]! };
     }
     return { type: 'audio', value: null };
@@ -184,7 +202,7 @@ function inferMediaOutput(
     return { type: inferred, value: outputUrl, additionalValues: additional };
   }
   if (outputUrls && outputUrls.length > 0) {
-    const primaryType = inferType(outputUrls[0]!);
+    const primaryType = inferType(outputUrls[0]!, 0);
     return { type: primaryType, value: outputUrls[0]!, additionalValues: outputUrls.length > 1 ? outputUrls.slice(1) : undefined };
   }
   if (textOutput) return { type: 'text', value: textOutput };
@@ -262,6 +280,7 @@ function getSourceOutput(
           ? ((data.config as Record<string, unknown> | undefined)?.comfyuiOutputType as string || 'auto')
           : ((data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto'),
         targetHandleType ?? 'any',
+        data.outputUrlTypes as string[] | undefined,
       );
     }
 
@@ -273,6 +292,7 @@ function getSourceOutput(
         data.textOutput as string | undefined,
         (data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto',
         targetHandleType ?? 'any',
+        data.outputUrlTypes as string[] | undefined,
       );
     }
 
@@ -284,6 +304,19 @@ function getSourceOutput(
         data.textOutput as string | undefined,
         (data.config as Record<string, unknown> | undefined)?.outputType as string || 'auto',
         targetHandleType ?? 'any',
+        data.outputUrlTypes as string[] | undefined,
+      );
+    }
+
+    // ZIP 解压节点（rhZipNode）
+    case 'rhZipNode': {
+      return inferMediaOutput(
+        data.outputUrl as string | undefined,
+        data.outputUrls as string[] | undefined,
+        data.textOutput as string | undefined,
+        'auto',
+        targetHandleType ?? 'any',
+        data.outputUrlTypes as string[] | undefined,
       );
     }
 
@@ -399,6 +432,13 @@ export function getConnectedInputs(
         } else if (edgeType === 'audio') {
           audio.push(...routerInputs.audio);
         } else if (edgeType === '3d') {
+          if (routerInputs.model3d) model3d = routerInputs.model3d;
+        } else {
+          // 泛型输出（generic-output / 旧 handle）：透传所有上游数据
+          images.push(...routerInputs.images);
+          videos.push(...routerInputs.videos);
+          audio.push(...routerInputs.audio);
+          if (routerInputs.text) text = routerInputs.text;
           if (routerInputs.model3d) model3d = routerInputs.model3d;
         }
         return;

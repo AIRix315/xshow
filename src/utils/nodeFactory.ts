@@ -12,6 +12,7 @@ import type {
   OmniNodeData,
   RhAppNodeData,
   RhWfNodeData,
+  RhZipNodeData,
 } from '@/types';
 
 // Ref: §6.11 — 懒加载节点组件
@@ -25,6 +26,7 @@ const GridMergeNode = lazy(() => import('@/components/canvas/GridMergeNode'));
 const OmniNode = lazy(() => import('@/components/canvas/OmniNode')); // 万能节点
 const RhAppNode = lazy(() => import('@/components/canvas/RhAppNode')); // RunningHub APP 节点
 const RhWfNode = lazy(() => import('@/components/canvas/RhWfNode')); // RunningHub Workflow 节点
+const RhZipNode = lazy(() => import('@/components/canvas/RhZipNode')); // ZIP 解压节点
 
 // 输入节点
 const TextInputNode = lazy(() => import('@/components/canvas/TextInputNode'));
@@ -59,6 +61,7 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   omniNode: OmniNode as unknown as ComponentType<NodeProps>, // 万能节点
   rhAppNode: RhAppNode as unknown as ComponentType<NodeProps>, // RunningHub APP 节点
   rhWfNode: RhWfNode as unknown as ComponentType<NodeProps>, // RunningHub Workflow 节点
+  rhZipNode: RhZipNode as unknown as ComponentType<NodeProps>, // ZIP 解压节点
   
   // 输入节点（Input 后缀）
   textInputNode: TextInputNode as unknown as ComponentType<NodeProps>,
@@ -101,6 +104,7 @@ const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   omniNode: { width: 400, height: 300 },
   rhAppNode: { width: 360, height: 320 },
   rhWfNode: { width: 400, height: 320 },
+  rhZipNode: { width: 240, height: 260 },
   
   // 输入节点
   textInputNode: { width: 300, height: 200 },
@@ -232,6 +236,12 @@ function getDefaultData(type: string): Record<string, unknown> {
         },
         loading: false,
       } as RhWfNodeData;
+    
+    case 'rhZipNode':
+      return {
+        label: 'ZIP 解压',
+        loading: false,
+      } as RhZipNodeData;
     
     // 九宫格拆分
     case 'gridSplitNode':

@@ -11,16 +11,15 @@
  * - ZIP 解压处理
  */
 
-import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import { memo, useCallback, useRef, useState, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
 import type { RhWfNodeType, RhWfNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
-import { executeRhWorkflowApi, fetchRhWorkflowJson, uploadFileToRunningHub, parseRhWorkflowNodes } from '@/api/rhApi';
+import { fetchRhWorkflowJson, parseRhWorkflowNodes } from '@/api/rhApi';
 import type { RhWorkflowNode } from '@/api/rhApi';
-import { getConnectedInputs, getInputsByHandle } from '@/utils/connectedInputs';
-import { extractZipContents, classifyMedia } from '@/utils/zipExtractor';
+import { getConnectedInputs } from '@/utils/connectedInputs';
 
 const OUTPUT_TYPE_OPTIONS = [
   { value: 'auto', label: 'Auto（自动）' },
@@ -31,8 +30,6 @@ const OUTPUT_TYPE_OPTIONS = [
 ];
 
 function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
-  const nodes = useFlowStore((s) => s.nodes);
-  const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -57,31 +54,12 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
   // 工作流节点解析结果
   const [parsedNodes, setParsedNodes] = useState<RhWorkflowNode[]>([]);
 
-  // 计算 IMAGE 字段的数量（所有节点，不仅 LoadImage）
-  const imageFieldCount = useMemo(() => {
-    return parsedNodes
-      .flatMap((n) =>
-        Object.entries(n.inputs)
-          .filter(([, fi]) => fi?.type === 'IMAGE')
-      ).length;
-  }, [parsedNodes]);
-
   // 监听 handles 变化，通知 React Flow 更新
   useEffect(() => {
     updateNodeInternals(id);
   }, [id, updateNodeInternals]);
 
-  // 上游数据
-  const upstreamData = useMemo(() => {
-    return getConnectedInputs(id, nodes, edges);
-  }, [id, nodes, edges]);
-
-  // 按 handle 收集数据（用于多图填充）
-  const inputsByHandle = useMemo(() => {
-    return getInputsByHandle(id, nodes, edges);
-  }, [id, nodes, edges]);
-
-  // 初始化时如果已有 workflow，加载节点
+  // 监听 handles 变化，通知 React Flow 更新
   useEffect(() => {
     if (config.workflowId && !parsedNodes.length) {
       handleSelectWorkflow(config.workflowId);
@@ -91,9 +69,11 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
 
   const updateConfig = useCallback(
     (patch: Partial<RhWfNodeConfig>) => {
-      updateNodeData(id, { config: { ...config, ...patch } });
+      // 从 store 实时读取最新 config，避免 stale closure
+      const freshConfig = (useFlowStore.getState().nodes.find(n => n.id === id)?.data?.config ?? {}) as RhWfNodeConfig;
+      updateNodeData(id, { config: { ...freshConfig, ...patch } });
     },
-    [id, config, updateNodeData]
+    [id, updateNodeData]
   );
 
   // 切换配置模式
@@ -154,22 +134,7 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
     updateNodeData(id, { nodeValues: newValues });
   }, [id, nodeValues, updateNodeData]);
 
-  // 从 nodeValues 生成 nodeInfoList
-  const generateNodeInfoList = useCallback((): Array<{ nodeId: string; fieldName: string; fieldValue: string }> => {
-    const list: Array<{ nodeId: string; fieldName: string; fieldValue: string }> = [];
-    for (const [nodeId, fields] of Object.entries(nodeValues ?? {})) {
-      for (const [fieldName, value] of Object.entries(fields)) {
-        const strValue = String(value ?? '');
-        // 跳过空值
-        if (strValue.trim() !== '') {
-          list.push({ nodeId, fieldName, fieldValue: strValue });
-        }
-      }
-    }
-    return list;
-  }, [nodeValues]);
-
-  // 执行
+  // 验证运行（单节点执行）
   const handleExecute = useCallback(async () => {
     if (loading) return;
     if (!config.workflowId) {
@@ -181,132 +146,35 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
       return;
     }
 
-    updateNodeData(id, { loading: true, errorMessage: '', progress: 0 });
     abortRef.current = new AbortController();
 
+    // 动态导入 executor，构造执行上下文
+    const { executeRhWfNode } = await import('@/store/execution/rhWfExecutor');
+    const currentNodes = useFlowStore.getState().nodes;
+    const currentEdges = useFlowStore.getState().edges;
+    const freshNode = currentNodes.find(n => n.id === id);
+    if (!freshNode) return;
+
+    const ctx = {
+      node: freshNode,
+      nodes: currentNodes,
+      edges: currentEdges,
+      getConnectedInputs: (nodeId: string) => getConnectedInputs(nodeId, currentNodes, currentEdges),
+      updateNodeData: (nodeId: string, patch: Record<string, unknown>) => {
+        useFlowStore.getState().updateNodeData(nodeId, patch);
+      },
+      getFreshNode: (nodeId: string) => useFlowStore.getState().nodes.find(n => n.id === nodeId),
+      signal: abortRef.current.signal,
+    };
+
     try {
-      // 1. 收集需要上传的文件
-      const nodeInfoList = generateNodeInfoList();
-
-      // 2. 如果有上游图片/视频/音频，需要上传到 RunningHub
-      const processedNodeInfoList = [...nodeInfoList];
-
-      // 获取所有 IMAGE 字段
-      const imageFields = parsedNodes
-        .flatMap((n) =>
-          Object.entries(n.inputs)
-            .filter(([, fi]) => fi?.type === 'IMAGE')
-            .map(([field]) => ({ nodeId: n.nodeId, field }))
-        );
-
-      // 处理图片字段
-      for (const [handleId, images] of Object.entries(inputsByHandle)) {
-        if (!handleId.startsWith('image-')) continue;
-        const handleIndex = parseInt(handleId.replace('image-', ''), 10);
-        const targetField = imageFields[handleIndex];
-        if (!targetField) continue;
-
-        for (const imageUrl of images) {
-          try {
-            const fileName = await uploadFileToRunningHub(apiKey, imageUrl, 'input', abortRef.current?.signal);
-            // 查找或添加条目
-            const idx = processedNodeInfoList.findIndex(
-              (n) => n.nodeId === targetField.nodeId && n.fieldName === targetField.field
-            );
-            if (idx >= 0) {
-              processedNodeInfoList[idx]!.fieldValue = fileName;
-            } else {
-              processedNodeInfoList.push({ nodeId: targetField.nodeId, fieldName: targetField.field, fieldValue: fileName });
-            }
-          } catch (uploadErr) {
-            throw new Error(`上传图片失败: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`);
-          }
-        }
-      }
-
-      // 处理上游文本（填入第一个 STRING 字段）
-      if (upstreamData.text) {
-        const stringField = parsedNodes
-          .flatMap((n) =>
-            Object.entries(n.inputs)
-              .filter(([, fi]) => fi?.type === 'STRING')
-              .map(([field]) => ({ nodeId: n.nodeId, field }))
-          )[0];
-        if (stringField) {
-          const idx = processedNodeInfoList.findIndex(
-            (n) => n.nodeId === stringField.nodeId && n.fieldName === stringField.field
-          );
-          if (idx >= 0) {
-            processedNodeInfoList[idx]!.fieldValue = upstreamData.text;
-          } else {
-            processedNodeInfoList.push({ nodeId: stringField.nodeId, fieldName: stringField.field, fieldValue: upstreamData.text });
-          }
-        }
-      }
-
-      // 3. 执行工作流
-      const result = await executeRhWorkflowApi(
-        apiKey,
-        config.workflowId!,
-        processedNodeInfoList,
-        (p) => updateNodeData(id, { progress: p }),
-        abortRef.current.signal
-      );
-
-      // 4. 处理返回结果（可能是 ZIP）
-      let finalOutputUrl = result.outputUrl;
-      let finalOutputUrls = result.outputUrls;
-
-      // 检查是否是 ZIP 文件
-      if (result.outputUrl.endsWith('.zip') || result.outputUrl.includes('.zip?')) {
-        try {
-          const mediaFiles = await extractZipContents(result.outputUrl, abortRef.current.signal);
-          const classified = classifyMedia(mediaFiles);
-
-          // 生成所有文件的 URL
-          const allUrls: string[] = [
-            ...classified.images.map((f) => f.url),
-            ...classified.videos.map((f) => f.url),
-            ...classified.audio.map((f) => f.url),
-          ];
-
-          if (allUrls.length > 0) {
-            finalOutputUrl = allUrls[0]!;
-            finalOutputUrls = allUrls;
-          }
-        } catch (extractErr) {
-          console.warn('[RhWfNode] ZIP 解压失败，使用原始 URL:', extractErr);
-        }
-      }
-
-      // 5. 判断输出类型
-      const effectiveOutputType = config.outputType ?? 'auto';
-      const isMediaUrl =
-        finalOutputUrl.includes('/view?') ||
-        /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(finalOutputUrl);
-
-      if (effectiveOutputType === 'text' || (!isMediaUrl && effectiveOutputType === 'auto')) {
-        updateNodeData(id, {
-          textOutput: finalOutputUrl,
-          outputUrl: undefined,
-          outputUrls: undefined,
-          loading: false,
-          progress: 0,
-        });
-      } else {
-        updateNodeData(id, {
-          outputUrl: finalOutputUrl,
-          outputUrls: finalOutputUrls.length > 1 ? finalOutputUrls : undefined,
-          textOutput: undefined,
-          loading: false,
-          progress: 0,
-        });
-      }
+      await executeRhWfNode(ctx);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '执行失败';
-      updateNodeData(id, { loading: false, errorMessage: msg, progress: 0 });
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        console.warn('[RhWfNode] 验证运行失败:', err);
+      }
     }
-  }, [loading, config, apiKey, id, updateNodeData, parsedNodes, generateNodeInfoList, inputsByHandle, upstreamData]);
+  }, [loading, config.workflowId, apiKey, id, updateNodeData]);
 
   // 停止
   const handleStop = useCallback(() => {
@@ -315,13 +183,22 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
 
   // 判断输出类型
   const effectiveOutputType = config.outputType ?? 'auto';
+  const outputUrlTypes = data.outputUrlTypes as string[] | undefined;
+  // blob URL type from metadata (ZIP extraction result), fallback to URL extension inference
+  const blobMediaType = outputUrl?.startsWith('blob:') && outputUrlTypes?.[0]
+    ? outputUrlTypes[0] : undefined;
   const isMediaUrl =
+    !!blobMediaType ||
+    outputUrl?.startsWith('blob:') ||
     outputUrl?.includes('/view?') ||
     /\.(png|jpg|jpeg|gif|webp|mp4|webm|mp3|wav)(\?|$)/i.test(outputUrl ?? '');
   const displayOutputType =
     effectiveOutputType === 'auto'
       ? isMediaUrl
-        ? 'image'
+        ? blobMediaType && ['video', 'audio', 'image'].includes(blobMediaType) ? blobMediaType
+          : /\.(mp4|webm|mov)(\?|$)/i.test(outputUrl ?? '') ? 'video'
+          : /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(outputUrl ?? '') ? 'audio'
+          : 'image'
         : 'text'
       : effectiveOutputType;
 
@@ -338,7 +215,7 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <span className="text-[10px]">执行中...</span>
+            <span className="text-[10px]">运行中...</span>
           </div>
         ) : errorMessage ? (
           <span className="text-[10px] text-error px-2 text-center">{errorMessage}</span>
@@ -377,11 +254,13 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
       loading={loading}
       errorMessage={errorMessage}
       onSettings={toggleConfigMode}
+      minHeight={200}
+      minWidth={200}
     >
-      <div className="flex flex-col gap-2 min-h-0 flex-1">
-        {/* 配置模式 */}
+      <div className="flex flex-col h-full min-h-[180px]">
+        {/* 配置模式内容区 - 可滚动 */}
         {configMode && (
-          <div className="flex flex-col gap-2 px-1">
+          <div className="flex-1 min-h-0 overflow-y-auto px-1 flex flex-col gap-2">
             {/* 输出类型 */}
             <select
               value={config.outputType ?? 'auto'}
@@ -423,7 +302,7 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
 
             {/* 节点参数编辑 */}
             {parsedNodes.length > 0 && (
-              <div className="flex flex-col gap-0.5 bg-[#1a1a1a] rounded p-1 border border-border max-h-40 overflow-y-auto">
+              <div className="flex flex-col gap-0.5 bg-[#1a1a1a] rounded p-1 border border-border">
                 {parsedNodes.map((node) => (
                   <div key={node.nodeId} className="flex flex-col gap-0.5 p-1 bg-surface rounded">
                     <span className="text-[8px] text-primary font-mono">[{node.nodeId}] {node.classType}</span>
@@ -456,8 +335,33 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
           </div>
         )}
 
-        {/* 预览模式 */}
-        {!configMode && previewContent}
+        {/* 预览模式 - 最大化填充 */}
+        {!configMode && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {previewContent}
+          </div>
+        )}
+
+        {/* 运行按钮 - 固定在底部 */}
+        <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
+          <div className="flex gap-1">
+            <button
+              onClick={handleExecute}
+              disabled={loading}
+              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
+            >
+              {loading ? '运行中...' : '▶ 运行'}
+            </button>
+            {loading && (
+              <button
+                onClick={handleStop}
+                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
+              >
+                ⏹ 停止
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 默认 any handle — 始终保留，用于接收上游数据 */}
@@ -476,55 +380,12 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
         }}
       />
       <div
-        className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+        className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
         data-type="any"
         style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}
       >
         Any
       </div>
-
-      {/* 多图模式：仅当 IMAGE 字段数量 > 2 时，显示额外的 image-* handles */}
-      {imageFieldCount > 2 && (
-        <>
-          {Array.from({ length: imageFieldCount }, (_, i) => {
-            // 计算位置：跳过 50% 的 any handle
-            const totalSlots = imageFieldCount + 1; // +1 预留 any handle
-            let position = ((i + 1) / totalSlots) * 100;
-            // 如果位置接近 50%，向下偏移一点
-            if (Math.abs(position - 50) < 15) {
-              position = position < 50 ? position - 10 : position + 10;
-            }
-            return (
-              <Handle
-                key={`image-${i}`}
-                type="target"
-                position={Position.Left}
-                id={`image-${i}`}
-                data-handletype="image"
-                style={{ top: `${position}%`, zIndex: 10, backgroundColor: '#10b981', width: 10, height: 10, border: '2px solid #1e1e1e' }}
-              />
-            );
-          })}
-          {/* 图片 handle 标签 */}
-          {Array.from({ length: imageFieldCount }, (_, i) => {
-            const totalSlots = imageFieldCount + 1;
-            let position = ((i + 1) / totalSlots) * 100;
-            if (Math.abs(position - 50) < 15) {
-              position = position < 50 ? position - 10 : position + 10;
-            }
-            return (
-              <div
-                key={`image-label-${i}`}
-                className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
-                data-type="image"
-                style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
-              >
-                Image {i}
-              </div>
-            );
-          })}
-        </>
-      )}
 
       {/* 输出 Handle */}
       <Handle
@@ -542,32 +403,11 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
         }}
       />
       <div
-        className="absolute text-[9px] font-medium whitespace-nowrap pointer-events-none"
+        className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none"
         data-type="any"
         style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}
       >
         Any
-      </div>
-
-      {/* 执行按钮 */}
-      <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
-        <div className="flex gap-1">
-          <button
-            onClick={handleExecute}
-            disabled={loading}
-            className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
-          >
-            {loading ? '执行中...' : '▶ 执行'}
-          </button>
-          {loading && (
-            <button
-              onClick={handleStop}
-              className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
-            >
-              ⏹ 停止
-            </button>
-          )}
-        </div>
       </div>
     </BaseNodeWrapper>
   );

@@ -13,32 +13,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     fetch(url, fetchOptions)
       .then((res) => {
-        console.log('[Background] Fetch success:', res.status);
+        console.log('[Background] Fetch response:', res.status, url);
         const headers = {};
         res.headers.forEach((v, k) => { headers[k] = v; });
+
+        // 获取 Content-Type 判断是否需要二进制传输
         const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('json') || res.status !== 200) {
-          return res.text().then((text) => ({
-            ok: res.ok,
-            status: res.status,
-            headers,
-            data: text,
-          }));
+        const isBinary = contentType.includes('application/zip') ||
+                         contentType.includes('image/') ||
+                         contentType.includes('video/') ||
+                         contentType.includes('audio/') ||
+                         contentType.includes('application/octet-stream');
+
+        if (isBinary) {
+          // 二进制内容使用 arrayBuffer 传输，但 chrome.runtime.sendMessage
+          // 不支持直接传递 ArrayBuffer，需要转 base64
+          return res.arrayBuffer().then((buffer) => {
+            // 将 ArrayBuffer 转换为 base64 字符串
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+            return {
+              ok: res.ok,
+              status: res.status,
+              headers,
+              data: base64,
+              isBinary: true,
+            };
+          });
         }
-        return res.json().then((data) => ({
-          ok: res.ok,
-          status: res.status,
-          headers,
-          data,
-        })).catch(() => res.text().then((text) => ({
+
+        // 文本内容使用 text() 传输
+        return res.text().then((text) => ({
           ok: res.ok,
           status: res.status,
           headers,
           data: text,
-        })));
+          isBinary: false,
+        }));
       })
       .then((result) => {
-        console.log('[Background] Sending success response');
         sendResponse({ success: true, ...result });
       })
       .catch((err) => {

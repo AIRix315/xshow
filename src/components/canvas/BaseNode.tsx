@@ -128,11 +128,11 @@ function BaseNodeWrapper({
         {/* 标题栏 - 对标: bg=#262626, border-bottom 使用 accentColor */}
         {title && (
           <div
-            className="flex items-center justify-between px-3 py-1.5 border-b bg-[#262626] rounded-t-lg"
+            className="flex items-center px-3 py-1.5 border-b bg-[#262626] rounded-t-lg"
             style={{ borderBottomColor: accentColor ?? '#333' }}
           >
             <span className="font-semibold uppercase text-[#9ca3af] truncate">{title}</span>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
               {settingsPanel && (
                 <button 
                   onClick={() => setSettingsExpanded(!settingsExpanded)}
@@ -152,6 +152,7 @@ function BaseNodeWrapper({
                 </button>
               )}
             </div>
+            <div className="flex-1" />
           </div>
         )}
 

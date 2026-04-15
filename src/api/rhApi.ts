@@ -2,13 +2,19 @@
  * RunningHub API
  *
  * 封装 RunningHub API 调用
+ * 使用 extensionFetch 代理（修复 Chrome 扩展 SidePanel CORS/网络限制）
+ * 动态轮询策略：5分钟内3秒间隔，5分钟后10秒间隔，支持20分钟长任务
+ * 504 容错：网关超时时尝试恢复 taskId 或重试提交
  */
 
 import type { ComfyUINodeInfo } from '@/types';
+import { extensionFetch } from '@/api/comfyApi';
 
 export interface RhApiResult {
   outputUrl: string;
   outputUrls: string[];
+  /** 原始文件类型标识（如 "zip"），用于判断是否需要解压 */
+  fileTypes?: string[];
 }
 
 /**
@@ -28,6 +34,188 @@ export interface RhNodeInfo {
 }
 
 // ============================================================================
+// 动态轮询策略
+// ============================================================================
+
+const RH_BASE_URL = 'https://www.runninghub.cn';
+
+/** 前5分钟轮询间隔（毫秒）— 快速响应，适合3分钟内生图 */
+const POLL_INTERVAL_FAST = 3000;
+/** 5分钟后轮询间隔（毫秒）— 降频等待，覆盖长视频任务 */
+const POLL_INTERVAL_SLOW = 10000;
+/** 排队中轮询间隔（毫秒）— 还没开始执行，无需高频查 */
+const POLL_INTERVAL_QUEUED = 10000;
+/** 快速/慢速分界时间（毫秒）= 5分钟 */
+const PHASE_BOUNDARY_MS = 5 * 60 * 1000;
+/** 总超时（毫秒）= 20分钟，覆盖15-20分钟长视频特例 */
+const MAX_ELAPSED_MS = 20 * 60 * 1000;
+
+/**
+ * 根据已用时间和任务状态码返回轮询间隔
+ * @param elapsedMs 从任务提交开始经过的毫秒数
+ * @param lastCode 上一次轮询返回的业务状态码（804=运行中，813=排队中）
+ */
+function getPollInterval(elapsedMs: number, lastCode?: number): number {
+  // 排队中 → 10秒
+  if (lastCode === 813) return POLL_INTERVAL_QUEUED;
+  // 前5分钟 → 3秒
+  if (elapsedMs < PHASE_BOUNDARY_MS) return POLL_INTERVAL_FAST;
+  // 5分钟后 → 10秒
+  return POLL_INTERVAL_SLOW;
+}
+
+// ============================================================================
+// 通用轮询逻辑（rhApp 和 rhWorkflow 共用）
+// ============================================================================
+
+/**
+ * 检查 promptTips 中的节点错误，有则抛出
+ */
+function checkPromptTips(promptTips: string | undefined): void {
+  if (!promptTips) return;
+  try {
+    const tips = JSON.parse(promptTips);
+    if (tips.node_errors && Object.keys(tips.node_errors).length > 0) {
+      throw new Error(`工作流错误: ${JSON.stringify(tips.node_errors)}`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('工作流错误')) throw e;
+  }
+}
+
+/**
+ * 通用轮询 RunningHub 任务结果
+ * @param taskId 已提交的任务 ID
+ * @param onProgress 进度回调 (0~0.9)
+ * @param signal 取消信号
+ */
+async function pollRhTaskResult(
+  apiKey: string,
+  taskId: string,
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<RhApiResult> {
+  const startTime = Date.now();
+  let lastCode: number | undefined;
+
+  while (true) {
+    if (signal?.aborted) throw new Error('任务已取消');
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= MAX_ELAPSED_MS) {
+      throw new Error(`任务超时: 超过${Math.round(MAX_ELAPSED_MS / 60000)}分钟`);
+    }
+
+    // 动态间隔
+    const interval = getPollInterval(elapsed, lastCode);
+    await new Promise(r => setTimeout(r, interval));
+
+    // 进度：基于时间比例 0-90%
+    if (onProgress) {
+      onProgress(Math.min(elapsed / MAX_ELAPSED_MS, 0.9));
+    }
+
+    const resultResponse = await extensionFetch(`${RH_BASE_URL}/task/openapi/outputs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey, taskId }),
+      signal,
+    });
+
+    if (resultResponse.ok) {
+      const resultJson = await resultResponse.json();
+      lastCode = resultJson.code;
+
+      // 成功: code: 0, data: [{ fileUrl: "..." }]
+      if (resultJson.code === 0 && resultJson.data && Array.isArray(resultJson.data)) {
+        const allUrls: string[] = resultJson.data
+          .map((o: { fileUrl?: string }) => o.fileUrl)
+          .filter((url: string | undefined): url is string => !!url);
+        const fileTypes: string[] = resultJson.data
+          .map((o: { fileType?: string }) => o.fileType ?? '')
+          .filter((t: string): t is string => !!t);
+        if (allUrls.length > 0) {
+          return { outputUrl: allUrls[0]!, outputUrls: allUrls, fileTypes };
+        }
+        const jsonStr = JSON.stringify(resultJson.data);
+        return { outputUrl: jsonStr, outputUrls: [jsonStr], fileTypes: [] };
+      }
+
+      // 失败: code: 805
+      if (resultJson.code === 805) {
+        const failedReason = resultJson.data?.failedReason;
+        if (failedReason) {
+          throw new Error(`任务失败: ${failedReason.exception_message ?? JSON.stringify(failedReason)}`);
+        }
+        throw new Error(`任务失败: ${resultJson.msg ?? '未知错误'}`);
+      }
+
+      // 其他错误码（非成功非运行中非排队中）
+      if (resultJson.code !== 804 && resultJson.code !== 813) {
+        throw new Error(`任务异常: ${resultJson.msg ?? `code: ${resultJson.code}`}`);
+      }
+
+      // 804=运行中, 813=排队中 → 继续轮询
+    } else if ([502, 503, 504].includes(resultResponse.status)) {
+      // 轮询时网关偶发超时 → 容错继续（任务在服务器端可能仍在运行）
+      console.warn(`[rhApi] 轮询收到 ${resultResponse.status}，容错继续等待`);
+    }
+  }
+}
+
+/**
+ * 504 容错提交：尝试从响应体提取 taskId，或重试1次
+ * @param submitFn 执行提交请求的函数
+ * @param url 提交 URL（用于日志和重试）
+ * @param fetchOptions fetch 请求选项
+ * @param signal 取消信号
+ * @returns 解析后的提交响应 JSON
+ */
+async function submitWithGatewayTimeoutRecovery<T extends { data: { taskId: string; promptTips?: string } }>(
+  submitFn: () => Promise<Response>,
+  _signal?: AbortSignal,
+): Promise<T> {
+  const submitResponse = await submitFn();
+
+  if (submitResponse.ok) {
+    const json = await submitResponse.json();
+    if (json.code !== 0) {
+      throw new Error(`提交任务失败: ${json.msg}`);
+    }
+    return json as T;
+  }
+
+  // 502/503/504 → 网关偶发超时，尝试恢复
+  if ([502, 503, 504].includes(submitResponse.status)) {
+    let errorBody = '';
+    try { errorBody = await submitResponse.text(); } catch { /* ignore */ }
+
+    // 尝试从响应体提取 taskId（网关可能在超时前转发了部分数据）
+    const taskIdMatch = errorBody.match(/"taskId"\s*:\s*"(\d+)"/);
+    if (taskIdMatch) {
+      const taskId = taskIdMatch[1]!;
+      console.warn(`[rhApi] 提交收到 ${submitResponse.status}，但响应体含 taskId=${taskId}，继续轮询`);
+      // 构造一个最小化的提交响应，让调用方跳到轮询
+      return { data: { taskId } } as unknown as T;
+    }
+
+    // 无法提取 taskId → 重试1次
+    console.warn(`[rhApi] 提交收到 ${submitResponse.status} 且无 taskId，重试1次`);
+    const retryResponse = await submitFn();
+    if (!retryResponse.ok) {
+      throw new Error(`提交任务失败: ${submitResponse.status}（重试后仍失败: ${retryResponse.status}）`);
+    }
+    const retryJson = await retryResponse.json();
+    if (retryJson.code !== 0) {
+      throw new Error(`提交任务失败: ${retryJson.msg}`);
+    }
+    return retryJson as T;
+  }
+
+  throw new Error(`提交任务失败: ${submitResponse.status}`);
+}
+
+// ============================================================================
 // 获取 RunningHub APP 节点信息
 // ============================================================================
 
@@ -40,10 +228,8 @@ export async function fetchRhAppNodeInfo(
   webappId: string,
   signal?: AbortSignal,
 ): Promise<{ nodeInfoList: RhNodeInfo[]; covers?: Array<{ thumbnailUri: string }> }> {
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
-  const response = await fetch(
-    `${rhBaseUrl}/api/webapp/apiCallDemo?apiKey=${encodeURIComponent(apiKey)}&webappId=${encodeURIComponent(webappId)}`,
+  const response = await extensionFetch(
+    `${RH_BASE_URL}/api/webapp/apiCallDemo?apiKey=${encodeURIComponent(apiKey)}&webappId=${encodeURIComponent(webappId)}`,
     { signal },
   );
 
@@ -171,14 +357,9 @@ export async function fetchRhWorkflowJson(
   workflowId: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
-  const response = await fetch(`${rhBaseUrl}/api/openapi/getJsonApiFormat`, {
+  const response = await extensionFetch(`${RH_BASE_URL}/api/openapi/getJsonApiFormat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Host': 'www.runninghub.cn',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiKey, workflowId }),
     signal,
   });
@@ -207,6 +388,10 @@ export async function fetchRhWorkflowJson(
 /**
  * 上传文件到 RunningHub
  * POST /task/openapi/upload
+ *
+ * 注意：FormData 无法通过 extensionFetch（chrome.runtime.sendMessage）序列化，
+ * 因此保持原生 fetch 直连（RunningHub 启用了 CORS）。
+ *
  * @param apiKey RunningHub API Key
  * @param file 文件数据（Blob 或 data URL）
  * @param fileType 文件类型 'input' | 'output'
@@ -218,8 +403,6 @@ export async function uploadFileToRunningHub(
   fileType: 'input' | 'output' = 'input',
   signal?: AbortSignal,
 ): Promise<string> {
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
   let blob: Blob;
   let filename: string;
 
@@ -250,7 +433,8 @@ export async function uploadFileToRunningHub(
   formData.append('fileType', fileType);
   formData.append('file', blob, filename);
 
-  const response = await fetch(`${rhBaseUrl}/task/openapi/upload`, {
+  // FormData 无法序列化通过 extensionFetch，保持原生 fetch
+  const response = await fetch(`${RH_BASE_URL}/task/openapi/upload`, {
     method: 'POST',
     body: formData,
     signal,
@@ -273,9 +457,20 @@ export async function uploadFileToRunningHub(
   return fileName;
 }
 
+// ============================================================================
+// 执行 RunningHub APP（快捷创作）
+// ============================================================================
+
 /**
  * 执行 RunningHub APP（快捷创作）
  * 使用 /task/openapi/ai-app/run 接口
+ *
+ * 轮询策略：
+ * - 前5分钟：3秒间隔（适合3分钟内生图）
+ * - 5分钟后：10秒间隔（覆盖长视频任务）
+ * - 排队中：10秒间隔
+ * - 总超时：20分钟
+ * - 502/503/504 容错：尝试恢复 taskId 或重试1次
  */
 export async function executeRhAppApi(
   apiKey: string,
@@ -284,108 +479,35 @@ export async function executeRhAppApi(
   onProgress?: (progress: number) => void,
   signal?: AbortSignal,
 ): Promise<RhApiResult> {
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
-  // 1. 提交 APP 任务
-  const submitResponse = await fetch(`${rhBaseUrl}/task/openapi/ai-app/run`, {
+  // 1. 提交 APP 任务（含 504 容错）
+  const submitJson = await submitWithGatewayTimeoutRecovery<{
+    code: number;
+    msg: string;
+    data: { taskId: string; promptTips?: string };
+  }>(() => extensionFetch(`${RH_BASE_URL}/task/openapi/ai-app/run`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Host': 'www.runninghub.cn',
-    },
-    body: JSON.stringify({
-      webappId,
-      apiKey,
-      nodeInfoList,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ webappId, apiKey, nodeInfoList }),
     signal,
-  });
-
-  if (!submitResponse.ok) {
-    throw new Error(`提交任务失败: ${submitResponse.status}`);
-  }
-
-  const submitJson = await submitResponse.json();
-  if (submitJson.code !== 0) {
-    throw new Error(`提交任务失败: ${submitJson.msg}`);
-  }
+  }), signal);
 
   const { taskId } = submitJson.data;
-  const promptTips = submitJson.data.promptTips;
-
-  // 检查节点错误
-  if (promptTips) {
-    try {
-      const tips = JSON.parse(promptTips);
-      if (tips.node_errors && Object.keys(tips.node_errors).length > 0) {
-        throw new Error(`工作流错误: ${JSON.stringify(tips.node_errors)}`);
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith('工作流错误')) throw e;
-    }
-  }
+  checkPromptTips(submitJson.data.promptTips);
 
   // 2. 轮询任务结果
-  const pollInterval = 3000;
-  const maxAttempts = 200;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    if (signal?.aborted) throw new Error('任务已取消');
-
-    if (onProgress) {
-      onProgress((i / maxAttempts) * 0.9);
-    }
-
-    await new Promise((r) => setTimeout(r, pollInterval));
-
-    const resultResponse = await fetch(`${rhBaseUrl}/task/openapi/outputs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Host': 'www.runninghub.cn',
-      },
-      body: JSON.stringify({ apiKey, taskId }),
-      signal,
-    });
-
-    if (resultResponse.ok) {
-      const resultJson = await resultResponse.json();
-
-      // AI App 成功响应: code: 0, data: [{ fileUrl: "..." }]
-      if (resultJson.code === 0 && resultJson.data && Array.isArray(resultJson.data)) {
-        const allUrls: string[] = resultJson.data
-          .map((o: { fileUrl?: string }) => o.fileUrl)
-          .filter((url: string | undefined): url is string => !!url);
-        if (allUrls.length > 0) {
-          return { outputUrl: allUrls[0]!, outputUrls: allUrls };
-        }
-        const jsonStr = JSON.stringify(resultJson.data);
-        return { outputUrl: jsonStr, outputUrls: [jsonStr] };
-      }
-
-      // AI App 失败响应: code: 805
-      if (resultJson.code === 805) {
-        const failedReason = resultJson.data?.failedReason;
-        if (failedReason) {
-          throw new Error(`任务失败: ${failedReason.exception_message ?? JSON.stringify(failedReason)}`);
-        }
-        throw new Error(`任务失败: ${resultJson.msg ?? '未知错误'}`);
-      }
-
-      // 其他错误码（非成功非运行中）
-      if (resultJson.code !== 804 && resultJson.code !== 813) {
-        throw new Error(`任务异常: ${resultJson.msg ?? `code: ${resultJson.code}`}`);
-      }
-    }
-  }
-
-  throw new Error('任务超时: 轮询次数达到上限');
+  return pollRhTaskResult(apiKey, taskId, onProgress, signal);
 }
+
+// ============================================================================
+// 执行 RunningHub Workflow (ComfyUI)
+// ============================================================================
 
 /**
  * 执行 RunningHub Workflow (ComfyUI)
  * 使用 /task/openapi/create 提交任务
  * 使用 /task/openapi/outputs 查询结果
+ *
+ * 轮询策略同 executeRhAppApi
  */
 export async function executeRhWorkflowApi(
   apiKey: string,
@@ -394,15 +516,14 @@ export async function executeRhWorkflowApi(
   onProgress?: (progress: number) => void,
   signal?: AbortSignal,
 ): Promise<RhApiResult> {
-  const rhBaseUrl = 'https://www.runninghub.cn';
-
-  // 1. 提交 Workflow 任务
-  const submitResponse = await fetch(`${rhBaseUrl}/task/openapi/create`, {
+  // 1. 提交 Workflow 任务（含 504 容错）
+  const submitJson = await submitWithGatewayTimeoutRecovery<{
+    code: number;
+    msg: string;
+    data: { taskId: string; promptTips?: string };
+  }>(() => extensionFetch(`${RH_BASE_URL}/task/openapi/create`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Host': 'www.runninghub.cn',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       apiKey,
       workflowId,
@@ -413,86 +534,11 @@ export async function executeRhWorkflowApi(
       })),
     }),
     signal,
-  });
-
-  if (!submitResponse.ok) {
-    throw new Error(`提交任务失败: ${submitResponse.status}`);
-  }
-
-  const submitJson = await submitResponse.json();
-  if (submitJson.code !== 0) {
-    throw new Error(`提交任务失败: ${submitJson.msg}`);
-  }
+  }), signal);
 
   const { taskId } = submitJson.data;
-  const promptTips = submitJson.data.promptTips;
-
-  // 检查节点错误
-  if (promptTips) {
-    try {
-      const tips = JSON.parse(promptTips);
-      if (tips.node_errors && Object.keys(tips.node_errors).length > 0) {
-        throw new Error(`工作流错误: ${JSON.stringify(tips.node_errors)}`);
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith('工作流错误')) throw e;
-    }
-  }
+  checkPromptTips(submitJson.data.promptTips);
 
   // 2. 轮询任务结果
-  // 注意: ComfyUI Workflow 和 AI App 共用同一个查询接口 /task/openapi/outputs
-  const pollInterval = 3000;
-  const maxAttempts = 200;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    if (signal?.aborted) throw new Error('任务已取消');
-
-    if (onProgress) {
-      onProgress((i / maxAttempts) * 0.9);
-    }
-
-    await new Promise((r) => setTimeout(r, pollInterval));
-
-    const resultResponse = await fetch(`${rhBaseUrl}/task/openapi/outputs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Host': 'www.runninghub.cn',
-      },
-      body: JSON.stringify({ apiKey, taskId }),
-      signal,
-    });
-
-    if (resultResponse.ok) {
-      const resultJson = await resultResponse.json();
-
-      // ComfyUI Workflow 成功响应: code: 0, data: [{ fileUrl: "..." }]
-      if (resultJson.code === 0 && resultJson.data && Array.isArray(resultJson.data)) {
-        const allUrls: string[] = resultJson.data
-          .map((o: { fileUrl?: string }) => o.fileUrl)
-          .filter((url: string | undefined): url is string => !!url);
-        if (allUrls.length > 0) {
-          return { outputUrl: allUrls[0]!, outputUrls: allUrls };
-        }
-        const jsonStr = JSON.stringify(resultJson.data);
-        return { outputUrl: jsonStr, outputUrls: [jsonStr] };
-      }
-
-      // ComfyUI Workflow 失败响应: code: 805
-      if (resultJson.code === 805) {
-        const failedReason = resultJson.data?.failedReason;
-        if (failedReason) {
-          throw new Error(`任务失败: ${failedReason.exception_message ?? JSON.stringify(failedReason)}`);
-        }
-        throw new Error(`任务失败: ${resultJson.msg ?? '未知错误'}`);
-      }
-
-      // 其他错误码（非成功非运行中）
-      if (resultJson.code !== 804 && resultJson.code !== 813) {
-        throw new Error(`任务异常: ${resultJson.msg ?? `code: ${resultJson.code}`}`);
-      }
-    }
-  }
-
-  throw new Error('任务超时: 轮询次数达到上限');
+  return pollRhTaskResult(apiKey, taskId, onProgress, signal);
 }

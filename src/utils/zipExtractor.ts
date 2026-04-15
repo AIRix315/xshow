@@ -4,8 +4,14 @@
  * 用于处理 RunningHub 返回的 ZIP 压缩包
  * 提取所有媒体文件（图片、视频、音频）
  * 
- * 使用浏览器内置的 Compression Streams API 解压 DEFLATE 数据
+ * 使用 pako 库解压 DEFLATE 数据（支持原始 DEFLATE 和 zlib 格式）
+ * 
+ * 支持两种 ZIP 来源：
+ * - 远程 URL：通过 extensionFetch 代理下载（解决 SidePanel CORS 限制）
+ * - 本地文件：通过 File/Blob 对象直接解析
  */
+
+import pako from 'pako';
 
 /**
  * 从 ZIP 文件中提取的单个媒体文件
@@ -60,21 +66,39 @@ function getMimeType(filename: string): string {
 }
 
 /**
- * 使用 Compression Streams API 解压 DEFLATE 数据
+ * 使用 pako 解压 DEFLATE 数据（支持原始 DEFLATE 和 zlib 格式）
  */
 async function decompressDeflate(data: Uint8Array): Promise<Uint8Array> {
-  // Compression Streams API (Chrome 102+, Edge 102+, Firefox 112+, Safari 16.4+)
-  if (typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('deflate');
-    const writer = ds.writable.getWriter();
-    writer.write(data);
-    writer.close();
-    const result = await new Response(ds.readable).arrayBuffer();
+  // 1. 优先使用 pako (支持更全面的 DEFLATE 格式，包括原始 DEFLATE 流)
+  // pako 已通过 import 导入，在模块作用域内始终可用
+  try {
+    let result: Uint8Array;
+    try {
+      result = pako.inflate(data);      // 尝试 zlib 包装的 DEFLATE
+    } catch {
+      result = pako.inflateRaw(data);    // ZIP 使用原始 DEFLATE 流
+    }
     return new Uint8Array(result);
+  } catch (e) {
+    console.warn('[zipExtractor] pako inflate failed:', e);
   }
-  
-  // Fallback: return compressed data as-is
-  console.warn('[zipExtractor] DecompressionStream not available, returning raw data');
+
+  // 2. Fallback: 使用 Compression Streams API
+  if (typeof DecompressionStream !== 'undefined') {
+    try {
+      const ds = new DecompressionStream('deflate');
+      const writer = ds.writable.getWriter();
+      writer.write(data);
+      writer.close();
+      const response = await new Response(ds.readable).arrayBuffer();
+      return new Uint8Array(response);
+    } catch (e) {
+      console.warn('[zipExtractor] DecompressionStream failed:', e);
+    }
+  }
+
+  // 3. 最后的 fallback: 返回原始数据
+  console.warn('[zipExtractor] All decompression methods failed, returning raw data');
   return data;
 }
 
@@ -89,7 +113,14 @@ async function parseZipSimple(arrayBuffer: ArrayBuffer): Promise<Map<string, { d
 
   // 检查 ZIP 签名
   if (uint8[0] !== 0x50 || uint8[1] !== 0x4b || uint8[2] !== 0x03 || uint8[3] !== 0x04) {
-    throw new Error('Invalid ZIP file signature');
+    // 提供更友好的错误提示
+    if (uint8[0] === 0x37 && uint8[1] === 0x7a && uint8[2] === 0xbc && uint8[3] === 0xaf) {
+      throw new Error('不支持的压缩格式 (7z)。请使用标准 ZIP 格式，7z 格式暂不支持。');
+    }
+    if (uint8[0] === 0x52 && uint8[1] === 0x61 && uint8[2] === 0x72) {
+      throw new Error('不支持的压缩格式 (RAR)。请使用标准 ZIP 格式，RAR 格式暂不支持。');
+    }
+    throw new Error('无效的 ZIP 文件格式');
   }
 
   let offset = 0;
@@ -166,8 +197,9 @@ export async function extractZipContents(
   zipUrl: string,
   signal?: AbortSignal,
 ): Promise<ExtractedMedia[]> {
-  // 下载 ZIP 文件
-  const response = await fetch(zipUrl, { signal });
+  // 下载 ZIP 文件 — 使用 extensionFetch 代理（解决 SidePanel CORS 限制）
+  const { extensionFetch } = await import('@/api/comfyApi');
+  const response = await extensionFetch(zipUrl, { signal });
   if (!response.ok) {
     throw new Error(`下载 ZIP 文件失败: ${response.status}`);
   }
@@ -199,6 +231,49 @@ export async function extractZipContents(
     const url = URL.createObjectURL(blob);
     return [{
       name: 'output.zip',
+      url,
+      type: 'unknown',
+      size: arrayBuffer.byteLength,
+    }];
+  }
+
+  return mediaFiles;
+}
+
+/**
+ * 从本地 File/Blob 对象解压 ZIP 并提取所有媒体文件
+ * 用于 ZIP 节点的本地上传场景
+ * @param file 本地 ZIP 文件（File 或 Blob）
+ * @returns 提取的媒体文件列表
+ */
+export async function extractZipFromFile(
+  file: File | Blob,
+): Promise<ExtractedMedia[]> {
+  const arrayBuffer = await file.arrayBuffer();
+  const mediaFiles: ExtractedMedia[] = [];
+
+  try {
+    const files = await parseZipSimple(arrayBuffer);
+
+    for (const [filename, fileData] of files) {
+      const mediaType = getMediaType(filename);
+
+      const blob = new Blob([fileData.data], { type: getMimeType(filename) });
+      const url = URL.createObjectURL(blob);
+
+      mediaFiles.push({
+        name: filename,
+        url,
+        type: mediaType,
+        size: fileData.size,
+        isBlobUrl: true,
+      });
+    }
+  } catch {
+    const blob = new Blob([arrayBuffer], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    return [{
+      name: file instanceof File ? file.name : 'output.zip',
       url,
       type: 'unknown',
       size: arrayBuffer.byteLength,

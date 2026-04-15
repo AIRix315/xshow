@@ -10,6 +10,7 @@ import {
   GitBranch, ToggleLeft, GitMerge,
   Download, GalleryHorizontal,
   Settings, X, ChevronDown, Workflow,
+  Package,
 } from 'lucide-react';
 
 // 按 node-banana 分类组织
@@ -81,6 +82,7 @@ const NODE_CATEGORIES = [
     items: [
       { type: 'rhAppNode', label: 'RH APP', icon: Workflow },
       { type: 'rhWfNode', label: 'RH Workflow', icon: Workflow },
+      { type: 'rhZipNode', label: 'ZIP 解压', icon: Package },
     ],
   },
 ] as const;

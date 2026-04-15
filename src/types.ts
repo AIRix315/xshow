@@ -305,6 +305,7 @@ export interface OmniNodeData extends BaseNodeData {
   // 标准化输出字段（供下游节点读取）
   outputUrl?: string;        // image/video/audio 单输出 URL
   outputUrls?: string[];     // 多图/多输出 URL 数组
+  outputUrlTypes?: string[]; // 每个 URL 的类型注解 ['image'|'video'|'audio']
   textOutput?: string;       // 文本输出
   errorMessage?: string;
   // ComfyUI 工作流节点值缓存（用于画布级执行）
@@ -326,6 +327,7 @@ export interface RhAppNodeData extends BaseNodeData {
   // 标准化输出字段
   outputUrl?: string;
   outputUrls?: string[];
+  outputUrlTypes?: string[]; // 每个 URL 的类型注解 ['image'|'video'|'audio']
   textOutput?: string;
   errorMessage?: string;
   /** 节点字段值缓存 */
@@ -342,10 +344,35 @@ export interface RhWfNodeData extends BaseNodeData {
   // 标准化输出字段
   outputUrl?: string;
   outputUrls?: string[];
+  outputUrlTypes?: string[]; // 每个 URL 的类型注解 ['image'|'video'|'audio']
   textOutput?: string;
   errorMessage?: string;
   /** 节点字段值缓存 */
   nodeValues?: Record<string, Record<string, unknown>>;
+}
+
+// §3.10.3 ZIP 解压节点配置
+export interface RhZipNodeConfig {
+  /** 输出类型 */
+  outputType?: 'auto' | 'image' | 'video' | 'audio';
+}
+
+// §3.10.3 ZIP 解压节点数据
+export interface RhZipNodeData extends BaseNodeData {
+  label: string;
+  /** 输入的 ZIP URL（上游传入或手动输入） */
+  zipUrl?: string;
+  /** 本地上传的 ZIP 文件名 */
+  zipFileName?: string;
+  /** 标准化输出字段（供下游节点读取） */
+  outputUrl?: string;
+  outputUrls?: string[];
+  outputUrlTypes?: string[]; // 每个 URL 的类型注解 ['image'|'video'|'audio']
+  textOutput?: string;
+  loading: boolean;
+  errorMessage?: string;
+  /** 提取的文件数量信息 */
+  extractedInfo?: string;
 }
 
 // §3.11 全局任务追踪
@@ -454,8 +481,9 @@ export type VideoStitchNodeType = Node<VideoStitchNodeData, 'videoStitchNode'>;
 export type VideoTrimNodeType = Node<VideoTrimNodeData, 'videoTrimNode'>;
 export type RhAppNodeType = Node<RhAppNodeData, 'rhAppNode'>;
 export type RhWfNodeType = Node<RhWfNodeData, 'rhWfNode'>;
+export type RhZipNodeType = Node<RhZipNodeData, 'rhZipNode'>;
 
-export type AppNode = ImageNodeType | PromptNodeType | TextNodeType | VideoNodeType | AudioNodeType | GridSplitNodeType | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType | RhAppNodeType | RhWfNodeType;
+export type AppNode = ImageNodeType | PromptNodeType | TextNodeType | VideoNodeType | AudioNodeType | GridSplitNodeType | GridMergeNodeType | CropNodeType | OmniNodeType | TextInputNodeType | VideoInputNodeType | ImageInputNodeType | D3NodeType | Viewer3DNodeType | PromptConstructorNodeType | AnnotateNodeType | ConditionalSwitchNodeType | EaseCurveNodeType | FrameGrabNodeType | ImageCompareNodeType | OutputGalleryNodeType | OutputNodeType | RouterNodeType | SwitchNodeType | VideoStitchNodeType | VideoTrimNodeType | RhAppNodeType | RhWfNodeType | RhZipNodeType;
 
 // 默认值常量
 export const DEFAULT_CHANNEL: ChannelConfig = {

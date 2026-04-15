@@ -9,24 +9,65 @@ import type { ComfyUINodeInfo, ComfyUISubType } from '@/types';
 /**
  * 在 SidePanel 中直接 fetch localhost 会 CORS 失败，
  * 因此通过 background.js service worker 代理请求。
+ *
+ * 同时也用于 RunningHub API 调用，统一代理策略。
+ *
+ * 支持传 AbortSignal：在扩展模式下通过 addEventListener('abort') 实现取消。
  */
-async function extensionFetch(url: string, options?: RequestInit): Promise<Response> {
+export async function extensionFetch(url: string, options?: RequestInit): Promise<Response> {
   // 检查是否在 Chrome 扩展环境中
   if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
-    // signal 不能被序列化，发送前删掉
-    const { signal: _signal, ...cleanOptions } = options ?? {};
+    const { signal, ...cleanOptions } = options ?? {};
+
+    // 如果已经取消，直接 reject
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+
     return new Promise((resolve, reject) => {
-      console.log('[ComfyAPI] Proxying fetch to background:', url);
+      // 监听 signal 取消，reject 并清理
+      const onAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+      signal?.addEventListener('abort', onAbort, { once: true });
+
       chrome.runtime.sendMessage(
         { type: 'comfy-fetch', url, options: cleanOptions },
         (response) => {
-          console.log('[ComfyAPI] Background response:', response);
+          signal?.removeEventListener('abort', onAbort);
+
+          // chrome.runtime.lastError 检查（扩展断开等情况）
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+
           if (response?.success) {
-            resolve(new Response(JSON.stringify(response.data), {
-              status: response.status,
-              statusText: response.status === 200 ? 'OK' : 'Error',
-              headers: new Headers(response.headers),
-            }));
+            // 处理二进制和文本响应
+            const respData = response.data;
+
+            if (response.isBinary && typeof respData === 'string') {
+              // 二进制数据（base64 编码）需要解码
+              try {
+                const binary = atob(respData);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                  bytes[i] = binary.charCodeAt(i);
+                }
+                resolve(new Response(bytes.buffer, {
+                  status: response.status,
+                  statusText: response.status === 200 ? 'OK' : 'Error',
+                }));
+              } catch (e) {
+                reject(new Error(`解码二进制数据失败: ${e instanceof Error ? e.message : 'Unknown error'}`));
+              }
+            } else if (typeof respData === 'string') {
+              // 文本数据
+              resolve(new Response(respData, {
+                status: response.status,
+                statusText: response.status === 200 ? 'OK' : 'Error',
+              }));
+            } else {
+              reject(new Error('无效的响应数据格式'));
+            }
           } else {
             reject(new Error(response?.error ?? 'Proxy fetch failed'));
           }
@@ -34,7 +75,7 @@ async function extensionFetch(url: string, options?: RequestInit): Promise<Respo
       );
     });
   }
-  // 非扩展环境直接 fetch
+  // 非扩展环境直接 fetch（signal 正常传递）
   return fetch(url, options);
 }
 

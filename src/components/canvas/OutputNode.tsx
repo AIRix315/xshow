@@ -90,14 +90,18 @@ function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
             />
           )}
           {hasVideo && !hasImage && (
-            <div className="w-full h-full flex items-center justify-center bg-surface rounded">
-              <span className="text-blue-400 text-sm">🎬 视频输出</span>
-            </div>
+            <video
+              controls
+              src={inputVideoUrl!}
+              className="w-full h-full object-contain"
+            />
           )}
           {hasAudio && !hasImage && !hasVideo && (
-            <div className="w-full h-full flex items-center justify-center bg-surface rounded">
-              <span className="text-purple-400 text-sm">🔊 音频输出</span>
-            </div>
+            <audio
+              controls
+              src={inputAudioUrl!}
+              className="w-full max-w-[200px]"
+            />
           )}
           {hasText && !hasMedia && (
             <div className="w-full h-full flex items-center justify-center p-2 overflow-auto">
