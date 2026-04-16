@@ -102,7 +102,7 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
       {/* 3D 预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {modelUrl ? (
-          <div className="relative w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+          <div className="relative w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
             <canvas 
               ref={canvasRef} 
               width={80} 
@@ -203,6 +203,8 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}
       title="生成3D"
+      showHoverHeader
+      onRun={handleGenerate}
       hoverContent={hoverContent}
     >
       {minimalContent}

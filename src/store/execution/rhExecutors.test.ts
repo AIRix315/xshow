@@ -20,13 +20,9 @@ vi.mock('@/api/rhApi', () => ({
 }));
 
 // Mock zipExtractor
-const mockExtractZipContents = vi.fn();
-const mockClassifyMedia = vi.fn();
 const mockRevokeMediaUrls = vi.fn();
 
 vi.mock('@/utils/zipExtractor', () => ({
-  extractZipContents: mockExtractZipContents,
-  classifyMedia: mockClassifyMedia,
   revokeMediaUrls: mockRevokeMediaUrls,
 }));
 
@@ -240,22 +236,12 @@ describe('executeRhAppNode', () => {
     expect(submitted[1].fieldValue).toBe('file_1.png');
   });
 
-  it('handles ZIP response by extracting media', async () => {
+  it('handles ZIP response by outputting URL as textOutput for downstream rhZipNode', async () => {
     const { executeRhAppNode } = await import('./rhAppExecutor');
     await setupConnectedInputsMocks();
     mockExecuteRhAppApi.mockResolvedValue({
       outputUrl: 'https://rh.cn/output.zip',
       outputUrls: ['https://rh.cn/output.zip'],
-    });
-    mockExtractZipContents.mockResolvedValue([
-      { name: 'img1.png', url: 'blob:uuid1/img1.png', type: 'image', size: 100 },
-      { name: 'img2.png', url: 'blob:uuid2/img2.png', type: 'image', size: 200 },
-    ]);
-    mockClassifyMedia.mockReturnValue({
-      images: [{ name: 'img1.png', url: 'blob:uuid1/img1.png', type: 'image', size: 100 }, { name: 'img2.png', url: 'blob:uuid2/img2.png', type: 'image', size: 200 }],
-      videos: [],
-      audio: [],
-      others: [],
     });
 
     const node = makeNode('n1', 'rhAppNode', { config: { appId: 'app123', nodeInfoList: [] } });
@@ -263,13 +249,13 @@ describe('executeRhAppNode', () => {
 
     await executeRhAppNode(ctx);
 
-    expect(mockExtractZipContents).toHaveBeenCalledWith('https://rh.cn/output.zip', undefined);
-    // ZIP 产出 2 张图 → outputUrls length > 1, so code keeps outputUrls
-    // blob URLs with .png suffix match media detection regex
+    // ZIP 结果应直接输出 URL，不再解压
     const calls = mockUpdateNodeData.mock.calls;
     const lastCall = calls[calls.length - 1]!;
-    expect(lastCall[1].outputUrl).toBe('blob:uuid1/img1.png');
-    expect(lastCall[1].outputUrls).toEqual(['blob:uuid1/img1.png', 'blob:uuid2/img2.png']);
+    expect(lastCall[1].outputUrl).toBe('https://rh.cn/output.zip');
+    expect(lastCall[1].textOutput).toBe('https://rh.cn/output.zip');
+    expect(lastCall[1].outputUrls).toBeUndefined();
+    expect(lastCall[1].outputUrlTypes).toBeUndefined();
   });
 
   it('revokes previous blob URLs before new execution', async () => {
@@ -407,20 +393,13 @@ describe('executeRhWfNode', () => {
     expect(mockUploadFileToRunningHub).toHaveBeenCalledWith('test-api-key', 'https://example.com/vid.mp4', 'input', undefined);
   });
 
-  it('handles ZIP response from workflow execution', async () => {
+  it('handles ZIP response by outputting URL as textOutput for downstream rhZipNode', async () => {
     const { executeRhWfNode } = await import('./rhWfExecutor');
     await setupConnectedInputsMocks();
     mockParseRhWorkflowNodes.mockReturnValue([]);
     mockExecuteRhWorkflowApi.mockResolvedValue({
       outputUrl: 'https://rh.cn/wf-output.zip',
       outputUrls: ['https://rh.cn/wf-output.zip'],
-    });
-    mockExtractZipContents.mockResolvedValue([
-      { name: 'result.png', url: 'blob:uuid3/result.png', type: 'image', size: 500 },
-    ]);
-    mockClassifyMedia.mockReturnValue({
-      images: [{ name: 'result.png', url: 'blob:uuid3/result.png', type: 'image', size: 500 }],
-      videos: [], audio: [], others: [],
     });
 
     const node = makeNode('n1', 'rhWfNode', {
@@ -431,11 +410,13 @@ describe('executeRhWfNode', () => {
 
     await executeRhWfNode(ctx);
 
-    // 只有 1 张图 → outputUrls.length === 1 → code sets outputUrls: undefined
-    // blob URL with .png suffix matches media detection
+    // ZIP 结果应直接输出 URL，不再解压
     const calls = mockUpdateNodeData.mock.calls;
     const lastCall = calls[calls.length - 1]!;
-    expect(lastCall[1].outputUrl).toBe('blob:uuid3/result.png');
+    expect(lastCall[1].outputUrl).toBe('https://rh.cn/wf-output.zip');
+    expect(lastCall[1].textOutput).toBe('https://rh.cn/wf-output.zip');
+    expect(lastCall[1].outputUrls).toBeUndefined();
+    expect(lastCall[1].outputUrlTypes).toBeUndefined();
   });
 
   it('revokes previous blob URLs before new execution', async () => {

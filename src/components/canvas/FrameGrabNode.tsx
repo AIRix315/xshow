@@ -119,7 +119,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
       {/* 帧预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {resultImageUrl ? (
-          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
             <img src={resultImageUrl} alt="提取的帧" className="max-w-full max-h-full object-contain" />
           </div>
         ) : sourceVideoUrl ? (
@@ -212,6 +212,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}
       title="帧提取"
+      showHoverHeader
       hoverContent={hoverContent}
     >
       {minimalContent}

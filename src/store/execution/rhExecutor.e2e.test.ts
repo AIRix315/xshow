@@ -63,13 +63,9 @@ vi.mock('@/api/rhApi', () => ({
 }));
 
 // Mock zipExtractor
-const mockExtractZipContents = vi.fn();
-const mockClassifyMedia = vi.fn();
 const mockRevokeMediaUrls = vi.fn();
 
 vi.mock('@/utils/zipExtractor', () => ({
-  extractZipContents: mockExtractZipContents,
-  classifyMedia: mockClassifyMedia,
   revokeMediaUrls: mockRevokeMediaUrls,
 }));
 

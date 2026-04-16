@@ -75,6 +75,7 @@ const NODE_CATEGORIES = [
     title: 'Custom 自定义',
     items: [
       { type: 'omniNode', label: '万能节点', icon: Settings },
+      { type: 'rhZipNode', label: 'ZIP', icon: Package },
     ],
   },
   {
@@ -82,7 +83,6 @@ const NODE_CATEGORIES = [
     items: [
       { type: 'rhAppNode', label: 'RH APP', icon: Workflow },
       { type: 'rhWfNode', label: 'RH Workflow', icon: Workflow },
-      { type: 'rhZipNode', label: 'ZIP 解压', icon: Package },
     ],
   },
 ] as const;

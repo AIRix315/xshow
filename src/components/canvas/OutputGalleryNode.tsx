@@ -123,13 +123,13 @@ function OutputGalleryNode({ id, data, selected }: NodeProps<OutputGalleryNodeTy
                     <video src={item.url} className="w-full h-full object-cover" muted />
                   )}
                   {item.type === 'audio' && item.url && (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#1a1a1a] p-2">
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#1a1a1a] p-2 rounded">
                       <div className="text-orange-500 text-lg mb-1">🔊</div>
                       <audio src={item.url} controls className="w-full max-w-full h-6" />
                     </div>
                   )}
                   {item.type === 'text' && item.content && (
-                    <div className="w-full h-full p-2 overflow-auto bg-[#1a1a1a]">
+                    <div className="w-full h-full p-2 overflow-auto bg-[#1a1a1a] rounded">
                       <pre className="text-[8px] text-text-secondary whitespace-pre-wrap break-all font-mono">
                         {item.content.length > 100 ? item.content.slice(0, 100) + '...' : item.content}
                       </pre>

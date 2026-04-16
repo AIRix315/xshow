@@ -60,7 +60,8 @@ type NodeType =
   | 'omniNode'
   // RH RunningHub
   | 'rhAppNode'
-  | 'rhWfNode';
+  | 'rhWfNode'
+  | 'rhZipNode';
 
 // 节点分类 - 对齐 NodeSidebar.tsx
 const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; icon: string }[] }[] = [
@@ -124,6 +125,7 @@ const NODE_CATEGORIES: { label: string; nodes: { type: NodeType; label: string; 
     label: 'Custom',
     nodes: [
       { type: 'omniNode', label: 'Omni', icon: 'settings' },
+      { type: 'rhZipNode', label: 'ZIP', icon: 'zip' },
     ],
   },
   {
@@ -196,6 +198,8 @@ const getIcon = (iconName: string) => {
       return Cloud;
     case 'workflow':
       return GitBranch;
+    case 'zip':
+      return LayoutGrid; // ZIP 压缩包图标
     default:
       return Settings;
   }
@@ -355,7 +359,7 @@ function AllNodesMenu() {
         onClick={() => setIsOpen(!isOpen)}
         className="px-2.5 py-1.5 text-[11px] font-medium text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded transition-colors flex items-center gap-1"
       >
-        All nodes
+ Nodes
         <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
@@ -407,58 +411,76 @@ export default function FloatingActionBar() {
     }
   }, [isRunning, executeWorkflow, stopWorkflow]);
 
+  // 抽屉展开状态 - 默认展开，点击箭头收起
+  const [isExpanded, setIsExpanded] = useState(true);
+
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50">
-      <div className="flex items-center gap-0.5 bg-neutral-800/95 rounded-lg shadow-lg border border-neutral-700/80 px-1.5 py-1">
-        {/* 基础节点按钮 - 输入节点 (Input 后缀) */}
-        <NodeButton type="imageInputNode" label="Image" />
-        <NodeButton type="videoInputNode" label="Video" />
-        <NodeButton type="textInputNode" label="Text" />
-        <NodeButton type="audioInputNode" label="Audio" />
+    <div className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center">
+      {/* 菜单面板 */}
+      <div
+        className={`transition-all duration-300 ease-out ${
+          isExpanded ? 'opacity-100 translate-y-0 mb-2' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}
+      >
+        <div className="flex items-center gap-0.5 bg-neutral-800/95 rounded-lg shadow-lg border border-neutral-700/80 px-1.5 py-1">
+          {/* 基础节点按钮 - 输入节点 (Input 后缀) */}
+          <NodeButton type="imageInputNode" label="Image" />
+          <NodeButton type="videoInputNode" label="Video" />
+          <NodeButton type="textInputNode" label="Text" />
+          <NodeButton type="audioInputNode" label="Audio" />
 
-        {/* 分隔线 */}
-        <div className="w-px h-5 bg-neutral-600 mx-1.5" />
+          {/* 分隔线 */}
+          <div className="w-px h-5 bg-neutral-600 mx-1.5" />
 
-        {/* Generate 下拉菜单 */}
-        <GenerateDropdown />
+          {/* Generate 下拉菜单 */}
+          <GenerateDropdown />
 
-        {/* All nodes 下拉菜单 */}
-        <AllNodesMenu />
+          {/* All nodes 下拉菜单 */}
+          <AllNodesMenu />
 
-        {/* 分隔线 */}
-        <div className="w-px h-5 bg-neutral-600 mx-1.5" />
+          {/* 分隔线 */}
+          <div className="w-px h-5 bg-neutral-600 mx-1.5" />
 
-        {/* 执行按钮 */}
-        <button
-          onClick={handleRunClick}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded transition-colors ${
-            isRunning
-              ? 'bg-red-500 text-white hover:bg-red-600'
-              : 'bg-white text-neutral-900 hover:bg-neutral-200'
-          }`}
-        >
-          {isRunning ? (
-            <>
-              {runningNodeCount > 1 ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>{runningNodeCount} nodes</span>
-                </>
-              ) : (
-                <>
-                  <Square className="w-3 h-3" />
-                  <span>Stop</span>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <Play className="w-3 h-3" />
-              <span>Run</span>
-            </>
-          )}
-        </button>
+          {/* 执行按钮 */}
+          <button
+            onClick={handleRunClick}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded transition-colors ${
+              isRunning
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-white text-neutral-900 hover:bg-neutral-200'
+            }`}
+          >
+            {isRunning ? (
+              <>
+                {runningNodeCount > 1 ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>{runningNodeCount} nodes</span>
+                  </>
+                ) : (
+                  <>
+                    <Square className="w-3 h-3" />
+                    <span>Stop</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <Play className="w-3 h-3" />
+                <span>Run</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* 切换箭头 */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-10 h-5 flex items-center justify-center hover:bg-neutral-700/50 rounded transition-colors"
+      >
+        <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform duration-300 ${isExpanded ? '' : 'rotate-180'}`} />
+      </button>
     </div>
   );
 }

@@ -200,6 +200,8 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
       title="生成视频"
       minWidth={280}
       minHeight={140}
+      showHoverHeader
+      onRun={handleGenerate}
       hoverContent={fullContent}
     >
       {minimalContent}

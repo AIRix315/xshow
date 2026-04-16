@@ -1,6 +1,6 @@
 // Ref: node-banana GenerateImageNode.tsx + 悬停展开模式
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
-// 模式：默认只显示图片预览，hover 显示完整参数
+// 模式：默认只显示图片预览，hover 显示标题栏（带切换和运行按钮）+ 完整参数
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { ImageNodeType } from '@/types';
@@ -97,7 +97,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
     </>
   );
 
-  // 悬停完整参数内容 - 参数在底部
+  // 悬停完整参数内容 - 参数在底部（不含生成按钮）
   const fullContent = (
     <>
       {/* 输入 Handle 1 - Image (33%) */}
@@ -166,15 +166,6 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
               ))}
             </select>
           </div>
-
-          {/* 生成按钮 */}
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !prompt.trim()}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-[#333] disabled:cursor-not-allowed text-white text-xs py-1.5 rounded font-medium"
-          >
-            {loading ? '生成中...' : '生成图片'}
-          </button>
         </div>
       </div>
       
@@ -185,12 +176,14 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   );
 
   return (
-    <BaseNodeWrapper 
-      selected={!!selected} 
-      loading={loading} 
+    <BaseNodeWrapper
+      selected={!!selected}
+      loading={loading}
       errorMessage={errorMessage}
       title="生成图片"
       minWidth={280}
+      showHoverHeader
+      onRun={handleGenerate}
       hoverContent={fullContent}
     >
       {minimalContent}

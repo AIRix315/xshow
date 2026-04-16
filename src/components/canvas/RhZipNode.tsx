@@ -226,6 +226,9 @@ function RhZipNodeComponent({ id, data, selected }: NodeProps<RhZipNodeType>) {
       errorMessage={undefined}
       minHeight={180}
       minWidth={180}
+      showHoverHeader
+      onRun={handleUrlSubmit}
+      onToggle={() => {}}
     >
       <div className="flex flex-col h-full min-h-[160px]">
         {/* 输入区域 — 仅在无结果时显示 */}

@@ -267,6 +267,8 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}
       title="生成音频"
+      showHoverHeader
+      onRun={handleGenerate}
       hoverContent={hoverContent}
     >
       {minimalContent}

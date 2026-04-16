@@ -101,6 +101,8 @@ export interface CanvasSettings {
   showGrid: boolean;
   snapToGrid: boolean;
   reduceAnimations: boolean;
+  // 小地图位置
+  minimapPosition: 'top-right' | 'bottom-right' | 'off';
   // 节点默认值
   llmDefaultTemperature: number;
   llmDefaultMaxTokens: number;
@@ -132,6 +134,7 @@ const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
   showGrid: true,
   snapToGrid: false,
   reduceAnimations: false,
+  minimapPosition: 'top-right',
   llmDefaultTemperature: 0.7,
   llmDefaultMaxTokens: 4096,
   imageDefaultModel: '',

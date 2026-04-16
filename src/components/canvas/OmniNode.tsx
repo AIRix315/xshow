@@ -274,7 +274,7 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
     headers: '{}',
     body: '',
     outputType: 'text',
-    executionMode: 'sync',
+    executionMode: 'async',
     resultPath: '',
     executionType: 'http',
   };
@@ -429,7 +429,7 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
           role: 'user',
           content: `根据以下 API 需求描述，生成一个 JSON 配置。只返回 JSON，不要其他文字。
 需求: ${description}
-JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "outputType": "text", "executionMode": "sync", "resultPath": "", "taskIdPath": "", "pollingUrl": "", "pollingResultPath": "", "pollingCompletedValue": "completed", "pollingFailedValue": "failed" }`,
+JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "outputType": "text", "executionMode": "async", "resultPath": "", "taskIdPath": "", "pollingUrl": "", "pollingResultPath": "", "pollingCompletedValue": "completed", "pollingFailedValue": "failed" }`,
         }],
       });
 
@@ -653,7 +653,7 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
   const accentColor = HANDLE_COLORS[effectiveOutputType];
 
   return (
-    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={200} minWidth={360} accentColor={accentColor}>
+    <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage} minHeight={480} minWidth={360} title={data.label || '万能节点'} showHoverHeader onRun={handleExecute} onToggle={() => updateNodeData(id, { configMode: !configMode })}>
       {/* 默认 any handle — 始终保留，用于 prompt 等其他类型输入 */}
       <Handle type="target" position={Position.Left} id="custom-input" data-handletype="any" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="any" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Any</div>
@@ -702,23 +702,6 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
         </>
       )}
       <div className="flex flex-col h-full min-h-[180px]">
-        {/* 标题栏 - 配置/运行按钮紧跟标题 */}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0">
-          <span className="text-[10px] text-text-secondary font-medium">{data.label || '万能节点'}</span>
-          <button
-            onClick={() => updateNodeData(id, { configMode: true })}
-            className={`text-[9px] px-1.5 py-0.5 rounded ${configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
-          >
-            配置
-          </button>
-          <button
-            onClick={() => updateNodeData(id, { configMode: false })}
-            className={`text-[9px] px-1.5 py-0.5 rounded ${!configMode ? 'bg-primary text-text' : 'bg-surface text-text-secondary'}`}
-          >
-            运行
-          </button>
-        </div>
-
         {/* 配置模式内容区 - 可滚动 */}
         {configMode && (
           <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
@@ -964,24 +947,15 @@ JSON 格式: { "apiUrl": "", "method": "POST", "headers": "{}", "body": "", "out
               </button>
             </div>
           )}
-          {/* 执行按钮 */}
-          <div className="flex gap-1">
+          {/* 停止按钮 */}
+          {loading && (
             <button
-              onClick={handleExecute}
-              disabled={loading}
-              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
+              onClick={handleStop}
+              className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
             >
-              {loading ? '执行中...' : '▶ 执行'}
+              ⏹ 停止
             </button>
-            {loading && (
-              <button
-                onClick={handleStop}
-                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
-              >
-                ⏹ 停止
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
       {/* 万能输出 handle — data-handletype="any" 可连接任意类型下游节点 */}

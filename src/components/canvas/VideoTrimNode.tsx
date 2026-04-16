@@ -105,7 +105,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
       {/* 视频状态 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {resultUrl ? (
-          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
             <span className="text-[10px] text-text">{startTime.toFixed(1)}-{endTime.toFixed(1)}s</span>
           </div>
         ) : sourceVideoUrl ? (
@@ -213,6 +213,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}
       title="裁剪"
+      showHoverHeader
       hoverContent={hoverContent}
     >
       {minimalContent}

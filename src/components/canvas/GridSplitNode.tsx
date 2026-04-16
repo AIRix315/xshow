@@ -240,6 +240,7 @@ function GridSplitNodeComponent({ id, data, selected }: NodeProps<GridSplitNodeT
         errorMessage={errorMessage}
         title="分割"
         minWidth={260}
+        showHoverHeader
         hoverContent={hoverContent}
       >
         {minimalContent}

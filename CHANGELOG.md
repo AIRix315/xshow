@@ -2,25 +2,66 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.9] - 2026-04-16
+
+### UI 重构：节点标题栏 + 悬停交互 + 浮动栏优化
+
+**BaseNodeWrapper 重构**
+- 标题栏改为悬浮在节点上方（absolute -top），不再占据节点内容区高度
+- 新增 `showHoverHeader` 模式：悬停时显示切换（设置/展开）和运行按钮
+- 新增 `onRun` / `onToggle` 回调替代旧的 `onSettings`
+- 悬停展开从 CSS `group-hover` 切换为 JS 状态驱动 `expanded`，支持点击切换
+- 错误消息 z-index 提升（z-30），调试信息层级调整（z-20）
+
+**节点批量适配**
+- ImageNode / VideoNode / TextNode / Generate3DNode / GenerateAudioNode：移除节点内嵌运行按钮，改用 `showHoverHeader + onRun`
+- AnnotateNode / FrameGrabNode / GridSplitNode / VideoStitchNode / VideoTrimNode：启用 `showHoverHeader`
+- RhAppNode / RhWfNode：移除底部运行/停止按钮和 settingsPanel，改用 `showHoverHeader + onRun + onToggle`
+- OmniNode：移除内嵌标题栏和配置/运行切换按钮，改用 `showHoverHeader`，默认 minHeight 提升至 480
+- RhZipNode：添加 `showHoverHeader + onRun + onToggle`
+
+**节点尺寸调整**
+- imageNode: 224×224 → 260×380 / videoNode: 320×320 → 260×380 / textNode: 400×240 → 260×260
+- promptNode: 400×240 → 260×260 / audioNode: 320×280 → 260×320 / omniNode: 400×300 → 320×480
+
+**FloatingActionBar 优化**
+- 新增折叠/展开切换箭头（默认展开，可收起）
+- 底部吸附对齐（bottom-0），添加展开/收起动画
+- "All nodes" 按钮文案缩短为 "Nodes"
+
+**ConnectionDropMenu 重构**
+- 支持按拖拽方向（source/target）智能展开对应分组
+- 改为可折叠分组 UI（带 ChevronDown 箭头）
+- 搜索框和文字缩小，整体宽度缩减为 150px
+- 新增 rhZipNode 到兼容节点列表
+
+**NodeSidebar 分类调整**
+- rhZipNode（ZIP）从 RunningHub 移至 Custom 分类
+
+**小地图功能增强**
+- 新增 `minimapPosition` 设置：右上 / 右下 / 关闭
+- SettingsPanel 画布设置页新增小地图位置分段控制
+- FlowCanvas 使用 minimapPosition 替代旧的 showMinimap 布尔开关
+- 小地图圆角和遮罩样式优化
+
+**样式微调**
+- 多个节点预览区域添加 `rounded` 圆角
+- OmniNode 默认 executionMode 改为 `async`
+- React Flow 控件面板添加 `overflow: hidden`
+- minimap 添加 `border-radius: 8px` 和 `overflow: hidden`
+
+
+
 ## [0.1.8] - 2026-04-16
 
 ### 版本升级
 
-- `package.json` 版本 0.1.7 → 0.1.8
-- `public/manifest.json` 版本 0.1.6 → 0.1.8
-- `src/utils/projectManager.ts` / `patchManager.ts` fallback 版本更新
-- UI 版本显示通过 Vite 注入的 `__APP_VERSION__` 自动同步
-
-> **项目完整变更概要 (v0.0.1 → v0.1.8)**
-> - **核心架构**：React Flow 节点编辑器 + Chrome Extension + Tailwind v4
 > - **节点系统**：UniversalNode (万能节点) / OmniNode / ZipNode / ImageNode / TextNode / CropNode / VideoNode / AudioNode / GridSplit / GridMerge / RouterNode / OutputGalleryNode / FloatingActionBar
 > - **RunningHub 集成**：RhAppNode (APP快捷创作) / RhWfNode (工作流节点) / 完整 API 封装 (任务提交/轮询/文件上传)
 > - **执行引擎**：BFS 执行引擎 + 节点执行器体系 + 执行高亮
 > - **数据流**：connectedInputs 工具 / 智能连线 / 类型感知路由 / 泛型输入
 > - **资源管理**：File System Access API / 资源库菜单 / 3D 模型支持
 > - **持久化**：项目导入导出 (.xshow) / 差量保存 (fast-json-patch) / IndexedDB / 静默自动保存
-> - **测试**：335+ 测试用例覆盖 / E2E 测试 / RTL 组件测试
-> - **工具链**：Vite + TypeScript + Vitest + Playwright
 
 ## [0.1.7] - 2026-04-16
 

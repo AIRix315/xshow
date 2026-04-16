@@ -282,7 +282,6 @@ function FlowCanvasInner() {
   const setNodes = useFlowStore((s) => s.setNodes);
   const setEdges = useFlowStore((s) => s.setEdges);
   const currentProjectId = useSettingsStore((s) => s.currentProjectId);
-  const showMinimap = useSettingsStore((s) => s.systemSettings.showMinimap);
   const cs = useSettingsStore((s) => s.canvasSettings);
   const reactFlowInstance = useRef<ReturnType<typeof Object> | null>(null);
 
@@ -526,8 +525,8 @@ function FlowCanvasInner() {
         >
           {cs.showGrid && <Background color="#404040" gap={20} size={1} />}
           <Controls className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg [&>button]:bg-neutral-800 [&>button]:border-neutral-700 [&>button]:text-neutral-300 [&>button:hover]:bg-neutral-700 [&>button:hover]:text-neutral-100" />
-          {showMinimap && <MiniMap
-            position="top-right"
+          {cs.minimapPosition !== 'off' && <MiniMap
+            position={cs.minimapPosition === 'top-right' ? 'top-right' : 'bottom-right'}
             className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg"
             maskColor="rgba(0, 0, 0, 0.6)"
             pannable
@@ -597,6 +596,7 @@ function FlowCanvasInner() {
       <ConnectionDropMenu
         position={dropMenuState.position}
         sourceHandleType={dropMenuState.sourceHandleType}
+        connectionType={dropMenuState.connectionType}
         nodes={nodes}
         onSelect={handleDropMenuSelect}
         onClose={() => setDropMenuState({ position: null, sourceHandleType: null, sourceNodeId: null, sourceHandleId: null, connectionType: null })}

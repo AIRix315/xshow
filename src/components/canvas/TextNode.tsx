@@ -205,6 +205,8 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
       errorMessage={errorMessage}
       title="生成文本"
       minWidth={280}
+      showHoverHeader
+      onRun={handleGenerate}
       hoverContent={fullContent}
     >
       {minimalContent}

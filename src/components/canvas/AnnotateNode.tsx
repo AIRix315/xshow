@@ -282,7 +282,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
       {/* 标注预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {annotations.length > 0 ? (
-          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
             <span className="text-[10px] text-text">{annotations.length} 个标注</span>
           </div>
         ) : sourceImageUrl ? (
@@ -410,6 +410,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
   return (
     <BaseNodeWrapper selected={!!selected} loading={false} errorMessage={errorMessage}
       title="标注"
+      showHoverHeader
       hoverContent={hoverContent}
     >
       {minimalContent}

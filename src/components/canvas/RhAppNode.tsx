@@ -175,11 +175,6 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     }
   }, [loading, config.appId, apiKey, id, updateNodeData]);
 
-  // 停止
-  const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
-
   // 判断输出类型 — 对齐 OmniNode OutputPreview 逻辑
   const effectiveOutputType = config.outputType ?? 'auto';
   const outputUrlTypes = data.outputUrlTypes as string[] | undefined;
@@ -255,30 +250,6 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     );
   };
 
-  // 设置面板
-  const settingsPanel = (
-    <div className="flex flex-col gap-2 p-2">
-      <select
-        value={config.appId ?? ''}
-        onChange={(e) => handleSelectApp(e.target.value)}
-        className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-1 border border-border"
-      >
-        <option value="">— 选择 APP —</option>
-        {runninghubApps.map((app) => (
-          <option key={app.id} value={app.id}>
-            {app.name}
-          </option>
-        ))}
-      </select>
-      {runninghubApps.length === 0 && (
-        <div className="text-[9px] text-yellow-400">请在设置中添加 RunningHub APP</div>
-      )}
-      {!apiKey && (
-        <div className="text-[9px] text-yellow-400">请在设置中配置 API Key</div>
-      )}
-    </div>
-  );
-
   // 预览内容
   const previewContent = (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -338,10 +309,12 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
       title={label}
       loading={loading}
       errorMessage={errorMessage}
-      settingsPanel={settingsPanel}
-      onSettings={toggleConfigMode}
+      settingsPanel={undefined}
       minHeight={200}
       minWidth={200}
+      showHoverHeader
+      onRun={handleExecute}
+      onToggle={toggleConfigMode}
     >
       <div className="flex flex-col h-full min-h-[180px]">
         {/* 配置模式内容区 - 可滚动 */}
@@ -435,27 +408,6 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
             {previewContent}
           </div>
         )}
-
-        {/* 运行按钮 - 固定在底部 */}
-        <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
-          <div className="flex gap-1">
-            <button
-              onClick={handleExecute}
-              disabled={loading}
-              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
-            >
-              {loading ? '运行中...' : '▶ 运行'}
-            </button>
-            {loading && (
-              <button
-                onClick={handleStop}
-                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
-              >
-                ⏹ 停止
-              </button>
-            )}
-          </div>
-        </div>
       </div>
       <Handle
         type="target"

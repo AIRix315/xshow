@@ -176,11 +176,6 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
     }
   }, [loading, config.workflowId, apiKey, id, updateNodeData]);
 
-  // 停止
-  const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
-
   // 判断输出类型
   const effectiveOutputType = config.outputType ?? 'auto';
   const outputUrlTypes = data.outputUrlTypes as string[] | undefined;
@@ -253,9 +248,11 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
       title={label}
       loading={loading}
       errorMessage={errorMessage}
-      onSettings={toggleConfigMode}
       minHeight={200}
       minWidth={200}
+      showHoverHeader
+      onRun={handleExecute}
+      onToggle={toggleConfigMode}
     >
       <div className="flex flex-col h-full min-h-[180px]">
         {/* 配置模式内容区 - 可滚动 */}
@@ -341,27 +338,6 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
             {previewContent}
           </div>
         )}
-
-        {/* 运行按钮 - 固定在底部 */}
-        <div className="shrink-0 p-2 border-t border-border bg-[#262626] rounded-b-lg">
-          <div className="flex gap-1">
-            <button
-              onClick={handleExecute}
-              disabled={loading}
-              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover text-text text-[10px] py-1.5 rounded font-medium"
-            >
-              {loading ? '运行中...' : '▶ 运行'}
-            </button>
-            {loading && (
-              <button
-                onClick={handleStop}
-                className="flex-1 bg-error hover:bg-error/80 text-text text-[10px] py-1.5 rounded font-medium"
-              >
-                ⏹ 停止
-              </button>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* 默认 any handle — 始终保留，用于接收上游数据 */}

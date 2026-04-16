@@ -88,7 +88,7 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
       {/* 视频状态 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {resultUrl ? (
-          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
             <span className="text-[10px] text-text">已拼接</span>
           </div>
         ) : inputVideos.length > 0 ? (
@@ -203,6 +203,7 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}
       title="拼接"
+      showHoverHeader
       hoverContent={hoverContent}
     >
       {minimalContent}

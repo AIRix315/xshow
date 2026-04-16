@@ -95,13 +95,13 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
 // Ref: §6.11 — 默认尺寸
 const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   // 生成节点
-  imageNode: { width: 224, height: 224 },
-  promptNode: { width: 400, height: 240 },
-  textNode: { width: 400, height: 240 },
-  videoNode: { width: 320, height: 320 },
-  audioNode: { width: 320, height: 280 },
+  imageNode: { width: 260, height: 380 },
+  promptNode: { width: 260, height: 260 },
+  textNode: { width: 260, height: 260 },
+  videoNode: { width: 260, height: 380 },
+  audioNode: { width: 260, height: 320 },
   d3Node: { width: 320, height: 300 },
-  omniNode: { width: 400, height: 300 },
+  omniNode: { width: 320, height: 480 },
   rhAppNode: { width: 360, height: 320 },
   rhWfNode: { width: 400, height: 320 },
   rhZipNode: { width: 240, height: 260 },

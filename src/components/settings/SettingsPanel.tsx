@@ -1066,6 +1066,10 @@ function CanvasTab() {
           <label className="flex items-center justify-between cursor-pointer"><span className="text-xs text-text">对齐到网格</span><Toggle value={cs.snapToGrid} onChange={(v) => update({ snapToGrid: v })} /></label>
           <label className="flex items-center justify-between cursor-pointer"><span className="text-xs text-text">减少动画</span><Toggle value={cs.reduceAnimations} onChange={(v) => update({ reduceAnimations: v })} /></label>
         </div>
+        <div>
+          <label className="text-[10px] text-text-secondary mb-1 block">小地图</label>
+          <SegmentedControl value={cs.minimapPosition} onChange={(v) => update({ minimapPosition: v as CanvasSettings['minimapPosition'] })} options={[{ label: '右上', value: 'top-right' }, { label: '右下', value: 'bottom-right' }, { label: '关', value: 'off' }]} />
+        </div>
       </div>
 
       {/* 节点默认值 */}
