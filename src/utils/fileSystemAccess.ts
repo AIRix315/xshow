@@ -116,9 +116,14 @@ class FileSystemAccessManager {
 
   /**
    * 让用户选择设置目录（根目录，项目将保存在其下的 projects 子目录）
+   * 如果目录中已有 settings.json，返回其内容供调用方合并
    * @param suggestedName 建议的文件夹名
+   * @returns { success, existingSettingsJson? } existingSettingsJson 仅在文件已存在时返回
    */
-  async pickSettingsDirectory(suggestedName = 'XShow'): Promise<boolean> {
+  async pickSettingsDirectory(suggestedName = 'XShow'): Promise<{
+    success: boolean;
+    existingSettingsJson?: string;
+  }> {
     try {
       const handle = await window.showDirectoryPicker({
         mode: 'readwrite',
@@ -127,11 +132,22 @@ class FileSystemAccessManager {
       });
       this.settingsDirHandle = handle;
       await set(SETTINGS_DIR_KEY, handle);
-      return true;
+
+      // 检查目录中是否已有 settings.json
+      let existingSettingsJson: string | undefined;
+      try {
+        const fileHandle = await handle.getFileHandle(SETTINGS_FILENAME);
+        const file = await fileHandle.getFile();
+        existingSettingsJson = await file.text();
+      } catch {
+        // 文件不存在 — 正常情况，不报错
+      }
+
+      return { success: true, existingSettingsJson };
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return false;
+      if ((err as Error).name === 'AbortError') return { success: false };
       console.error('[FileSystemAccessManager] 选择设置目录失败:', err);
-      return false;
+      return { success: false };
     }
   }
 
@@ -214,6 +230,17 @@ class FileSystemAccessManager {
   /** 是否有有效的设置目录句柄 */
   hasSettingsDirectory(): boolean {
     return this.settingsDirHandle !== null;
+  }
+
+  /** 检查设置目录下是否存在 settings.json（不创建文件） */
+  async settingsExists(): Promise<boolean> {
+    if (!this.settingsDirHandle) return false;
+    try {
+      await this.settingsDirHandle.getFileHandle(SETTINGS_FILENAME);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** 获取设置目录名 */

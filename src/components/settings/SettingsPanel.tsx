@@ -1135,11 +1135,27 @@ function SystemTab() {
   const handleSelectDirectory = useCallback(async () => {
     setSelectingDir(true);
     try {
-      const success = await fsManager.pickSettingsDirectory('XShow-Settings');
+      const { success, existingSettingsJson } = await fsManager.pickSettingsDirectory('XShow-Settings');
       if (success) {
         const dirName = fsManager.getSettingsDirectoryName();
         setSettingsDirName(dirName);
-        showMessage('success', `已选择目录: ${dirName}`);
+
+        if (existingSettingsJson) {
+          // 目录中已有 settings.json → 确认后合并到内存
+          if (window.confirm('该目录已存在配置文件，是否将其导入并合并到当前配置？\n（缺失字段自动用默认值填补，已有配置不会被覆盖）')) {
+            useSettingsStore.getState().importSettingsFromFile(existingSettingsJson);
+            showMessage('success', `已从目录恢复配置: ${dirName}`);
+          } else {
+            showMessage('success', `已选择目录: ${dirName}（保留当前配置）`);
+          }
+        } else {
+          // 目录中无 settings.json → 首次使用，将当前内存配置写入
+          showMessage('success', `已选择目录: ${dirName}（下次修改将自动同步）`);
+        }
+
+        // 无论是否导入，目录已选中，标记 fs 初始化完成以允许后续同步写入
+        const { markFsInitialized } = await import('@/stores/useSettingsStore');
+        markFsInitialized();
       }
     } finally {
       setSelectingDir(false);

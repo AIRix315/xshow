@@ -13,6 +13,7 @@ import { importProjectFile } from '@/utils/projectManager';
 import { listProjectsFromFs, loadProjectFromFs } from '@/utils/patchManager';
 import { fsManager } from '@/utils/fileSystemAccess';
 import { loadCanvasState } from '@/utils/canvasState';
+import { markFsInitialized } from '@/stores/useSettingsStore';
 
 // Vite 注入 package.json 版本号
 const APP_VERSION = __APP_VERSION__;
@@ -53,6 +54,7 @@ function App() {
   useEffect(() => {
     fsManager.initialize().then(async ({ settingsDirOk }) => {
       if (settingsDirOk) {
+        // 尝试从磁盘加载已有配置
         const result = await fsManager.loadSettings();
         if (result.success && result.data) {
           useSettingsStore.getState().importSettingsFromFile(result.data.json);
@@ -61,6 +63,10 @@ function App() {
         const fsProjs = await listProjectsFromFs();
         setFsProjects(fsProjs);
       }
+      // 无论目录是否 OK，标记初始化完成，允许后续写入
+      // 如果没有目录，syncSettingsToFs 会因 hasSettingsDirectory() 跳过
+      // 如果有目录且已加载，配置已合并，后续写入是安全的
+      markFsInitialized();
       // 初始化完成后，加载当前项目的画布数据
       initRef.current = true;
       await loadCurrentProjectCanvas();

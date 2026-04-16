@@ -50,6 +50,22 @@ All notable changes to XShow will be documented in this file.
 - React Flow 控件面板添加 `overflow: hidden`
 - minimap 添加 `border-radius: 8px` 和 `overflow: hidden`
 
+### Bug 修复：配置文件覆写防护
+
+**问题**：用户选择已含 `settings.json` 的工作目录时，内存默认值不受控地覆写磁盘上的自定义配置（API Key、RunningHub Key、模型设定等全部丢失），版本升级后尤为严重。
+
+**根因**：`pickSettingsDirectory` 仅返回 `boolean`，不读取目录中已有文件；`syncSettingsToFs` 无初始化守卫，任何 mutation 在加载磁盘配置前即可触发覆写。
+
+**修复（三层防护）**：
+
+| 文件 | 改动 |
+|---|---|
+| `src/utils/fileSystemAccess.ts` | `pickSettingsDirectory` 返回 `{ success, existingSettingsJson }`，选择目录时自动读取已有配置；新增 `settingsExists()` 方法 |
+| `src/stores/useSettingsStore.ts` | 新增模块级 `_fsInitialized` 标志 + `markFsInitialized()` / `isFsInitialized()`；`syncSettingsToFs` 增加 `if (!_fsInitialized) return` 守卫，未完成磁盘配置加载前禁止写入 |
+| `src/App.tsx` | `initialize()` 完成后调用 `markFsInitialized()`，确保加载→合并→才允许后续同步写入 |
+| `src/components/settings/SettingsPanel.tsx` | `handleSelectDirectory` 适配新返回值：已有配置→confirm 合并；无配置→正常流转；完成后 `markFsInitialized()` |
+
+**E2E 验证**（Playwright 真实 Chrome）：13/13 断言通过，包括 API Key / RunningHub Key 写入再读回不丢失、缺失字段由默认值填补、UI 正确反映合并结果。
 
 
 ## [0.1.8] - 2026-04-16

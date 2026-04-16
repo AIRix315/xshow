@@ -72,9 +72,25 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
 
 /**
  * 将当前 settings 状态同步写入 fsManager（静默备份到设置目录）。
-  * 每次 settings mutation 后调用，确保设置目录中的 settings.json 与 chrome.storage 保持同步。
-  */
+ * 每次 settings mutation 后调用，确保设置目录中的 settings.json 与 chrome.storage 保持同步。
+ * 
+ * 🛡️ 保护机制：仅在 _fsInitialized 为 true 时才写入文件系统，
+ * 防止内存中的默认值在首次加载已有配置之前覆写磁盘上的 settings.json。
+ */
+let _fsInitialized = false;
+
+/** 标记文件系统已初始化完成（配置已从磁盘加载或确认无需加载），允许 syncSettingsToFs 写入 */
+export function markFsInitialized(): void {
+  _fsInitialized = true;
+}
+
+/** 查询文件系统是否已初始化完成 */
+export function isFsInitialized(): boolean {
+  return _fsInitialized;
+}
+
 function syncSettingsToFs(state: SettingsState & SettingsActions): void {
+  if (!_fsInitialized) return;           // 🛡️ 未初始化完成前，禁止写入
   if (!fsManager.hasSettingsDirectory()) return;
   fsManager.saveSettings(serializeSettingsState(state));
 }
