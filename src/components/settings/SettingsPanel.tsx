@@ -1,13 +1,14 @@
 // Ref: §7.2 — SettingsPanel 5 Tab 结构（项目/模型/提示词/画布/系统）
 // Ref: 原型 xshow-canvas-prototype.html 设置面板
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import type { CanvasSettings } from '@/stores/useSettingsStore';
 import type { PresetPrompt } from '@/types';
 import { testComfyConnection, testRunninghubConnection, fetchComfyWorkflows, fetchComfyWorkflowJson, type ComfyConnectionTestResult } from '@/api/comfyApi';
-import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload, Box } from 'lucide-react';
+import { FileText, Image, Video, Volume2, Plug, ChevronDown, ChevronUp, X, FolderOpen, Type, Grid3x3, Monitor, Eye, Moon, Sun, Workflow, RefreshCw, Loader2, Download, Upload, Box, Trash2, Plus, Save } from 'lucide-react';
 import { useFlowStore } from '@/stores/useFlowStore';
 import { importProjectFile } from '@/utils/projectManager';
+import { fsManager } from '@/utils/fileSystemAccess';
 
 type SettingsTab = 'project' | 'model' | 'prompt' | 'canvas' | 'system';
 type ApiType = 'text' | 'image' | 'video' | 'audio' | '3d';
@@ -734,12 +735,133 @@ function ProjectTab() {
   const hasUnsavedChanges = useFlowStore((s) => s.hasUnsavedChanges);
   const isSaving = useFlowStore((s) => s.isSaving);
   const saveProject = useFlowStore((s) => s.saveProject);
+  const loadProject = useFlowStore((s) => s.loadProject);
 
   const [ioStatus, setIoStatus] = useState<string | null>(null);
+  const [fsProjects, setFsProjects] = useState<string[]>([]);
   const currentProject = projects.find((p) => p.id === currentProjectId);
 
-  /** 导入项目 */
-  const handleImport = async () => {
+  // 刷新文件系统中的项目列表
+  const refreshFsProjects = useCallback(async () => {
+    if (fsManager.hasProjectDirectory()) {
+      const list = await fsManager.listProjects();
+      setFsProjects(list);
+    } else {
+      setFsProjects([]);
+    }
+  }, []);
+
+  // 初始化时刷新项目列表
+  useEffect(() => {
+    refreshFsProjects();
+  }, [refreshFsProjects]);
+
+  // 打开/切换到项目（从文件系统加载）
+  const handleOpenProject = useCallback(async (projectName: string) => {
+    if (hasUnsavedChanges) {
+      if (!confirm('有未保存的更改，确定要打开其他项目吗？')) return;
+    }
+    setIoStatus('正在加载...');
+    try {
+      const result = await fsManager.loadProject(projectName);
+      if (result.success && result.data) {
+        const data = JSON.parse(result.data.json);
+        // 加载到画布
+        loadProject(data.nodes, data.edges);
+        // 如果项目列表中没有这个名字，添加到列表
+        const existing = projects.find((p) => p.name === projectName);
+        if (!existing) {
+          const newId = Date.now().toString();
+          addProject(projectName);
+          setCurrentProject(newId);
+        } else {
+          setCurrentProject(existing.id);
+        }
+        setIoStatus(null);
+      } else {
+        setIoStatus(`加载失败: ${result.error}`);
+      }
+    } catch (err) {
+      setIoStatus('加载失败');
+    }
+  }, [hasUnsavedChanges, loadProject, projects, addProject, setCurrentProject]);
+
+  // 新建项目（在文件系统中创建文件夹）
+  const handleNewProject = useCallback(async () => {
+    const name = prompt('输入项目名称：');
+    if (!name) return;
+    
+    if (fsManager.hasProjectDirectory()) {
+      // 在文件系统中创建项目
+      const safeName = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+      const exists = await fsManager.projectExists(safeName);
+      if (exists) {
+        alert('项目已存在');
+        return;
+      }
+      // 创建项目（会创建空文件夹）
+      await fsManager.saveProject(safeName, JSON.stringify({
+        version: 1,
+        id: Date.now().toString(),
+        name,
+        nodes: [],
+        edges: [],
+        savedAt: Date.now(),
+      }), false);
+      
+      // 添加到 Zustand 并切换
+      const newId = Date.now().toString();
+      addProject(name);
+      setCurrentProject(newId);
+      await refreshFsProjects();
+      setIoStatus(null);
+    } else {
+      // 没有设置目录时，只添加到内存
+      const newId = Date.now().toString();
+      addProject(name);
+      setCurrentProject(newId);
+      alert('提示：项目已添加到列表，但没有设置保存目录。请在系统设置中设置目录。');
+    }
+  }, [addProject, setCurrentProject, refreshFsProjects]);
+
+  // 删除项目（从文件系统删除文件夹）
+  const handleDeleteProject = useCallback(async (projectName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`确定要删除项目 "${projectName}" 吗？此操作不可恢复。`)) return;
+    
+    if (fsManager.hasProjectDirectory()) {
+      await fsManager.deleteProject(projectName);
+    }
+    
+    // 如果 Zustand 中有对应的项目，也删除它
+    const existing = projects.find((p) => p.name === projectName);
+    if (existing) {
+      removeProject(existing.id);
+    }
+    
+    await refreshFsProjects();
+  }, [projects, removeProject, refreshFsProjects]);
+
+  // 保存当前项目
+  const handleSave = useCallback(async () => {
+    if (!currentProject || isSaving) return;
+    setIoStatus('正在保存...');
+    
+    if (fsManager.hasProjectDirectory()) {
+      const success = await saveProject(currentProjectId, currentProject.name, systemSettings.embedBase64);
+      if (success) {
+        await refreshFsProjects();
+      }
+      setIoStatus(success ? null : '保存失败');
+    } else {
+      // 回退到浏览器下载
+      await saveProject(currentProjectId, currentProject.name, systemSettings.embedBase64);
+      setIoStatus(null);
+    }
+  }, [currentProject, currentProjectId, isSaving, saveProject, systemSettings.embedBase64, refreshFsProjects]);
+
+  // 导入外部项目文件
+  const handleImport = useCallback(async () => {
     if (hasUnsavedChanges) {
       if (!confirm('有未保存的更改，确定要导入吗？')) return;
     }
@@ -752,18 +874,17 @@ function ProjectTab() {
       }
     }
     setIoStatus(null);
-  };
-
-  /** 导出当前项目 */
-  const handleExport = async () => {
-    if (!currentProject || isSaving) return;
-    setIoStatus('正在导出...');
-    await saveProject(currentProjectId, currentProject.name, systemSettings.embedBase64);
-    setIoStatus(null);
-  };
+  }, [hasUnsavedChanges, importProjectFromFile]);
 
   return (
     <div className="space-y-4">
+      {/* 未设置目录提示 */}
+      {!fsManager.hasProjectDirectory() && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded p-3">
+          <p className="text-xs text-yellow-300">请先在系统设置中选择保存目录，才能正常保存和加载项目。</p>
+        </div>
+      )}
+
       <div>
         <label className="block text-xs text-text-secondary mb-1">项目名称</label>
         <input
@@ -775,72 +896,88 @@ function ProjectTab() {
         />
       </div>
 
-      {/* 导入/导出区域 */}
-      <div className="border border-border rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-xs text-text font-medium">文件操作</span>
-            <p className="text-[10px] text-text-muted">导出为 .xshow 文件，或从文件导入</p>
-          </div>
-          {ioStatus && <span className="text-[10px] text-primary">{ioStatus}</span>}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleImport}
-            disabled={!!ioStatus}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
-          >
-            <Upload className="w-3.5 h-3.5" />导入项目
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={!!ioStatus || isSaving}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" />{isSaving ? '导出中...' : '导出项目'}
-          </button>
-        </div>
-        {hasUnsavedChanges && (
-          <p className="text-[10px] text-yellow-400 text-center">当前有未保存的更改</p>
-        )}
-      </div>
-
       {/* Base64 嵌入开关 */}
-      <div className="border-t border-border pt-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1">
-            <span className="text-sm text-text">导出含媒体</span>
-            <p className="text-[10px] text-text-muted mt-0.5">
-              {systemSettings.embedBase64 ? (
-                <span className="text-green-400">✓ 已开启 — 图片/视频内嵌为 Base64，导出的 .xshow 文件自包含所有资源，可直接分享</span>
-              ) : (
-                <span className="text-yellow-400">✗ 已关闭 — 保留 URL 引用，导出的文件较小，但链接在导出后可能失效</span>
-              )}
-            </p>
-          </div>
-          <Toggle value={systemSettings.embedBase64} onChange={(v) => updateSystemSettings({ embedBase64: v })} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1">
+          <span className="text-sm text-text">导出含媒体</span>
+          <p className="text-[10px] text-text-muted mt-0.5">
+            {systemSettings.embedBase64 ? (
+              <span className="text-green-400">✓ 已开启 — 图片/视频内嵌为 Base64，文件自包含</span>
+            ) : (
+              <span className="text-yellow-400">✗ 已关闭 — 仅保存工作流，文件更小</span>
+            )}
+          </p>
         </div>
-        <div className={`mt-1.5 px-2 py-1.5 rounded text-[10px] leading-relaxed ${systemSettings.embedBase64 ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-200 border border-yellow-500/20'}`}>
-          {systemSettings.embedBase64 ? (
-            <>导出的文件较大（图片越多体积越大），但完全自包含，无需担心资源链接丢失。</>
-          ) : (
-            <>文件轻量，但 AI 生成的图片/视频链接在导出后会断开。请在导出前确保资源已保存到本地。</>
-          )}
-        </div>
+        <Toggle value={systemSettings.embedBase64} onChange={(v) => updateSystemSettings({ embedBase64: v })} />
       </div>
 
-      {/* 项目列表 */}
+      {/* 操作按钮 */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleNewProject}
+          disabled={!!ioStatus}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
+        >
+          <Plus className="w-3.5 h-3.5" />新建项目
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!!ioStatus || isSaving || !currentProject}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
+        >
+          <Save className="w-3.5 h-3.5" />{isSaving ? '保存中...' : '保存项目'}
+        </button>
+        <button
+          onClick={handleImport}
+          disabled={!!ioStatus}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface hover:bg-surface-hover text-text text-xs rounded border border-border transition-colors disabled:opacity-50"
+        >
+          <Upload className="w-3.5 h-3.5" />导入
+        </button>
+      </div>
+
+      {ioStatus && <p className="text-[10px] text-primary text-center">{ioStatus}</p>}
+      {hasUnsavedChanges && <p className="text-[10px] text-yellow-400 text-center">当前有未保存的更改</p>}
+
+      {/* 项目列表（来自文件系统） */}
       <div className="border-t border-border pt-3">
-        <label className="block text-xs text-text-secondary mb-1.5">项目列表</label>
-        <div className="space-y-1">
-          {projects.map((p) => (
-            <div key={p.id} className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer ${p.id === currentProjectId ? 'border-primary bg-primary/10' : 'border-border hover:bg-surface-hover'}`} onClick={() => setCurrentProject(p.id)}>
-              <span className="text-xs text-text flex-1 truncate">{p.name}</span>
-              {projects.length > 1 && <button onClick={(e) => { e.stopPropagation(); removeProject(p.id); }} className="text-error text-[10px]"><X className="w-3 h-3" /></button>}
-            </div>
-          ))}
-          <button onClick={() => addProject('新项目')} className="w-full text-[10px] py-1.5 rounded border border-dashed border-border text-text-secondary hover:text-text hover:border-primary bg-surface-hover">+ 新建项目</button>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs text-text-secondary">项目列表</label>
+          <button
+            onClick={refreshFsProjects}
+            className="text-[10px] text-text-secondary hover:text-text"
+            title="刷新列表"
+          >
+            <RefreshCw className="w-3 h-3" />
+          </button>
         </div>
+        {fsProjects.length === 0 ? (
+          <p className="text-[10px] text-text-muted italic text-center py-4">
+            {fsManager.hasProjectDirectory() ? '暂无项目，请新建' : '请先设置保存目录'}
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {fsProjects.map((name) => (
+              <div
+                key={name}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer ${
+                  currentProject?.name === name ? 'border-primary bg-primary/10' : 'border-border hover:bg-surface-hover'
+                }`}
+                onClick={() => handleOpenProject(name)}
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                <span className="text-xs text-text flex-1 truncate">{name}</span>
+                <button
+                  onClick={(e) => handleDeleteProject(name, e)}
+                  className="text-error hover:text-error/80 shrink-0"
+                  title="删除项目"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -973,7 +1110,112 @@ function CanvasTab() {
 function SystemTab() {
   const ss = useSettingsStore((s) => s.systemSettings);
   const update = useSettingsStore((s) => s.updateSystemSettings);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [settingsDirName, setSettingsDirName] = useState<string>('');
+  const [selectingDir, setSelectingDir] = useState(false);
+  const [ioMessage, setIoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 初始化：检查是否已有设置目录
+  useEffect(() => {
+    if (fsManager.hasSettingsDirectory()) {
+      setSettingsDirName(fsManager.getSettingsDirectoryName());
+    }
+  }, []);
+
+  // 显示操作结果消息
+  const showMessage = useCallback((type: 'success' | 'error', text: string) => {
+    setIoMessage({ type, text });
+    setTimeout(() => setIoMessage(null), 3000);
+  }, []);
+
+  // 选择设置目录
+  const handleSelectDirectory = useCallback(async () => {
+    setSelectingDir(true);
+    try {
+      const success = await fsManager.pickSettingsDirectory('XShow-Settings');
+      if (success) {
+        const dirName = fsManager.getSettingsDirectoryName();
+        setSettingsDirName(dirName);
+        showMessage('success', `已选择目录: ${dirName}`);
+      }
+    } finally {
+      setSelectingDir(false);
+    }
+  }, [showMessage]);
+
+  // 清除设置目录
+  const handleClearDirectory = useCallback(async () => {
+    await fsManager.clearSettingsDirectory();
+    setSettingsDirName('');
+    update({ saveDirectory: '' });
+  }, [update]);
+
+  // 导出配置：优先保存到目录，回退到浏览器下载
+  const handleExport = useCallback(async () => {
+    const json = useSettingsStore.getState().exportSettingsJson();
+    if (!json) return;
+
+    if (fsManager.hasSettingsDirectory()) {
+      // 保存到已选目录
+      const result = await fsManager.saveSettings(json);
+      if (result.success) {
+        showMessage('success', '配置已保存到指定目录');
+      } else {
+        showMessage('error', `保存失败: ${result.error}`);
+      }
+    } else {
+      // 回退到浏览器下载
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.href = url;
+      a.download = `xshow-config-${ts}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showMessage('success', '配置已下载');
+    }
+  }, [showMessage]);
+
+  // 导入配置：从已选目录读取
+  const handleImport = useCallback(async () => {
+    if (fsManager.hasSettingsDirectory()) {
+      const result = await fsManager.loadSettings();
+      if (result.success && result.data) {
+        if (window.confirm('从目录导入将覆盖当前所有配置（缺失字段自动用默认值填补）。确定继续？')) {
+          useSettingsStore.getState().importSettingsFromFile(result.data.json);
+          showMessage('success', '配置已从目录恢复');
+        }
+      } else {
+        showMessage('error', `读取失败: ${result.error}`);
+      }
+    } else {
+      showMessage('error', '请先选择配置保存目录');
+    }
+  }, [showMessage]);
+
+  // 选择配置文件：使用文件选择器选择特定 JSON 文件
+  const handleSelectConfigFile = useCallback(async () => {
+    try {
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [{
+          description: 'JSON 配置文件',
+          accept: { 'application/json': ['.json'] },
+        }],
+        multiple: false,
+      });
+      if (!fileHandle) return;
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      if (window.confirm('导入将覆盖当前所有配置（缺失字段自动用默认值填补）。确定继续？')) {
+        useSettingsStore.getState().importSettingsFromFile(content);
+        showMessage('success', `已从 ${file.name} 导入配置`);
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        showMessage('error', '选择文件失败');
+      }
+    }
+  }, [showMessage]);
 
   return (
     <div className="space-y-4">
@@ -1002,55 +1244,134 @@ function SystemTab() {
         </label>
       </div>
 
+      {/* 目录配置 */}
+      <div className="bg-surface rounded-lg border border-border p-3 space-y-3">
+        <div className="text-sm font-medium text-text">配置保存目录</div>
+        <p className="text-[10px] text-text-muted">选择保存系统配置JSON文件的默认目录。设置后将自动同步配置到该目录。</p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSelectDirectory}
+            disabled={selectingDir}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors disabled:opacity-50"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            {selectingDir ? '选择中...' : '选择目录'}
+          </button>
+          {settingsDirName && (
+            <div className="flex-1 flex items-center gap-2 px-2 py-1.5 bg-surface-hover rounded border border-border">
+              <span className="text-xs text-text truncate flex-1">{settingsDirName}</span>
+              <button
+                onClick={handleClearDirectory}
+                className="text-text-muted hover:text-error transition-colors"
+                title="清除目录"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+        {!settingsDirName && (
+          <p className="text-[10px] text-yellow-400">尚未选择目录，配置将仅保存在浏览器存储中</p>
+        )}
+      </div>
+
       {/* 路径配置 */}
       <div className="bg-surface rounded-lg border border-border p-3 space-y-3">
-        <div className="text-sm font-medium text-text">配置备份</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium text-text">配置备份</div>
+          {ioMessage && (
+            <span className={`text-[10px] ${ioMessage.type === 'success' ? 'text-green-400' : 'text-error'}`}>
+              {ioMessage.text}
+            </span>
+          )}
+        </div>
         <p className="text-[10px] text-text-muted">导出包含所有 API Key、供应商配置、项目设定、画布及系统设置。导入将覆盖当前配置。</p>
         <div className="flex gap-2">
           <button
-            onClick={() => {
-              const json = useSettingsStore.getState().exportSettingsJson();
-              if (!json) return;
-              const blob = new Blob([json], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              const ts = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-              a.href = url;
-              a.download = `xshow-config-${ts}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
+            onClick={handleExport}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors"
           >
-            <Download className="w-3.5 h-3.5" />导出配置
+            <Download className="w-3.5 h-3.5" />保存配置
           </button>
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={handleImport}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors"
           >
-            <Upload className="w-3.5 h-3.5" />导入配置
+            <Upload className="w-3.5 h-3.5" />读取配置
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                const content = reader.result as string;
-                if (window.confirm('导入将覆盖当前所有配置。确定继续？')) {
-                  useSettingsStore.getState().importSettingsJson(content);
-                }
-              };
-              reader.readAsText(file);
-              // 清空 value 以便重复选择同一文件
-              e.target.value = '';
-            }}
-          />
+          <button
+            onClick={handleSelectConfigFile}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border text-text-secondary bg-surface-hover hover:bg-surface hover:text-text transition-colors"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />导入配置
+          </button>
         </div>
+      </div>
+
+      {/* 清除浏览器缓存 */}
+      <div className="bg-surface rounded-lg border border-border p-3 space-y-3">
+        <div className="text-sm font-medium text-text">清除浏览器缓存</div>
+        <p className="text-[10px] text-text-muted">
+          清除本插件在浏览器中的所有本地数据，包括：设置配置、画布项目、API Key、目录权限等。文件系统中的项目文件不受影响。
+        </p>
+        <button
+          onClick={async () => {
+            if (!window.confirm('确定要清除所有浏览器缓存吗？此操作不可恢复（文件系统中的项目文件不受影响）。')) return;
+            try {
+              // 1. 清除 localStorage（xshow- 前缀的所有 key）
+              for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('xshow-')) {
+                  localStorage.removeItem(key);
+                }
+              }
+              // 2. 清除 chrome.storage.local
+              if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                await new Promise<void>((resolve) => {
+                  chrome.storage.local.get(null, (result) => {
+                    const keys = Object.keys(result).filter((k) => k.startsWith('xshow-'));
+                    if (keys.length > 0) {
+                      chrome.storage.local.remove(keys, () => resolve());
+                    } else {
+                      resolve();
+                    }
+                  });
+                });
+              }
+              // 3. 清除 IndexedDB（idb-keyval 的 directory handles + localforage 画布状态）
+              try {
+                const dbsInfo = await indexedDB.databases();
+                await Promise.all(
+                  dbsInfo
+                    .filter((db) => db.name && (db.name.includes('xshow') || db.name.includes('idb') || db.name.includes('localforage')))
+                    .map(
+                      (db) =>
+                        new Promise<void>((resolve) => {
+                          const req = indexedDB.open(db.name!);
+                          // @ts-expect-error onversionchange 不在旧版 TS lib 中
+                          req.onversionchange = () => { req.result?.close(); };
+                          req.onsuccess = () => {
+                            req.result?.close();
+                            indexedDB.deleteDatabase(db.name!);
+                            resolve();
+                          };
+                          req.onerror = () => resolve();
+                        }),
+                    ),
+                );
+              } catch {
+                // indexedDB.databases() 不支持时静默忽略
+              }
+              showMessage('success', '缓存已清除，页面将重新加载');
+              setTimeout(() => window.location.reload(), 1500);
+            } catch (err) {
+              showMessage('error', `清除失败: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-error/30 text-error bg-error/10 hover:bg-error/20 transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />清除所有浏览器缓存
+        </button>
       </div>
     </div>
   );

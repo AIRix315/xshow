@@ -2,6 +2,26 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.1.8] - 2026-04-16
+
+### 版本升级
+
+- `package.json` 版本 0.1.7 → 0.1.8
+- `public/manifest.json` 版本 0.1.6 → 0.1.8
+- `src/utils/projectManager.ts` / `patchManager.ts` fallback 版本更新
+- UI 版本显示通过 Vite 注入的 `__APP_VERSION__` 自动同步
+
+> **项目完整变更概要 (v0.0.1 → v0.1.8)**
+> - **核心架构**：React Flow 节点编辑器 + Chrome Extension + Tailwind v4
+> - **节点系统**：UniversalNode (万能节点) / OmniNode / ZipNode / ImageNode / TextNode / CropNode / VideoNode / AudioNode / GridSplit / GridMerge / RouterNode / OutputGalleryNode / FloatingActionBar
+> - **RunningHub 集成**：RhAppNode (APP快捷创作) / RhWfNode (工作流节点) / 完整 API 封装 (任务提交/轮询/文件上传)
+> - **执行引擎**：BFS 执行引擎 + 节点执行器体系 + 执行高亮
+> - **数据流**：connectedInputs 工具 / 智能连线 / 类型感知路由 / 泛型输入
+> - **资源管理**：File System Access API / 资源库菜单 / 3D 模型支持
+> - **持久化**：项目导入导出 (.xshow) / 差量保存 (fast-json-patch) / IndexedDB / 静默自动保存
+> - **测试**：335+ 测试用例覆盖 / E2E 测试 / RTL 组件测试
+> - **工具链**：Vite + TypeScript + Vitest + Playwright
+
 ## [0.1.7] - 2026-04-16
 
 ### ZIP 解压节点 & 类型感知路由 & 智能连线

@@ -41,7 +41,7 @@ export async function saveCanvasState(
 // 加载画布状态（自动迁移旧节点类型名）
 export async function loadCanvasState(
   projectId: string,
-): Promise<{ nodes: Node[]; edges: Edge[] } | null> {
+): Promise<{ nodes: Node[]; edges: Edge[]; timestamp: number } | null> {
   const key = `${CANVAS_STATE_PREFIX}${projectId}`;
   const data = await localforage.getItem<{ nodes: Node[]; edges: Edge[]; timestamp: number }>(key);
   if (!data) return null;
@@ -58,7 +58,7 @@ export async function loadCanvasState(
     seenEdgeIds.add(e.id);
     return true;
   });
-  return { nodes: uniqueNodes, edges: uniqueEdges };
+  return { nodes: uniqueNodes, edges: uniqueEdges, timestamp: data.timestamp };
 }
 
 // 删除画布状态

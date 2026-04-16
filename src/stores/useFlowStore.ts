@@ -6,7 +6,7 @@ import { executeCanvas } from '@/utils/executionEngine';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import { getNodeExecutor } from '@/store/execution';
 import { exportProjectFile } from '@/utils/projectManager';
-import { saveProjectWithPatch, resetBaseState } from '@/utils/patchManager';
+import { saveProjectWithPatch } from '@/utils/patchManager';
 import { fsManager } from '@/utils/fileSystemAccess';
 import type { AppNode } from '@/types';
 
@@ -59,7 +59,7 @@ interface FlowActions {
   stopWorkflow: () => void;
   // 项目保存
   saveProject: (projectId: string, projectName: string, embedBase64: boolean) => Promise<boolean>;
-  loadProject: (nodes: Node[], edges: Edge[]) => void;
+  loadProject: (nodes: Node[], edges: Edge[], lastSavedAt?: number | null) => void;
   markDirty: () => void;
   markClean: () => void;
 }
@@ -340,41 +340,44 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     console.log('[stopWorkflow] 执行已停止');
   },
 
-  // 项目保存：差量写入项目目录 + 下载备份；手动保存重置基准
+  // 项目保存：保存到文件系统项目目录
   saveProject: async (projectId, projectName, embedBase64) => {
     const { nodes, edges } = get();
     set({ isSaving: true });
     try {
-      // 手动保存重置基准 → 下次 auto-save 写完整文件
+      // 保存到文件系统
       if (fsManager.hasProjectDirectory()) {
-        resetBaseState(projectId);
-        await saveProjectWithPatch(projectId, projectName, nodes as AppNode[], edges, embedBase64);
+        const success = await saveProjectWithPatch(projectId, projectName, nodes as AppNode[], edges, embedBase64);
+        if (success) {
+          set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
+        }
+        return success;
+      } else {
+        // 没有设置目录时，使用浏览器下载
+        const downloadSuccess = await exportProjectFile(
+          projectId,
+          projectName,
+          nodes as AppNode[],
+          edges,
+          embedBase64,
+        );
+        if (downloadSuccess) {
+          set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
+        }
+        return downloadSuccess;
       }
-
-      const downloadSuccess = await exportProjectFile(
-        projectId,
-        projectName,
-        nodes as AppNode[],
-        edges,
-        embedBase64,
-      );
-
-      if (downloadSuccess) {
-        set({ hasUnsavedChanges: false, lastSavedAt: Date.now() });
-      }
-      return downloadSuccess;
     } finally {
       set({ isSaving: false });
     }
   },
 
   // 项目加载：替换当前画布数据
-  loadProject: (nodes, edges) => {
+  loadProject: (nodes, edges, lastSavedAt) => {
     set({
       nodes,
       edges,
       hasUnsavedChanges: false,
-      lastSavedAt: null,
+      lastSavedAt: lastSavedAt ?? null,
     });
   },
 

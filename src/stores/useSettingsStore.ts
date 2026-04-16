@@ -23,20 +23,60 @@ import type {
 import { createPersistStorage } from '@/utils/chromeStorage';
 
 /**
- * 将当前 settings 状态同步写入 fsManager（静默备份到设置目录）。
- * 每次 settings mutation 后调用，确保设置目录中的 settings.json 与 chrome.storage 保持同步。
+ * 将 settings state 序列化为 Zustand persist 格式的 JSON 字符串。
+ * 供 syncSettingsToFs（自动备份）和 exportSettingsJson（手动导出）共用。
  */
+function serializeSettingsState(state: SettingsState): string {
+  return JSON.stringify({
+    state: {
+      apiConfig: state.apiConfig,
+      projects: state.projects,
+      currentProjectId: state.currentProjectId,
+      customNodeTemplates: state.customNodeTemplates,
+      globalTasks: state.globalTasks,
+      canvasSettings: state.canvasSettings,
+      systemSettings: state.systemSettings,
+      comfyuiConfig: state.comfyuiConfig,
+    },
+    version: 0,
+  });
+}
+
+/**
+ * 深层合并两个对象（用于导入时用 defaults 填补缺失字段）。
+ * target 被 source 的非 undefined 值覆盖。
+ */
+function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
+  const result: Record<string, unknown> = { ...target };
+  for (const key of Object.keys(source)) {
+    const sk = key as keyof T;
+    const sv = source[sk];
+    if (sv === undefined) continue;
+    const tv = result[key];
+    if (
+      tv !== undefined &&
+      typeof tv === 'object' &&
+      !Array.isArray(tv) &&
+      tv !== null &&
+      typeof sv === 'object' &&
+      !Array.isArray(sv) &&
+      sv !== null
+    ) {
+      result[key] = deepMerge(tv as Record<string, unknown>, sv as Record<string, unknown>);
+    } else {
+      result[key] = sv;
+    }
+  }
+  return result as T;
+}
+
+/**
+ * 将当前 settings 状态同步写入 fsManager（静默备份到设置目录）。
+  * 每次 settings mutation 后调用，确保设置目录中的 settings.json 与 chrome.storage 保持同步。
+  */
 function syncSettingsToFs(state: SettingsState & SettingsActions): void {
   if (!fsManager.hasSettingsDirectory()) return;
-  const json = state.exportSettingsJson();
-  // 添加时间戳标记（用于 UI 显示上次同步时间）
-  try {
-    const parsed = JSON.parse(json);
-    parsed._savedAt = Date.now();
-    fsManager.saveSettings(JSON.stringify(parsed));
-  } catch {
-    fsManager.saveSettings(json);
-  }
+  fsManager.saveSettings(serializeSettingsState(state));
 }
 
 interface SettingsState {
@@ -160,15 +200,16 @@ interface SettingsActions {
   removeRunninghubWorkflow: (id: string) => void;
   /** 导出：返回当前完整配置的 JSON 字符串 */
   exportSettingsJson: () => string;
-  /** 导入：用导入的配置替换当前完整状态 */
-  importSettingsJson: (json: string) => void;
+  /** 导入（文件）：从 settings.json 读取并合并到 store，缺失字段用 defaults 填补 */
+  importSettingsFromFile: (json: string) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
-    (set) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (set, get: () => SettingsStore) => ({
       apiConfig: DEFAULT_API_CONFIG,
       projects: [DEFAULT_PROJECT],
       currentProjectId: DEFAULT_PROJECT.id,
@@ -328,12 +369,23 @@ export const useSettingsStore = create<SettingsStore>()(
       return next;
     }),
 
-  renameProject: (id, name) =>
+  renameProject: async (id, name) => {
+    // 先拿到旧名称，以便重命名文件夹
+    const oldProject = useSettingsStore.getState().projects.find((p) => p.id === id);
+    const oldName = oldProject?.name ?? '';
+    const safeNewName = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+
+    // 文件系统层重命名（如果旧目录存在的话）
+    if (oldName && safeNewName && oldName !== safeNewName) {
+      await fsManager.renameProjectDirectory(oldName, safeNewName);
+    }
+
     set((s) => {
-      const next = { projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)) };
+      const next = { projects: s.projects.map((p) => (p.id === id ? { ...p, name: safeNewName } : p)) };
       syncSettingsToFs({ ...s, ...next } as SettingsState & SettingsActions);
       return next;
-    }),
+    });
+  },
 
   /** 从 .xshow 文件导入项目：创建新项目 + 切换到该项目的画布 */
   importProjectFromFile: async (projectFile: import('@/types').XShowWorkflowFile): Promise<{ projectId: string; warnings: string[] }> => {
@@ -455,8 +507,49 @@ export const useSettingsStore = create<SettingsStore>()(
         }),
 
       exportSettingsJson: () => {
-        const raw = localStorage.getItem('xshow-settings');
-        return raw ?? '';
+        // 使用 zustand 提供的 get() 获取当前 state，避免循环引用
+        return serializeSettingsState(get());
+      },
+
+      importSettingsFromFile: (json: string) => {
+        try {
+          const parsed = JSON.parse(json);
+
+          // Zustand persist 序列化格式：{ state: { ... }, version: number }
+          // 直接导出格式（旧版或手动导出）：{ apiConfig: {}, canvasSettings: {}, ... }
+          // 统一从 state 字段读取，如果直接是顶层则 fallback
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const data = (parsed as any).state ?? parsed;
+          // 剥除元数据字段（文件写入时混入的）
+          delete data._savedAt;
+
+          // 深层合并：用 defaults 填补缺失字段（兼容旧版本备份）
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mergedApiConfig = deepMerge(DEFAULT_API_CONFIG as any, data.apiConfig ?? {});
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mergedCanvasSettings = deepMerge(DEFAULT_CANVAS_SETTINGS as any, data.canvasSettings ?? {});
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mergedSystemSettings = deepMerge(DEFAULT_SYSTEM_SETTINGS as any, data.systemSettings ?? {});
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mergedComfyuiConfig = deepMerge(DEFAULT_COMFYUI_CONFIG as any, data.comfyuiConfig ?? {});
+
+          // 只导入用户配置数据，不导入瞬态状态（如 currentProjectId）
+          set({
+            apiConfig: mergedApiConfig,
+            projects: data.projects ?? useSettingsStore.getState().projects,
+            canvasSettings: mergedCanvasSettings,
+            systemSettings: mergedSystemSettings,
+            comfyuiConfig: mergedComfyuiConfig,
+            customNodeTemplates: Array.isArray(data.customNodeTemplates)
+              ? data.customNodeTemplates
+              : [],
+            globalTasks: Array.isArray(data.globalTasks)
+              ? data.globalTasks
+              : [],
+          });
+        } catch (err) {
+          console.error('[SettingsStore] Failed to import settings from file:', err);
+        }
       },
 
       importSettingsJson: (json: string) => {

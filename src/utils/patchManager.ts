@@ -1,82 +1,173 @@
-// Ref: RFC 6902 JSON Patch + fast-json-patch
-// Ref: §3.16 — 差量存储：项目名+时间戳 patch 文件管理
-// 机制：
-// 1. 首次保存：写入完整 project.xshow 作为基准
-// 2. 后续保存：计算 diff，写入 {项目名}.{时间戳}.xshow.patch
-// 3. 内存中跟踪每个项目的 lastSavedState，用于下次 diff 计算
+// 项目文件管理模块
+// 项目存储在 {设置目录}/projects/{项目名}/ 下
 
-import * as jsonpatch from 'fast-json-patch';
-import { fsManager, PROJECT_FILENAME } from './fileSystemAccess';
+import { fsManager } from './fileSystemAccess';
 import type { XShowWorkflowFile } from '@/types';
 import type { AppNode } from '@/types';
 import type { Edge } from '@xyflow/react';
 
 // ============================================================================
-// 类型
-// ============================================================================
-
-export interface PatchFileMeta {
-  /** patch 文件名（含扩展名） */
-  filename: string;
-  /** 时间戳（从文件名解析） */
-  timestamp: number;
-  /** 相对于项目目录的路径 */
-  path: string;
-}
-
-export interface ProjectVersionInfo {
-  /** 最新 patch 的时间戳（毫秒） */
-  latestTimestamp: number;
-  /** 最新 patch 的文件名 */
-  latestFilename: string;
-  /** 所有 patch 版本列表（按时间戳升序） */
-  patches: PatchFileMeta[];
-  /** 是否有完整基准文件 */
-  hasBase: boolean;
-}
-
-// ============================================================================
-// 内存状态：跟踪每个项目的上次保存状态
-// ============================================================================
-
-/** 每个项目最近一次保存的完整状态（用于计算下次 diff） */
-const lastSavedStates = new Map<string, XShowWorkflowFile>();
-
-/** 每个项目最近一次 patch 的时间戳（用于生成文件名） */
-const lastPatchTimestamps = new Map<string, number>();
-
-// ============================================================================
 // 工具
 // ============================================================================
 
-/** 生成安全的文件名（去除不合法字符） */
-function safeFilename(name: string): string {
+/** 生成安全的文件夹名（去除不合法字符） */
+function safeFolderName(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'project';
 }
 
-/** 从 patch 文件名中解析时间戳 */
-function parseTimestampFromFilename(filename: string): number | null {
-  // 格式: {safeName}.{timestamp}.xshow.patch
-  const match = filename.match(/^(.+)\.(\d+)\.xshow\.patch$/);
-  if (!match) return null;
-  const ts = Number.parseInt(match[2]!, 10);
-  return Number.isNaN(ts) ? null : ts;
+/** 根据 blob 内容生成稳定文件名（内容相同则文件名相同，自然去重） */
+async function generateMediaFilenameFromBlob(blob: Blob, url: string): Promise<string> {
+  // 从 URL 或 MIME 提取扩展名
+  const mimeMatch = url.match(/^data:([^;]+);/);
+  const mime = (mimeMatch?.[1] ?? blob.type) || 'application/octet-stream';
+  const ext = (mime.split('/')[1]?.toLowerCase()) ?? 'bin';
+  // 用内容哈希作为文件名，同一内容永远生成相同文件名
+  const hashBuffer = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
+  return `media_${hashHex}.${ext}`;
+}
+
+/** data:base64 或 blob: URL → Blob（用于保存到文件） */
+async function urlToBlob(url: string): Promise<Blob | null> {
+  try {
+    if (url.startsWith('data:')) {
+      // data:image/jpeg;base64,... → fetch 不支持，需要手动解析
+      const match = url.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match || !match[1] || !match[2]) return null;
+      const mimeType = match[1];
+      const base64 = match[2];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mimeType });
+    } else if (url.startsWith('blob:')) {
+      const response = await fetch(url);
+      return response.blob();
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
-// 核心：差量保存
+// 媒体文件保存与恢复
 // ============================================================================
 
 /**
- * 保存项目（差量模式）。
- * - 首次保存（内存中无基准）：写入完整 project.xshow
- * - 后续保存：计算 diff，写入 {项目名}.{时间戳}.xshow.patch
- *
- * @param projectId   项目 ID
- * @param projectName 项目名称（用于文件名）
- * @param nodes       当前节点数据
- * @param edges       当前边数据
- * @param embedBase64 是否嵌入 Base64
+ * 递归扫描节点数据，将 blob URL 保存为文件，替换为相对路径
+ * 返回新的节点数据（不修改原数据）
+ */
+async function saveMediaAndReplaceUrls(
+  nodes: AppNode[],
+  projectName: string,
+): Promise<{ nodes: AppNode[]; savedCount: number }> {
+  let savedCount = 0;
+
+  const newNodes = await Promise.all(
+    nodes.map(async (node) => {
+      const newData = await replaceBlobUrlsRecursive(node.data, projectName, () => {
+        savedCount++;
+      });
+      return { ...node, data: newData };
+    }),
+  ) as AppNode[];
+
+  return { nodes: newNodes, savedCount };
+}
+
+/**
+ * 递归遍历对象，将 blob: URL 或 data:base64 URL 保存为文件，替换为相对路径
+ */
+async function replaceBlobUrlsRecursive(
+  obj: unknown,
+  projectName: string,
+  onSave: () => void,
+): Promise<unknown> {
+  if (typeof obj !== 'object' || obj === null) return obj;
+
+  if (Array.isArray(obj)) {
+    return Promise.all(obj.map((item) => replaceBlobUrlsRecursive(item, projectName, onSave)));
+  }
+
+  const newObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (typeof value === 'string') {
+      if (value.startsWith('blob:') || value.startsWith('data:')) {
+        // blob: 或 data:base64 → 保存为文件
+        try {
+          const blob = await urlToBlob(value);
+          if (blob) {
+            const filename = await generateMediaFilenameFromBlob(blob, value);
+            const savedPath = await fsManager.saveMediaToProject(projectName, blob, filename);
+            if (savedPath) {
+              newObj[key] = savedPath; // 替换为相对路径
+              onSave();
+              continue;
+            }
+          }
+          newObj[key] = value; // 保存失败，保留原值
+        } catch {
+          newObj[key] = value; // 出错，保留原值
+        }
+      } else {
+        // 普通字符串直接保留
+        newObj[key] = value;
+      }
+    } else {
+      newObj[key] = await replaceBlobUrlsRecursive(value, projectName, onSave);
+    }
+  }
+  return newObj;
+}
+
+/**
+ * 递归遍历节点数据，将相对路径文件名还原为 blob URL
+ */
+async function restoreBlobUrlsRecursive(
+  obj: unknown,
+  projectName: string,
+): Promise<unknown> {
+  if (typeof obj !== 'object' || obj === null) return obj;
+
+  if (Array.isArray(obj)) {
+    return Promise.all(obj.map((item) => restoreBlobUrlsRecursive(item, projectName)));
+  }
+
+  const newObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (typeof value === 'string') {
+      // 值是字符串且不是 URL 协议开头 → 认为是相对路径，尝试还原为 blob URL
+      if (
+        !value.startsWith('data:') &&
+        !value.startsWith('http:') &&
+        !value.startsWith('https:') &&
+        !value.startsWith('blob:')
+      ) {
+        const blobUrl = await fsManager.loadMediaAsBlobUrl(projectName, value);
+        newObj[key] = blobUrl ?? value; // 还原失败则保留原值
+      } else {
+        newObj[key] = value;
+      }
+    } else {
+      newObj[key] = await restoreBlobUrlsRecursive(value, projectName);
+    }
+  }
+  return newObj;
+}
+
+// ============================================================================
+// 项目保存
+// ============================================================================
+
+/**
+ * 保存项目到文件系统
+ * - 收集节点中的 blob URL，复制到项目目录，节点数据中替换为相对路径
+ * - 写入 workflow.xshow（含相对路径）
+ * - 如 embedBase64=true，额外写入一份含 base64 的导出文件
  * @returns 是否成功
  */
 export async function saveProjectWithPatch(
@@ -86,181 +177,129 @@ export async function saveProjectWithPatch(
   edges: Edge[],
   embedBase64: boolean,
 ): Promise<boolean> {
-  const safeName = safeFilename(projectName);
-  const currentState: XShowWorkflowFile = {
+  const safeName = safeFolderName(projectName);
+
+  // 1. 保存媒体文件到项目目录，节点数据中 blob URL → 相对路径
+  const { nodes: processedNodes } = await saveMediaAndReplaceUrls(nodes, projectName);
+
+  // 2. 构建项目文件
+  const file: XShowWorkflowFile = {
     version: 1,
     id: projectId,
     name: projectName,
     embedBase64,
-    nodes,
+    nodes: processedNodes,
     edges,
     savedAt: Date.now(),
-    xshowVersion: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.1.5',
+    xshowVersion: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.1.8',
   };
 
-  const hasBase = lastSavedStates.has(projectId);
-  let success = false;
+  const json = JSON.stringify(file, null, 2);
 
-  if (!hasBase) {
-    // 首次保存：写入完整 project.xshow 作为基准
-    const json = JSON.stringify(currentState, null, 2);
-    const result = await fsManager.saveProject(json);
-    success = result.success;
-    if (success) {
-      lastSavedStates.set(projectId, currentState);
-      lastPatchTimestamps.set(projectId, currentState.savedAt);
-      console.log(`[patchManager] 写入基准文件 ${PROJECT_FILENAME}`);
-    }
-  } else {
-    // 后续保存：计算 diff
-    const baseState = lastSavedStates.get(projectId)!;
-    const patches = jsonpatch.compare(baseState, currentState);
-
-    if (patches.length === 0) {
-      // 无变化，跳过
-      console.log('[patchManager] 无变化，跳过保存');
-      return true;
-    }
-
-    const timestamp = Date.now();
-    const patchFilename = `${safeName}.${timestamp}.xshow.patch`;
-    const json = JSON.stringify(patches);
-
-    // 直接写到 generations 父目录（项目根目录）
-    try {
-      if (!fsManager.hasProjectDirectory()) return false;
-      const handle = (fsManager as unknown as { projectDirHandle: FileSystemDirectoryHandle }).projectDirHandle;
-      if (!handle) return false;
-      const fileHandle = await handle.getFileHandle(patchFilename, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(json);
-      await writable.close();
-
-      // 更新内存基准
-      lastSavedStates.set(projectId, currentState);
-      lastPatchTimestamps.set(projectId, timestamp);
-      success = true;
-      console.log(`[patchManager] 写入 patch ${patchFilename} (${patches.length} 个操作)`);
-    } catch (err) {
-      console.error('[patchManager] 写入 patch 失败:', err);
-      success = false;
-    }
+  // 3. 保存 workflow.xshow（含相对路径媒体引用）
+  const result = await fsManager.saveProject(safeName, json, false);
+  if (!result.success) {
+    console.error(`[projectManager] 保存项目失败: ${result.error}`);
+    return false;
   }
 
-  return success;
-}
-
-/**
- * 重置项目的基准状态（用于：用户手动保存后，重新建立基准）。
- * 调用后下一次 saveProjectWithPatch 会写入完整 project.xshow。
- */
-export function resetBaseState(projectId: string): void {
-  lastSavedStates.delete(projectId);
-  lastPatchTimestamps.delete(projectId);
-}
-
-/**
- * 加载项目的最新版本（从 project.xshow 基准 + 后续所有 patch 重建）。
- * 目前仅返回 project.xshow 的数据（完整基准），patch 应用逻辑在加载流程中实现。
- */
-export async function loadLatestProjectState(): Promise<XShowWorkflowFile | null> {
-  const result = await fsManager.loadProject();
-  if (!result.success) return null;
-  try {
-    return JSON.parse(result.data!.json) as XShowWorkflowFile;
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
-// 版本管理：列表 / 删除
-// ============================================================================
-
-/**
- * 获取项目的所有版本信息。
- */
-export async function getProjectVersionInfo(projectName: string): Promise<ProjectVersionInfo | null> {
-  if (!fsManager.hasProjectDirectory()) return null;
-  const safeName = safeFilename(projectName);
-
-  try {
-    const handle = (fsManager as unknown as { projectDirHandle: FileSystemDirectoryHandle }).projectDirHandle;
-    if (!handle) return null;
-
-    const patches: PatchFileMeta[] = [];
-    let hasBase = false;
-
-    for await (const [name, fileHandle] of handle.entries()) {
-      if (fileHandle.kind !== 'file') continue;
-
-      // 检查是否为基准文件
-      if (name === PROJECT_FILENAME) {
-        hasBase = true;
-        continue;
-      }
-
-      // 检查是否为该项目名下的 patch 文件
-      // 格式: {safeName}.{timestamp}.xshow.patch
-      if (name.startsWith(`${safeName}.`) && name.endsWith('.xshow.patch')) {
-        const ts = parseTimestampFromFilename(name);
-        if (ts !== null) {
-          patches.push({
-            filename: name,
-            timestamp: ts,
-            path: name,
-          });
-        }
-      }
-    }
-
-    // 按时间戳升序
-    patches.sort((a, b) => a.timestamp - b.timestamp);
-
-    if (!hasBase && patches.length === 0) {
-      return null;
-    }
-
-    // 最新 = 最后一个 patch；或无 patch 时用基准时间
-    const latest = patches.length > 0 ? patches[patches.length - 1]! : null;
-
-    return {
-      latestTimestamp: latest ? latest.timestamp : Date.now(),
-      latestFilename: latest ? latest.filename : PROJECT_FILENAME,
-      patches,
-      hasBase,
+  // 4. 如开启 base64，额外写入一份含 base64 的导出文件
+  if (embedBase64) {
+    // 构建含 base64 媒体的项目文件（不重新处理，直接用原 nodes）
+    const base64File: XShowWorkflowFile = {
+      ...file,
+      nodes, // 用原始 nodes（含 blob URL，导出工具会处理 base64 转换）
+      embedBase64: true,
     };
+    const base64Json = JSON.stringify(base64File, null, 2);
+    await fsManager.saveProject(safeName, base64Json, true);
+  }
+
+  console.log(`[projectManager] 保存项目成功: ${safeName}`);
+  return true;
+}
+
+/**
+ * 重置项目的基准状态（手动保存后调用）
+ */
+export function resetBaseState(_projectId: string): void {
+  // 现在每次保存都是完整保存，不需要重置基准
+}
+
+// ============================================================================
+// 项目加载
+// ============================================================================
+
+/**
+ * 从文件系统加载项目
+ * @returns 项目数据或 null
+ */
+export async function loadProjectFromFs(
+  projectName: string,
+): Promise<{ file: XShowWorkflowFile; warnings: string[] } | null> {
+  const safeName = safeFolderName(projectName);
+  const result = await fsManager.loadProject(safeName);
+
+  if (!result.success || !result.data) {
+    return null;
+  }
+
+  try {
+    const file = JSON.parse(result.data.json) as XShowWorkflowFile;
+
+    // hasMedia=false：说明媒体文件在项目目录，需要还原 blob URL
+    if (!result.data.hasMedia) {
+      const restoredNodes = await Promise.all(
+        file.nodes.map((node) =>
+          restoreBlobUrlsRecursive(node.data, safeName),
+        ),
+      );
+      return { file: { ...file, nodes: restoredNodes as AppNode[] }, warnings: [] };
+    }
+
+    return { file, warnings: [] };
   } catch (err) {
-    console.error('[patchManager] 获取版本信息失败:', err);
+    console.error('[projectManager] 解析项目文件失败:', err);
     return null;
   }
 }
 
+// ============================================================================
+// 项目列表
+// ============================================================================
+
 /**
- * 删除项目的所有 patch 文件（保留 generations/ 子目录和 project.xshow 基准）。
+ * 获取所有项目列表
+ * @returns 项目名称列表
  */
-export async function deleteProjectPatches(projectName: string): Promise<{ deleted: number }> {
-  if (!fsManager.hasProjectDirectory()) return { deleted: 0 };
-  const safeName = safeFilename(projectName);
+export async function listProjectsFromFs(): Promise<string[]> {
+  return fsManager.listProjects();
+}
 
-  try {
-    const handle = (fsManager as unknown as { projectDirHandle: FileSystemDirectoryHandle }).projectDirHandle;
-    if (!handle) return { deleted: 0 };
+// ============================================================================
+// 项目删除
+// ============================================================================
 
-    let deleted = 0;
-    for await (const [name, fileHandle] of handle.entries()) {
-      if (fileHandle.kind !== 'file') continue;
-      if (name === PROJECT_FILENAME) continue;
-      if (!name.startsWith(`${safeName}.`) || !name.endsWith('.xshow.patch')) continue;
+/**
+ * 删除项目
+ * @param projectName 项目名称
+ * @returns 是否成功
+ */
+export async function deleteProjectFromFs(projectName: string): Promise<boolean> {
+  const safeName = safeFolderName(projectName);
+  const result = await fsManager.deleteProject(safeName);
+  return result.success;
+}
 
-      await handle.removeEntry(name);
-      deleted++;
-      console.log(`[patchManager] 删除 patch: ${name}`);
-    }
+// ============================================================================
+// 项目是否存在
+// ============================================================================
 
-    return { deleted };
-  } catch (err) {
-    console.error('[patchManager] 删除 patch 失败:', err);
-    return { deleted: 0 };
-  }
+/**
+ * 检查项目是否存在
+ * @param projectName 项目名称
+ */
+export async function projectExistsInFs(projectName: string): Promise<boolean> {
+  const safeName = safeFolderName(projectName);
+  return fsManager.projectExists(safeName);
 }

@@ -1,10 +1,10 @@
 // Ref: Chrome File System Access API + Excalidraw 持久化模式
 // Ref: §3.16 — 目录句柄持久化管理 + 文件读写
-// 管理 settingsDirHandle 和 projectDirHandle 的生命周期：
-// 1. showDirectoryPicker 让用户选择目录（仅一次）
+// 管理 settingsDirHandle 的生命周期：
+// 1. showDirectoryPicker 让用户选择根目录（仅一次）
 // 2. 句柄存入 IndexedDB（idb-keyval）
 // 3. 每次加载时验证权限，必要时请求（不弹出目录选择器）
-// 4. 文件读写完全静默，无需用户交互
+// 4. 项目存储在 {根目录}/projects/{项目名}/ 下
 
 import { get, set, del } from 'idb-keyval';
 
@@ -13,12 +13,15 @@ import { get, set, del } from 'idb-keyval';
 // ============================================================================
 
 const SETTINGS_DIR_KEY = 'xshow-settings-dir';
-const PROJECT_DIR_KEY = 'xshow-project-dir';
 
 /** settings.json 文件名 */
 export const SETTINGS_FILENAME = 'settings.json';
-/** project.xshow 文件名 */
+/** project.xshow 文件名（不含媒体） */
 export const PROJECT_FILENAME = 'project.xshow';
+/** project_with_media.xshow 文件名（含 base64 媒体） */
+export const PROJECT_WITH_MEDIA_FILENAME = 'project_with_media.xshow';
+/** projects 子目录名 */
+export const PROJECTS_DIRNAME = 'projects';
 /** generations 子目录名 */
 export const GENERATIONS_DIRNAME = 'generations';
 
@@ -35,6 +38,7 @@ export interface FileSystemResult<T = unknown> {
 export interface DirectoryResource {
   name: string;
   path: string;           // 相对于目录的路径
+  projectName: string;    // 所属项目名称
   type: 'image' | 'video' | 'audio' | 'text' | 'other';
   mimeType: string;
   size: number;
@@ -75,7 +79,6 @@ async function verifyPermission(
 class FileSystemAccessManager {
   // 缓存的句柄（内存中，刷新丢失）
   private settingsDirHandle: FileSystemDirectoryHandle | null = null;
-  private projectDirHandle: FileSystemDirectoryHandle | null = null;
 
   // ==========================================================================
   // 初始化（页面加载时调用）
@@ -87,11 +90,9 @@ class FileSystemAccessManager {
    */
   async initialize(): Promise<{
     settingsDirOk: boolean;
-    projectDirOk: boolean;
   }> {
     try {
       const savedSettings = await get<FileSystemDirectoryHandle>(SETTINGS_DIR_KEY);
-      const savedProject = await get<FileSystemDirectoryHandle>(PROJECT_DIR_KEY);
 
       if (savedSettings) {
         this.settingsDirHandle = savedSettings;
@@ -100,20 +101,12 @@ class FileSystemAccessManager {
         }
       }
 
-      if (savedProject) {
-        this.projectDirHandle = savedProject;
-        if (!(await verifyPermission(savedProject, 'readwrite'))) {
-          this.projectDirHandle = null;
-        }
-      }
-
       return {
         settingsDirOk: this.settingsDirHandle !== null,
-        projectDirOk: this.projectDirHandle !== null,
       };
     } catch (err) {
       console.error('[FileSystemAccessManager] 初始化失败:', err);
-      return { settingsDirOk: false, projectDirOk: false };
+      return { settingsDirOk: false };
     }
   }
 
@@ -122,10 +115,10 @@ class FileSystemAccessManager {
   // ==========================================================================
 
   /**
-   * 让用户选择设置目录
+   * 让用户选择设置目录（根目录，项目将保存在其下的 projects 子目录）
    * @param suggestedName 建议的文件夹名
    */
-  async pickSettingsDirectory(suggestedName = 'XShow-Settings'): Promise<boolean> {
+  async pickSettingsDirectory(suggestedName = 'XShow'): Promise<boolean> {
     try {
       const handle = await window.showDirectoryPicker({
         mode: 'readwrite',
@@ -142,41 +135,14 @@ class FileSystemAccessManager {
     }
   }
 
-  /**
-   * 让用户选择项目目录
-   * @param suggestedName 建议的文件夹名
-   */
-  async pickProjectDirectory(suggestedName = 'XShow-Projects'): Promise<boolean> {
-    try {
-      const handle = await window.showDirectoryPicker({
-        mode: 'readwrite',
-        startIn: 'documents',
-        suggestedName,
-      });
-      this.projectDirHandle = handle;
-      await set(PROJECT_DIR_KEY, handle);
-      return true;
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return false;
-      console.error('[FileSystemAccessManager] 选择项目目录失败:', err);
-      return false;
-    }
-  }
-
   /** 清除设置目录 */
   async clearSettingsDirectory(): Promise<void> {
     this.settingsDirHandle = null;
     await del(SETTINGS_DIR_KEY);
   }
 
-  /** 清除项目目录 */
-  async clearProjectDirectory(): Promise<void> {
-    this.projectDirHandle = null;
-    await del(PROJECT_DIR_KEY);
-  }
-
   // ==========================================================================
-  // 文件读写
+  // 文件读写工具
   // ==========================================================================
 
   /** 读文件为文本 */
@@ -204,40 +170,78 @@ class FileSystemAccessManager {
     }
   }
 
+  /** 获取子目录句柄 */
+  private async getSubDirectory(name: string, create = false): Promise<FileSystemDirectoryHandle | null> {
+    if (!this.settingsDirHandle) return null;
+    try {
+      return await this.settingsDirHandle.getDirectoryHandle(name, { create });
+    } catch {
+      return null;
+    }
+  }
+
   // ==========================================================================
   // Settings 目录操作
   // ==========================================================================
+
+  /** 验证设置目录句柄是否仍然有效（如权限被撤销） */
+  async verifySettingsDirectory(): Promise<boolean> {
+    // 优先使用内存中的句柄（pickSettingsDirectory 已设置好，不需要等 IndexedDB）
+    let handle = this.settingsDirHandle;
+
+    // 内存为空时，尝试从 IndexedDB 恢复（仅首次初始化时）
+    if (!handle) {
+      try {
+        const savedSettings = await get<FileSystemDirectoryHandle>(SETTINGS_DIR_KEY);
+        if (savedSettings) {
+          this.settingsDirHandle = savedSettings;
+          handle = savedSettings;
+        }
+      } catch {
+        // 读取失败，handle 保持 null
+      }
+    }
+
+    if (!handle) return false;
+    const valid = await verifyPermission(handle, 'readwrite');
+    if (!valid) {
+      this.settingsDirHandle = null;
+      await del(SETTINGS_DIR_KEY);
+    }
+    return valid;
+  }
 
   /** 是否有有效的设置目录句柄 */
   hasSettingsDirectory(): boolean {
     return this.settingsDirHandle !== null;
   }
 
-  /** 获取设置目录句柄（用于显示路径） */
+  /** 获取设置目录名 */
   getSettingsDirectoryName(): string {
     return this.settingsDirHandle?.name ?? '';
   }
 
   /** 保存 settings.json */
   async saveSettings(settingsJson: string): Promise<FileSystemResult> {
-    if (!this.settingsDirHandle) {
-      return { success: false, error: '未选择设置目录' };
+    const isValid = await this.verifySettingsDirectory();
+    if (!isValid) {
+      return { success: false, error: '目录权限已失效，请重新选择目录' };
     }
-    const ok = await this.writeText(this.settingsDirHandle, SETTINGS_FILENAME, settingsJson);
+    const ok = await this.writeText(this.settingsDirHandle!, SETTINGS_FILENAME, settingsJson);
     return { success: ok, error: ok ? undefined : '写入失败' };
   }
 
   /** 加载 settings.json */
   async loadSettings(): Promise<FileSystemResult<{ json: string; timestamp: number }>> {
-    if (!this.settingsDirHandle) {
-      return { success: false, error: '未选择设置目录' };
+    const isValid = await this.verifySettingsDirectory();
+    if (!isValid) {
+      return { success: false, error: '目录权限已失效，请重新选择目录' };
     }
-    const json = await this.readText(this.settingsDirHandle, SETTINGS_FILENAME);
+    const json = await this.readText(this.settingsDirHandle!, SETTINGS_FILENAME);
     if (!json) {
       return { success: false, error: '设置文件不存在' };
     }
     try {
-      // 尝试解析获取时间戳
       const parsed = JSON.parse(json);
       return { success: true, data: { json, timestamp: parsed._savedAt ?? Date.now() } };
     } catch {
@@ -246,42 +250,166 @@ class FileSystemAccessManager {
   }
 
   // ==========================================================================
-  // Project 目录操作
+  // 项目目录操作（基于设置目录的 projects 子目录）
   // ==========================================================================
 
-  /** 是否有有效的项目目录句柄 */
+  /** 是否有有效的设置目录（项目操作的先决条件） */
   hasProjectDirectory(): boolean {
-    return this.projectDirHandle !== null;
+    return this.settingsDirHandle !== null;
   }
 
   /** 获取项目目录名 */
   getProjectDirectoryName(): string {
-    return this.projectDirHandle?.name ?? '';
+    return this.settingsDirHandle?.name ?? '';
   }
 
-  /** 保存 project.xshow */
-  async saveProject(projectJson: string): Promise<FileSystemResult> {
-    if (!this.projectDirHandle) {
-      return { success: false, error: '未选择项目目录' };
+  /** 获取 projects 子目录句柄 */
+  private async getProjectsDir(): Promise<FileSystemDirectoryHandle | null> {
+    return this.getSubDirectory(PROJECTS_DIRNAME, true);
+  }
+
+  /** 获取项目文件夹句柄 */
+  private async getProjectDir(projectName: string): Promise<FileSystemDirectoryHandle | null> {
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) return null;
+    try {
+      return await projectsDir.getDirectoryHandle(projectName, { create: true });
+    } catch {
+      return null;
     }
-    const ok = await this.writeText(this.projectDirHandle, PROJECT_FILENAME, projectJson);
+  }
+
+  /** 列出所有项目（读取 projects 下的子文件夹） */
+  async listProjects(): Promise<string[]> {
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) return [];
+    
+    const projects: string[] = [];
+    try {
+      for await (const [name, handle] of projectsDir.entries()) {
+        if (handle.kind === 'directory') {
+          projects.push(name);
+        }
+      }
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 列出项目失败:', err);
+    }
+    return projects.sort();
+  }
+
+  /** 保存项目文件
+   * @param projectName 项目名称（文件夹名）
+   * @param projectJson 项目 JSON 内容
+   * @param embedBase64 是否嵌入 base64 媒体
+   */
+  async saveProject(projectName: string, projectJson: string, embedBase64: boolean): Promise<FileSystemResult> {
+    const isValid = await this.verifySettingsDirectory();
+    if (!isValid) {
+      return { success: false, error: '目录权限已失效，请重新选择目录' };
+    }
+    const projectDir = await this.getProjectDir(projectName);
+    if (!projectDir) {
+      return { success: false, error: '无法创建项目目录' };
+    }
+    
+    const filename = embedBase64 ? PROJECT_WITH_MEDIA_FILENAME : PROJECT_FILENAME;
+    const ok = await this.writeText(projectDir, filename, projectJson);
     return { success: ok, error: ok ? undefined : '写入失败' };
   }
 
-  /** 加载 project.xshow */
-  async loadProject(): Promise<FileSystemResult<{ json: string; timestamp: number }>> {
-    if (!this.projectDirHandle) {
-      return { success: false, error: '未选择项目目录' };
+  /** 加载项目文件
+   * @param projectName 项目名称
+   * @returns 项目 JSON 和时间戳
+   */
+  async loadProject(projectName: string): Promise<FileSystemResult<{ json: string; timestamp: number; hasMedia: boolean }>> {
+    const isValid = await this.verifySettingsDirectory();
+    if (!isValid) {
+      return { success: false, error: '目录权限已失效，请重新选择目录' };
     }
-    const json = await this.readText(this.projectDirHandle, PROJECT_FILENAME);
+    const projectDir = await this.getProjectDir(projectName);
+    if (!projectDir) {
+      return { success: false, error: '项目目录不存在' };
+    }
+    
+    // 优先加载带媒体版本
+    let json = await this.readText(projectDir, PROJECT_WITH_MEDIA_FILENAME);
+    let hasMedia = true;
+    if (!json) {
+      json = await this.readText(projectDir, PROJECT_FILENAME);
+      hasMedia = false;
+    }
+    
     if (!json) {
       return { success: false, error: '项目文件不存在' };
     }
     try {
       const parsed = JSON.parse(json);
-      return { success: true, data: { json, timestamp: parsed.savedAt ?? Date.now() } };
+      return { success: true, data: { json, timestamp: parsed.savedAt ?? Date.now(), hasMedia } };
     } catch {
-      return { success: true, data: { json, timestamp: Date.now() } };
+      return { success: true, data: { json, timestamp: Date.now(), hasMedia } };
+    }
+  }
+
+  /** 删除项目文件夹 */
+  async deleteProject(projectName: string): Promise<FileSystemResult> {
+    const isValid = await this.verifySettingsDirectory();
+    if (!isValid) {
+      return { success: false, error: '目录权限已失效，请重新选择目录' };
+    }
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) {
+      return { success: false, error: '项目目录不存在' };
+    }
+    try {
+      await projectsDir.removeEntry(projectName, { recursive: true });
+      return { success: true };
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 删除项目失败:', projectName, err);
+      return { success: false, error: '删除失败' };
+    }
+  }
+
+  /** 检查项目是否存在 */
+  async projectExists(projectName: string): Promise<boolean> {
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) return false;
+    try {
+      await projectsDir.getDirectoryHandle(projectName);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 重命名项目文件夹（文件系统层，使用 moveTo 原子操作）
+   * @param oldName 原文件夹名
+   * @param newName 新文件夹名
+   * @returns 是否成功
+   */
+  async renameProjectDirectory(oldName: string, newName: string): Promise<boolean> {
+    if (!this.settingsDirHandle) return false;
+    if (oldName === newName) return true;
+
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) return false;
+
+    try {
+      // 获取旧目录句柄
+      let oldDirHandle: FileSystemDirectoryHandle;
+      try {
+        oldDirHandle = await projectsDir.getDirectoryHandle(oldName, { create: false });
+      } catch {
+        // 旧目录不存在（从未保存过文件系统），直接跳过
+        return true;
+      }
+
+      // 使用 moveTo 直接重命名（原子操作）
+      // @ts-expect-error moveTo 是 FileSystemDirectoryHandle 的标准方法，但 TS lib 类型未包含
+      await oldDirHandle.moveTo(projectsDir, newName);
+      return true;
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 重命名项目文件夹失败:', oldName, '->', newName, err);
+      return false;
     }
   }
 
@@ -289,13 +417,11 @@ class FileSystemAccessManager {
   // generations 子目录操作
   // ==========================================================================
 
-  /**
-   * 获取 generations 目录句柄（不存在则创建）
-   */
+  /** 获取 generations 目录句柄（不存在则创建） */
   private async getGenerationsDir(): Promise<FileSystemDirectoryHandle | null> {
-    if (!this.projectDirHandle) return null;
+    if (!this.settingsDirHandle) return null;
     try {
-      return await this.projectDirHandle.getDirectoryHandle(GENERATIONS_DIRNAME, { create: true });
+      return await this.settingsDirHandle.getDirectoryHandle(GENERATIONS_DIRNAME, { create: true });
     } catch {
       return null;
     }
@@ -323,44 +449,132 @@ class FileSystemAccessManager {
   }
 
   /**
-   * 读取 generations 目录下的所有媒体资源
+   * 读取 projects/{项目}/ 目录下所有非 .xshow 的媒体资源
+   * @param projectName 可选，不传则读所有项目，传项目名则只读该项目
    */
-  async listGenerations(): Promise<DirectoryResource[]> {
-    const genDir = await this.getGenerationsDir();
-    if (!genDir) return [];
+  async listProjectResources(projectName?: string): Promise<DirectoryResource[]> {
+    const projectsDir = await this.getProjectsDir();
+    if (!projectsDir) return [];
 
     const resources: DirectoryResource[] = [];
     try {
-      for await (const [name, handle] of genDir.entries()) {
-        if (handle.kind !== 'file') continue;
-        const file = await (handle as FileSystemFileHandle).getFile();
-        const { type, mimeType } = this.classifyFile(name, file.type);
-        if (type === 'other') continue; // 只列出媒体文件
+      for await (const [projName, handle] of projectsDir.entries()) {
+        if (handle.kind !== 'directory') continue;
+        // 过滤：如果指定了 projectName，跳过不匹配的
+        if (projectName && projName !== projectName) continue;
 
-        // 生成 blob URL 供画布使用
-        const blobUrl = URL.createObjectURL(file);
+        const projDir = handle as FileSystemDirectoryHandle;
+        for await (const [name, fileHandle] of projDir.entries()) {
+          if (fileHandle.kind !== 'file') continue;
+          // 跳过 .xshow 文件
+          if (name.endsWith('.xshow')) continue;
 
-        resources.push({
-          name,
-          path: `${GENERATIONS_DIRNAME}/${name}`,
-          type,
-          mimeType,
-          size: file.size,
-          lastModified: file.lastModified,
-          blobUrl,
-        });
+          const file = await (fileHandle as FileSystemFileHandle).getFile();
+          const { type, mimeType } = this.classifyFile(name, file.type);
+          if (type === 'other') continue;
+
+          const blobUrl = URL.createObjectURL(file);
+
+          resources.push({
+            name,
+            path: `${PROJECTS_DIRNAME}/${projName}/${name}`,
+            projectName: projName,
+            type,
+            mimeType,
+            size: file.size,
+            lastModified: file.lastModified,
+            blobUrl,
+          });
+        }
       }
     } catch (err) {
-      console.error('[FileSystemAccessManager] 列出 generations 失败:', err);
+      console.error('[FileSystemAccessManager] 列出项目资源失败:', err);
     }
     return resources;
+  }
+
+  /** 兼容旧接口：读取 generations 目录（已废弃，统一走 projects/） */
+  async listGenerations(): Promise<DirectoryResource[]> {
+    return this.listProjectResources();
+  }
+
+  // ==========================================================================
+  // 媒体文件读写（项目资源管理）
+  // ==========================================================================
+
+  /**
+   * 将 blob 保存到项目目录（覆盖同名文件）
+   * @param projectName 项目名称
+   * @param blob Blob 数据
+   * @param filename 保存的文件名
+   * @returns 相对路径（如 "img001.jpg"）或 null
+   */
+  async saveMediaToProject(projectName: string, blob: Blob, filename: string): Promise<string | null> {
+    const projectDir = await this.getProjectDir(projectName);
+    if (!projectDir) return null;
+    try {
+      const fileHandle = await projectDir.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return filename;
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 保存媒体文件失败:', filename, err);
+      return null;
+    }
+  }
+
+  /**
+   * 从项目目录读取文件并转换为 blob URL
+   * @param projectName 项目名称
+   * @param filename 文件名（相对路径）
+   * @returns blob URL 或 null
+   */
+  async loadMediaAsBlobUrl(projectName: string, filename: string): Promise<string | null> {
+    const projectDir = await this.getProjectDir(projectName);
+    if (!projectDir) return null;
+    try {
+      const fileHandle = await projectDir.getFileHandle(filename);
+      const file = await fileHandle.getFile();
+      return URL.createObjectURL(file);
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 读取媒体文件失败:', filename, err);
+      return null;
+    }
+  }
+
+  /**
+   * 删除项目目录下的单个资源文件
+   * @param projectName 项目名称
+   * @param filename 文件名
+   * @returns 是否成功
+   */
+  async deleteProjectResource(projectName: string, filename: string): Promise<boolean> {
+    const projectDir = await this.getProjectDir(projectName);
+    if (!projectDir) return false;
+    try {
+      await projectDir.removeEntry(filename);
+      return true;
+    } catch (err) {
+      console.error('[FileSystemAccessManager] 删除资源文件失败:', filename, err);
+      return false;
+    }
+  }
+
+  /**
+   * 批量删除项目目录下的资源文件
+   * @param projectName 项目名称
+   * @param filenames 文件名列表
+   */
+  async deleteProjectResources(projectName: string, filenames: string[]): Promise<void> {
+    await Promise.all(filenames.map((f) => this.deleteProjectResource(projectName, f)));
   }
 
   // ==========================================================================
   // 工具
   // ==========================================================================
 
-  /** 根据文件名和 MIME 类型分类 */
+  /** 根据文件名和 MIME 类型分类（扩展名大小写不敏感） */
   private classifyFile(filename: string, mimeType: string): { type: DirectoryResource['type']; mimeType: string } {
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'];
