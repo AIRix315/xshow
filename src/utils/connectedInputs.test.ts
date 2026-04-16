@@ -541,6 +541,21 @@ describe('connectedInputs', () => {
       expect(result.images[2]).toBe('https://example.com/cell2.png');
     });
 
+    it('routes gridSplitNode image-01 handle to correct split result', () => {
+      const nodes = [
+        makeNode('n1', 'gridSplitNode', {
+          splitResults: ['https://example.com/cell0.png', 'https://example.com/cell1.png'],
+        }),
+        makeNode('n2', 'outputNode'),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image-02', 'image')];
+
+      const result = getConnectedInputs('n2', nodes, edges);
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toBe('https://example.com/cell1.png');
+    });
+
     it('extracts image from imageCompareNode output', () => {
       const nodes = [
         makeNode('n1', 'imageCompareNode', { outputImageUrl: 'https://example.com/compare.png' }),

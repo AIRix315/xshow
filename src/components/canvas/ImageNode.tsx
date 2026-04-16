@@ -59,14 +59,26 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
     }
   }, [prompt, loading, channels, imageChannelId, currentModel, aspectRatio, imageSize, id, updateNodeData]);
 
-  // 精简内容：只显示图片预览，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle 1 - Image (33%) */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
       
-      {/* 图片预览区域 - 全屏无间隙 */}
+      {/* 输入 Handle 2 - Text (67%) - only visible in expanded mode */}
+      <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
+
+      {/* 输出 Handle (67%) */}
+      <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
+    </>
+  );
+
+  // 精简内容：只显示图片预览，无边距
+  const minimalContent = (
+    <>
       {imageUrl && !loading ? (
         <div className="relative w-full h-full min-h-[120px] flex items-center justify-center bg-[#1a1a1a]">
           <img
@@ -90,89 +102,71 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         </div>
       )}
-      
-      {/* 输出 Handle (67%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
   // 悬停完整参数内容 - 参数在底部（不含生成按钮）
   const fullContent = (
-    <>
-      {/* 输入 Handle 1 - Image (33%) */}
-      <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
-      {/* 输入 Handle 2 - Text (67%) */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
-      
-      {/* 内容区域：图片预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 图片预览区域 */}
-        <div className="flex-1 min-h-0">
-          {imageUrl && !loading && (
-            <div className="relative w-full h-full min-h-[80px] flex items-center justify-center bg-[#1a1a1a] rounded">
-              <img
-                src={imageUrl}
-                alt="生成结果"
-                className="max-w-full max-h-full object-contain"
-              />
-            </div>
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 提示词输入 - 增加高度 */}
-          <textarea
-            value={prompt}
-            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
-            placeholder="输入图片描述..."
-            className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
-            rows={3}
-          />
-
-          {showNodeModelSettings && (
-            <ProviderModelSelector
-              type="image"
-              selectedChannelId={selectedChannelId}
-              selectedModel={selectedModel}
-              onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
-              onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
+    <div className="flex flex-col h-full">
+      {/* 图片预览区域 */}
+      <div className="flex-1 min-h-0">
+        {imageUrl && !loading && (
+          <div className="relative w-full h-full min-h-[80px] flex items-center justify-center bg-[#1a1a1a] rounded">
+            <img
+              src={imageUrl}
+              alt="生成结果"
+              className="max-w-full max-h-full object-contain"
             />
-          )}
-
-          {/* 尺寸选项 */}
-          <div className="flex gap-1">
-            {['1:1', '16:9', '9:16'].map((ar) => (
-              <button
-                key={ar}
-                onClick={() => updateNodeData(id, { aspectRatio: ar })}
-                className={`px-1.5 py-0.5 text-[10px] rounded border ${
-                  aspectRatio === ar ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-[#333] text-neutral-400 bg-[#1a1a1a] hover:bg-[#262626]'
-                }`}
-              >
-                {ar}
-              </button>
-            ))}
-            <select
-              value={imageSize}
-              onChange={(e) => updateNodeData(id, { imageSize: e.target.value })}
-              className="bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333]"
-            >
-              {['1K', '2K'].map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
           </div>
-        </div>
+        )}
       </div>
       
-      {/* 输出 Handle (67%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 提示词输入 - 增加高度 */}
+        <textarea
+          value={prompt}
+          onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
+          placeholder="输入图片描述..."
+          className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
+          rows={3}
+        />
+
+        {showNodeModelSettings && (
+          <ProviderModelSelector
+            type="image"
+            selectedChannelId={selectedChannelId}
+            selectedModel={selectedModel}
+            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
+          />
+        )}
+
+        {/* 尺寸选项 */}
+        <div className="flex gap-1">
+          {['1:1', '16:9', '9:16'].map((ar) => (
+            <button
+              key={ar}
+              onClick={() => updateNodeData(id, { aspectRatio: ar })}
+              className={`px-1.5 py-0.5 text-[10px] rounded border ${
+                aspectRatio === ar ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-[#333] text-neutral-400 bg-[#1a1a1a] hover:bg-[#262626]'
+              }`}
+            >
+              {ar}
+            </button>
+          ))}
+          <select
+            value={imageSize}
+            onChange={(e) => updateNodeData(id, { imageSize: e.target.value })}
+            className="bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333]"
+          >
+            {['1K', '2K'].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -185,6 +179,7 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
       showHoverHeader
       onRun={handleGenerate}
       hoverContent={fullContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

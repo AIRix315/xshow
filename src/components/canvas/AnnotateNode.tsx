@@ -272,13 +272,22 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
     updateNodeData(id, { annotations: newAnnotations });
   }, [annotations, updateNodeData, id]);
 
-  // minimalContent - 最小预览模式，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
       
+      {/* 输出 Handle (50%) */}
+      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
+    </>
+  );
+
+  // minimalContent - 最小预览模式，无边距
+  const minimalContent = (
+    <>
       {/* 标注预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {annotations.length > 0 ? (
@@ -291,120 +300,105 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
           <span className="text-neutral-500 text-[10px]">未连接图片</span>
         )}
       </div>
-      
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
   // hoverContent - 悬停时显示完整参数，参数在底部
   const hoverContent = (
-    <>
-      {/* 输入 Handle (50%) */}
-      <Handle type="target" position={Position.Left} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
-      
-      {/* 内容区域：预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 预览区域 */}
-        <div className="flex-1 min-h-0">
-          {sourceImageUrl && (
-            <canvas
-              ref={canvasRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              className="w-full border border-border rounded cursor-crosshair"
-              style={{ maxHeight: '150px' }}
-            />
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 工具栏 */}
-          <div className="flex gap-1">
-            {([
-              { value: 'text', label: '文字' },
-              { value: 'rect', label: '框' },
-              { value: 'arrow', label: '箭头' },
-              { value: 'circle', label: '圆' },
-            ] as { value: ToolType; label: string }[]).map((tool) => (
-              <button
-                key={tool.value}
-                onClick={() => setCurrentTool(tool.value)}
-                className={`px-2 py-0.5 text-[10px] rounded border ${
-                  currentTool === tool.value 
-                    ? 'border-primary bg-primary/20 text-primary' 
-                    : 'border-border text-text-secondary bg-surface hover:bg-surface-hover'
-                }`}
-              >
-                {tool.label}
-              </button>
-            ))}
-          </div>
-
-          {/* 文字输入（仅文字工具时显示） */}
-          {currentTool === 'text' && (
-            <input
-              type="text"
-              value={annotationText}
-              onChange={(e) => updateNodeData(id, { annotationText: e.target.value })}
-              placeholder="标注文字..."
-              className="w-full bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
-            />
-          )}
-
-          {/* 样式选项 */}
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-text-secondary">字号</label>
-            <input
-              type="number"
-              value={fontSize}
-              onChange={(e) => updateNodeData(id, { fontSize: Number(e.target.value) })}
-              min={8}
-              max={72}
-              className="w-14 bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border outline-none"
-            />
-            <label className="text-[10px] text-text-secondary">颜色</label>
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => updateNodeData(id, { color: e.target.value })}
-              className="w-6 h-5 rounded border border-border cursor-pointer bg-transparent"
-            />
-          </div>
-
-          {/* 操作按钮 */}
-          <div className="flex gap-1">
-            <button
-              onClick={handleUndo}
-              disabled={annotations.length === 0}
-              className="flex-1 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs py-1 rounded"
-            >
-              撤销
-            </button>
-            <button
-              onClick={handleClearAll}
-              disabled={annotations.length === 0}
-              className="flex-1 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs py-1 rounded"
-            >
-              清除全部
-            </button>
-          </div>
-
-          <div className="text-[9px] text-text-muted">
-            在画布上点击或拖动来添加标注
-          </div>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* 预览区域 */}
+      <div className="flex-1 min-h-0">
+        {sourceImageUrl && (
+          <canvas
+            ref={canvasRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className="w-full border border-border rounded cursor-crosshair"
+            style={{ maxHeight: '150px' }}
+          />
+        )}
       </div>
       
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 工具栏 */}
+        <div className="flex gap-1">
+          {([
+            { value: 'text', label: '文字' },
+            { value: 'rect', label: '框' },
+            { value: 'arrow', label: '箭头' },
+            { value: 'circle', label: '圆' },
+          ] as { value: ToolType; label: string }[]).map((tool) => (
+            <button
+              key={tool.value}
+              onClick={() => setCurrentTool(tool.value)}
+              className={`px-2 py-0.5 text-[10px] rounded border ${
+                currentTool === tool.value 
+                  ? 'border-primary bg-primary/20 text-primary' 
+                  : 'border-border text-text-secondary bg-surface hover:bg-surface-hover'
+              }`}
+            >
+              {tool.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 文字输入（仅文字工具时显示） */}
+        {currentTool === 'text' && (
+          <input
+            type="text"
+            value={annotationText}
+            onChange={(e) => updateNodeData(id, { annotationText: e.target.value })}
+            placeholder="标注文字..."
+            className="w-full bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
+          />
+        )}
+
+        {/* 样式选项 */}
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-secondary">字号</label>
+          <input
+            type="number"
+            value={fontSize}
+            onChange={(e) => updateNodeData(id, { fontSize: Number(e.target.value) })}
+            min={8}
+            max={72}
+            className="w-14 bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border outline-none"
+          />
+          <label className="text-[10px] text-text-secondary">颜色</label>
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => updateNodeData(id, { color: e.target.value })}
+            className="w-6 h-5 rounded border border-border cursor-pointer bg-transparent"
+          />
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-1">
+          <button
+            onClick={handleUndo}
+            disabled={annotations.length === 0}
+            className="flex-1 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs py-1 rounded"
+          >
+            撤销
+          </button>
+          <button
+            onClick={handleClearAll}
+            disabled={annotations.length === 0}
+            className="flex-1 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs py-1 rounded"
+          >
+            清除全部
+          </button>
+        </div>
+
+        <div className="text-[9px] text-text-muted">
+          在画布上点击或拖动来添加标注
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -412,6 +406,7 @@ function AnnotateNode({ id, data, selected }: NodeProps<AnnotateNodeType>) {
       title="标注"
       showHoverHeader
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

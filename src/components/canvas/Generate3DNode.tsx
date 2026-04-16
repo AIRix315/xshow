@@ -92,13 +92,22 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
     updateNodeData(id, { modelUrl: '', progress: 0 });
   }, [updateNodeData, id]);
 
-  // minimalContent - 最小预览模式，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       
+      {/* 输出 Handle (50%) */}
+      <Handle type="source" position={Position.Right} id="model" style={{ top: '50%', zIndex: 10 }} data-handletype="model" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="model" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Model</div>
+    </>
+  );
+
+  // minimalContent - 最小预览模式，无边距
+  const minimalContent = (
+    <>
       {/* 3D 预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {modelUrl ? (
@@ -121,83 +130,68 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         )}
       </div>
-      
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="model" style={{ top: '50%', zIndex: 10 }} data-handletype="model" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="model" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Model</div>
     </>
   );
 
   // hoverContent - 悬停时显示完整参数，参数在底部
   const hoverContent = (
-    <>
-      {/* 输入 Handle (50%) */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
-      
-      {/* 内容区域：预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 预览区域 */}
-        <div className="flex-1 min-h-0">
-          {modelUrl && !loading && (
-            <div className="relative w-full h-full min-h-[80px] bg-[#1a1a1a] rounded flex items-center justify-center">
-              <canvas 
-                ref={canvasRef} 
-                width={160} 
-                height={100} 
-                className="max-w-full"
-              />
-              <button
-                onClick={handleClear}
-                className="absolute top-1 right-1 w-5 h-5 bg-surface-hover hover:bg-red-500/80 rounded flex items-center justify-center text-text-muted hover:text-white text-xs"
-              >
-                ×
-              </button>
-            </div>
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 提示词输入 - 增加高度 */}
-          <textarea
-            value={prompt}
-            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
-            placeholder="输入 3D 模型描述..."
-            className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
-            rows={3}
-          />
-          
-          {/* 生成按钮 */}
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !prompt.trim()}
-            className="w-full bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
-          >
-            {loading ? `生成中 ${progress}%` : '生成 3D'}
-          </button>
-
-          {/* 进度条 */}
-          {loading && progress > 0 && (
-            <div className="w-full bg-surface-hover rounded-full h-1.5">
-              <div
-                className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          )}
-
-          {/* 提示 */}
-          <div className="text-[9px] text-text-muted">
-            当前为本地预览模式。实际 3D 模型生成需连接 Meshy/Tripo3D 等 API。
+    <div className="flex flex-col h-full">
+      {/* 预览区域 */}
+      <div className="flex-1 min-h-0">
+        {modelUrl && !loading && (
+          <div className="relative w-full h-full min-h-[80px] bg-[#1a1a1a] rounded flex items-center justify-center">
+            <canvas 
+              ref={canvasRef} 
+              width={160} 
+              height={100} 
+              className="max-w-full"
+            />
+            <button
+              onClick={handleClear}
+              className="absolute top-1 right-1 w-5 h-5 bg-surface-hover hover:bg-red-500/80 rounded flex items-center justify-center text-text-muted hover:text-white text-xs"
+            >
+              ×
+            </button>
           </div>
-        </div>
+        )}
       </div>
       
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="model" style={{ top: '50%', zIndex: 10 }} data-handletype="model" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="model" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Model</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 提示词输入 - 增加高度 */}
+        <textarea
+          value={prompt}
+          onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
+          placeholder="输入 3D 模型描述..."
+          className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
+          rows={3}
+        />
+        
+        {/* 生成按钮 */}
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !prompt.trim()}
+          className="w-full bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
+        >
+          {loading ? `生成中 ${progress}%` : '生成 3D'}
+        </button>
+
+        {/* 进度条 */}
+        {loading && progress > 0 && (
+          <div className="w-full bg-surface-hover rounded-full h-1.5">
+            <div
+              className="bg-primary h-1.5 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+
+        {/* 提示 */}
+        <div className="text-[9px] text-text-muted">
+          当前为本地预览模式。实际 3D 模型生成需连接 Meshy/Tripo3D 等 API。
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -206,6 +200,7 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
       showHoverHeader
       onRun={handleGenerate}
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

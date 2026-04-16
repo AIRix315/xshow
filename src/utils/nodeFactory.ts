@@ -246,18 +246,19 @@ function getDefaultData(type: string): Record<string, unknown> {
     // 九宫格拆分
     case 'gridSplitNode':
       return {
-        gridCount: 3,
-        cellSize: 512,
-        aspectRatio: '1:1',
-        titlePattern: 'id{num}',
+        gridRows: 3,
+        gridCols: 3,
+        cellSize: 0,
+        presetKey: '3x3',
       } as GridSplitNodeData;
     
     // 九宫格合并
     case 'gridMergeNode':
       return {
-        gridCount: 3,
+        gridRows: 3,
+        gridCols: 3,
         cellSize: 512,
-        aspectRatio: '1:1',
+        presetKey: '3x3',
       } as GridMergeNodeData;
     
     // 裁剪节点

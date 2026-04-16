@@ -158,13 +158,22 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
     { value: 'ko-KR', label: '한국어' },
   ];
 
-  // minimalContent - 最小预览模式，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
       
+      {/* 输出 Handle (50%) */}
+      <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
+    </>
+  );
+
+  // minimalContent - 最小预览模式，无边距
+  const minimalContent = (
+    <>
       {/* 文本状态 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {isPlaying ? (
@@ -183,85 +192,70 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         )}
       </div>
-      
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
     </>
   );
 
   // hoverContent - 悬停时显示完整参数，参数在底部
   const hoverContent = (
-    <>
-      {/* 输入 Handle (50%) */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
-      
-      {/* 内容区域：预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 预览区域 */}
-        <div className="flex-1 min-h-0">
-          {text && (
-            <div className="w-full h-full min-h-[60px] bg-[#1a1a1a] rounded p-2 overflow-auto">
-              <p className="text-[10px] text-text whitespace-pre-wrap break-words">
-                {text.length > 150 ? text.substring(0, 150) + '...' : text}
-              </p>
-            </div>
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 文本输入 - 增加高度 */}
-          <textarea
-            value={text}
-            onChange={(e) => updateNodeData(id, { text: e.target.value })}
-            placeholder="输入要转换为语音的文本..."
-            className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
-            rows={3}
-          />
-          
-          {/* 语言/语音选择 */}
-          <select
-            value={voice}
-            onChange={(e) => updateNodeData(id, { voice: e.target.value })}
-            className="w-full bg-surface text-text text-xs rounded p-1.5 border border-border focus:border-primary outline-none"
-          >
-            {languageOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          {/* 操作按钮 */}
-          <div className="flex gap-1">
-            <button
-              onClick={handleGenerate}
-              disabled={loading || !text.trim()}
-              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
-            >
-              {loading ? '生成中...' : '生成音频'}
-            </button>
-            <button
-              onClick={handlePlayPreview}
-              disabled={!text.trim() || isGenerating}
-              className="px-3 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs rounded"
-              title="预览播放"
-            >
-              {isPlaying ? '⏹' : '▶'}
-            </button>
+    <div className="flex flex-col h-full">
+      {/* 预览区域 */}
+      <div className="flex-1 min-h-0">
+        {text && (
+          <div className="w-full h-full min-h-[60px] bg-[#1a1a1a] rounded p-2 overflow-auto">
+            <p className="text-[10px] text-text whitespace-pre-wrap break-words">
+              {text.length > 150 ? text.substring(0, 150) + '...' : text}
+            </p>
           </div>
-
-          {/* 提示信息 */}
-          <div className="text-[9px] text-text-muted">
-            使用浏览器 SpeechSynthesis API 进行语音预览。完整音频导出请使用音频节点的 TTS 模式。
-          </div>
-        </div>
+        )}
       </div>
       
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 文本输入 - 增加高度 */}
+        <textarea
+          value={text}
+          onChange={(e) => updateNodeData(id, { text: e.target.value })}
+          placeholder="输入要转换为语音的文本..."
+          className="w-full bg-surface text-text text-xs rounded p-1.5 resize-none border border-border focus:border-primary outline-none"
+          rows={3}
+        />
+        
+        {/* 语言/语音选择 */}
+        <select
+          value={voice}
+          onChange={(e) => updateNodeData(id, { voice: e.target.value })}
+          className="w-full bg-surface text-text text-xs rounded p-1.5 border border-border focus:border-primary outline-none"
+        >
+          {languageOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-1">
+          <button
+            onClick={handleGenerate}
+            disabled={loading || !text.trim()}
+            className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
+          >
+            {loading ? '生成中...' : '生成音频'}
+          </button>
+          <button
+            onClick={handlePlayPreview}
+            disabled={!text.trim() || isGenerating}
+            className="px-3 bg-surface hover:bg-surface-hover disabled:opacity-50 text-text text-xs rounded"
+            title="预览播放"
+          >
+            {isPlaying ? '⏹' : '▶'}
+          </button>
+        </div>
+
+        {/* 提示信息 */}
+        <div className="text-[9px] text-text-muted">
+          使用浏览器 SpeechSynthesis API 进行语音预览。完整音频导出请使用音频节点的 TTS 模式。
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -270,6 +264,7 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
       showHoverHeader
       onRun={handleGenerate}
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

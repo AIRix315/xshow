@@ -63,10 +63,10 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
   // 对齐 OmniNode: 仅当 IMAGE 字段数量 > 2 时，才显示额外 handle（>2 意味着有3+个，默认 any 不够用）
   const extraImageHandleCount = imageFieldCount > 2 ? imageFieldCount : 0;
 
-  // 监听 handles 变化
+  // 监听 handles 变化 + 配置模式切换（内容高度变化导致 Handle 位置偏移）
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, updateNodeInternals, extraImageHandleCount]);
+  }, [id, updateNodeInternals, extraImageHandleCount, configMode]);
 
   const updateConfig = useCallback(
     (patch: Partial<RhAppNodeConfig>) => {

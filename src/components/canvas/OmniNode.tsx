@@ -294,12 +294,10 @@ function OmniNodeComponent({ id, data, selected }: NodeProps<OmniNodeType>) {
   // ComfyUI 模式：根据工作流中 IMAGE 字段数量动态显示 handle
   const [imageFieldCount, setImageFieldCount] = useState(0);
 
-  // 监听 imageFieldCount 变化，通知 React Flow 更新内部数据
+  // 监听 imageFieldCount 变化 + 配置模式切换，通知 React Flow 更新内部数据
   useEffect(() => {
-    if (imageFieldCount > 0) {
-      updateNodeInternals(id);
-    }
-  }, [imageFieldCount, id, updateNodeInternals]);
+    updateNodeInternals(id);
+  }, [imageFieldCount, id, updateNodeInternals, configMode]);
 
   // 从上游节点读取数据（按 handle 类型分类）
   const upstreamData = useMemo(() => {

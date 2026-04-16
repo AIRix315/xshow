@@ -1,211 +1,181 @@
-// Ref: §6.8 + 产物反推 — 九宫格合拼（含 Canvas 图像处理）
-// Ref: §4.2 — 节点数据回写 Store + 上游数据读取
+// Ref: node-banana + XShow 重构 — 九宫格合拼
+// Ref: §4.2 — 节点数据回写 Store
+// 重构: rows/cols 分离 + 预设选择 + image-01~NN handle + 执行器驱动
 import { memo, useCallback, useEffect } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
 import type { GridMergeNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { getUpstreamNodes } from '@/stores/useFlowStore';
-import { mergeImagesFromGrid } from '@/utils/imageProcessing';
 import BaseNodeWrapper from './BaseNode';
+
+/** 预设布局选项（与 GridSplitNode 一致） */
+const GRID_PRESETS = [
+  { key: '2x2', rows: 2, cols: 2, label: '2×2' },
+  { key: '2x3', rows: 2, cols: 3, label: '2×3' },
+  { key: '3x2', rows: 3, cols: 2, label: '3×2' },
+  { key: '3x3', rows: 3, cols: 3, label: '3×3' },
+  { key: '2x4', rows: 2, cols: 4, label: '2×4' },
+  { key: '4x2', rows: 4, cols: 2, label: '4×2' },
+  { key: '2x5', rows: 2, cols: 5, label: '2×5' },
+  { key: '5x2', rows: 5, cols: 2, label: '5×2' },
+] as const;
+
+/** 格式化 handle 编号: 1-based, 两位数 */
+function handleId(index: number): string {
+  return `image-${String(index + 1).padStart(2, '0')}`;
+}
 
 function GridMergeNodeComponent({ id, data, selected }: NodeProps<GridMergeNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  const updateNodeInternals = useUpdateNodeInternals();
+
   // Store-only: 业务数据从 data 读取
-  const gridCount = data.gridCount ?? 3;
-  const cellSize = data.cellSize ?? 512;
+  const gridRows = data.gridRows ?? 3;
+  const gridCols = data.gridCols ?? 3;
+  const presetKey = data.presetKey ?? '3x3';
   const loading = data.loading ?? false;
   const errorMessage = data.errorMessage ?? '';
   const mergedUrl = data.mergedImageUrl;
 
-  // 从 Store 读取所有上游节点的图片数据
-  const upstream = getUpstreamNodes(id);
+  const totalCells = gridRows * gridCols;
 
-  const handleGridCountChange = useCallback((val: number) => {
-    const clamped = Math.max(2, Math.min(5, val));
-    updateNodeData(id, { gridCount: clamped });
-  }, [id, updateNodeData]);
-
-  const handleCellSizeChange = useCallback((val: number) => {
-    updateNodeData(id, { cellSize: val });
-  }, [id, updateNodeData]);
-
-  // 收集上游数据，构造 cellImages 数组用于合拼
-  const cellImages: Array<string | undefined> = Array.from(
-    { length: gridCount * gridCount },
-    () => undefined,
-  );
-  for (const { edge, node } of upstream) {
-    const nodeData = node.data as Record<string, unknown>;
-    // 尝试多种图片来源：imageUrl、sourceImageUrl、splitResults 数组
-    const imageUrl = nodeData.imageUrl as string | undefined
-      ?? nodeData.sourceImageUrl as string | undefined;
-    if (imageUrl) {
-      // 根据 sourceHandle 分配到对应格子位置
-      const handleId = edge.sourceHandle;
-      if (handleId?.startsWith('cell-')) {
-        const match = handleId.match(/cell-(\d+)-(\d+)/);
-        if (match) {
-          const row = parseInt(match[1]!, 10);
-          const col = parseInt(match[2]!, 10);
-          const idx = row * gridCount + col;
-          if (idx < cellImages.length) {
-            cellImages[idx] = imageUrl;
-          }
-        }
-      } else {
-        // 没有 handle 信息，按连接顺序填入空位
-        const emptyIdx = cellImages.findIndex((v) => v === undefined);
-        if (emptyIdx >= 0) {
-          cellImages[emptyIdx] = imageUrl;
-        }
-      }
-    }
-    // 如果上游是 splitResults 数组（来自 GridSplitNode），展开
-    const splitResults = nodeData.splitResults as string[] | undefined;
-    if (splitResults && Array.isArray(splitResults)) {
-      for (let i = 0; i < Math.min(splitResults.length, cellImages.length); i++) {
-        if (!cellImages[i]) {
-          cellImages[i] = splitResults[i];
-        }
-      }
-    }
-  }
-
-  // 自动合拼：当上游数据变化时
-  const hasImages = cellImages.some((url) => url !== undefined);
-
+  // 预设切换改变 handle 数量时，必须通知 React Flow 重新计算 Handle 位置
   useEffect(() => {
-    if (!hasImages) {
-      updateNodeData(id, { mergedImageUrl: undefined, loading: false, errorMessage: '' });
-      return;
-    }
-    let cancelled = false;
-    updateNodeData(id, { loading: true, errorMessage: '' });
-    mergeImagesFromGrid(cellImages, gridCount, cellSize)
-      .then((url) => {
-        if (cancelled) return;
-        updateNodeData(id, { mergedImageUrl: url, loading: false });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        updateNodeData(id, { loading: false, errorMessage: err instanceof Error ? err.message : '合拼失败' });
-      });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cellImages 深比较需要用 hasImages 替代
-  }, [hasImages, gridCount, cellSize, id, updateNodeData]);
+    updateNodeInternals(id);
+  }, [totalCells, id, updateNodeInternals]);
 
-  const inputCount = gridCount * gridCount;
+  // 选择预设
+  const handlePresetChange = useCallback((preset: typeof GRID_PRESETS[number]) => {
+    updateNodeData(id, {
+      gridRows: preset.rows,
+      gridCols: preset.cols,
+      presetKey: preset.key,
+      mergedImageUrl: undefined, // 布局变更清空结果
+    });
+  }, [id, updateNodeData]);
 
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
-      <Handle type="target" position={Position.Left} id="merge-main" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      
-      <div className="w-full h-full p-2">
+      {/* image-01~image-NN input handles */}
+      {Array.from({ length: totalCells }, (_, idx) => (
+        <Handle
+          key={handleId(idx)}
+          type="target"
+          position={Position.Left}
+          id={handleId(idx)}
+          style={{ top: `${((idx + 1) / (totalCells + 1)) * 100}%`, zIndex: 10 }}
+          data-handletype="image"
+        />
+      ))}
+
+      {/* 输出 handle */}
+      <Handle type="source" position={Position.Right} id="merge-output" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+    </>
+  );
+
+  // ---- minimalContent: 预览模式 ----
+  const minimalContent = (
+    <div className="w-full h-full p-2">
+      {mergedUrl && !loading ? (
+        <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
+          <img src={mergedUrl} alt="合拼结果" className="max-w-full max-h-full object-contain" />
+        </div>
+      ) : (
         <div
           className="w-full h-full grid"
           style={{
-            gridTemplateColumns: `repeat(${gridCount}, 1fr)`,
-            gridTemplateRows: `repeat(${gridCount}, 1fr)`,
+            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+            gridTemplateRows: `repeat(${gridRows}, 1fr)`,
             gap: '2px',
           }}
         >
-          {Array.from({ length: inputCount }, (_, i) => (
+          {Array.from({ length: totalCells }, (_, i) => (
             <div
               key={i}
-              className={`flex items-center justify-center ${cellImages[i] ? '' : 'bg-surface-hover'}`}
+              className="bg-surface-hover flex items-center justify-center text-text-muted"
             >
-              {cellImages[i] ? (
-                <img src={cellImages[i]} alt={`cell-${i + 1}`} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[10px] text-text-muted">{i + 1}</span>
-              )}
+              <span className="text-[10px]">{String(i + 1).padStart(2, '0')}</span>
             </div>
           ))}
         </div>
-      </div>
-      
-      <Handle type="source" position={Position.Right} id="merge-output" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-    </>
+      )}
+    </div>
   );
 
+  // ---- hoverContent: 设置模式 ----
   const hoverContent = (
-    <>
-      <Handle type="target" position={Position.Left} id="merge-main" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      
-      <div className="flex flex-col h-full">
-        <div className="flex-1 min-h-0 p-2">
-          {mergedUrl && !loading ? (
-            <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
-              <img src={mergedUrl} alt="合拼结果" className="max-w-full max-h-full object-contain" />
-            </div>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px] bg-[#1a1a1a] rounded">
-              {loading ? '合拼中...' : '等待合拼'}
-            </div>
-          )}
-        </div>
-        
-        <div className="p-2 pt-1 border-t border-[#333]">
-          <div className="flex items-center gap-2 text-[10px] text-text">
-            <label className="w-10 shrink-0">格数:</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={gridCount}
-              onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9]/g, '');
-                if (val) {
-                  const num = Math.min(5, Math.max(2, parseInt(val, 10)));
-                  handleGridCountChange(num);
-                }
-              }}
-              onBlur={() => {
-                if (!gridCount || gridCount < 2) handleGridCountChange(2);
-                if (gridCount > 5) handleGridCountChange(5);
-              }}
-              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
-            />
-            <span className="text-text-muted">{gridCount}×{gridCount}</span>
+    <div className="flex flex-col h-full">
+      {/* 预览区 */}
+      <div className="flex-1 min-h-0 p-2">
+        {mergedUrl && !loading ? (
+          <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a] rounded">
+            <img src={mergedUrl} alt="合拼结果" className="max-w-full max-h-full object-contain" />
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-text mt-1">
-            <label className="w-10 shrink-0">尺寸:</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={cellSize}
-              onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9]/g, '');
-                if (val) {
-                  const num = Math.min(2048, Math.max(128, parseInt(val, 10)));
-                  handleCellSizeChange(num);
-                }
-              }}
-              onBlur={() => {
-                if (!cellSize || cellSize < 128) handleCellSizeChange(256);
-                if (cellSize > 2048) handleCellSizeChange(1024);
-              }}
-              className="w-14 bg-surface text-text text-[10px] rounded px-2 py-1 border border-border"
-            />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px] bg-[#1a1a1a] rounded">
+            {loading ? '合拼中...' : '等待合拼'}
           </div>
+        )}
+      </div>
 
-          <div className="text-center text-[10px] text-text-muted mt-2">
-            {hasImages ? `已连接 ${cellImages.filter(Boolean).length}/${inputCount} 格` : `从左侧连线 ${inputCount} 张子图到此节点`}
-          </div>
+      {/* 设置区 */}
+      <div className="p-2 pt-1 border-t border-[#333]">
+        {/* 预设布局选择 */}
+        <div className="text-[10px] text-text-secondary mb-1">布局</div>
+        <div className="flex flex-wrap gap-1">
+          {GRID_PRESETS.map((preset) => {
+            const isActive = presetKey === preset.key;
+            const count = preset.rows * preset.cols;
+            return (
+              <button
+                key={preset.key}
+                onClick={() => handlePresetChange(preset)}
+                className={`p-1.5 rounded border transition-colors ${
+                  isActive
+                    ? 'border-blue-500 bg-blue-500/20'
+                    : 'border-[#444] hover:border-[#555]'
+                }`}
+              >
+                <div
+                  className="mx-auto w-8 grid gap-px"
+                  style={{
+                    gridTemplateColumns: `repeat(${preset.cols}, 1fr)`,
+                    gridTemplateRows: `repeat(${preset.rows}, 1fr)`,
+                  }}
+                >
+                  {Array.from({ length: count }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`rounded-sm aspect-square ${
+                        isActive ? 'bg-blue-400' : 'bg-neutral-500'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div className="text-[9px] text-text-secondary mt-0.5 text-center">{preset.label}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 状态信息 */}
+        <div className="mt-2 text-[10px] text-text-muted text-center">
+          {gridRows}×{gridCols} = {totalCells} 格 · 从左侧连线子图到此节点
         </div>
       </div>
-      
-      <Handle type="source" position={Position.Right} id="merge-output" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-    </>
+    </div>
   );
 
   return (
-<BaseNodeWrapper
-      selected={!!selected} 
-      loading={loading} 
+    <BaseNodeWrapper
+      selected={!!selected}
+      loading={loading}
       errorMessage={errorMessage}
       title="合并"
       minWidth={260}
+      showHoverHeader
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

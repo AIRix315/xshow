@@ -54,10 +54,10 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
   // 工作流节点解析结果
   const [parsedNodes, setParsedNodes] = useState<RhWorkflowNode[]>([]);
 
-  // 监听 handles 变化，通知 React Flow 更新
+  // 监听 handles 变化 + 配置模式切换，通知 React Flow 更新
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, updateNodeInternals]);
+  }, [id, updateNodeInternals, configMode]);
 
   // 监听 handles 变化，通知 React Flow 更新
   useEffect(() => {

@@ -97,12 +97,20 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
     }
   }, [prompt, loading, channels, textChannelId, currentModel, autoSplit, id, updateNodeData]);
 
-  // 精简内容：只显示文本输出，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (67%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
       
+      {/* 输出 Handle (33%) */}
+      <Handle type="source" position={Position.Right} id="text" style={{ top: '33%', zIndex: 10 }} data-handletype="text" />
+    </>
+  );
+
+  // 精简内容：只显示文本输出，无边距
+  const minimalContent = (
+    <>
       {/* 文本输出区域 - 全屏无间隙 */}
       {text && !loading ? (
         <div className="flex-1 min-h-[100px] bg-[#1a1a1a] p-2 overflow-auto">
@@ -125,77 +133,65 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         </div>
       )}
-      
-      {/* 输出 Handle (33%) */}
-      <Handle type="source" position={Position.Right} id="text" style={{ top: '33%', zIndex: 10 }} data-handletype="text" />
     </>
   );
 
   // 悬停完整参数内容 - 参数在底部
   const fullContent = (
-    <>
-      {/* 输入 Handle (67%) */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
-      
-      {/* 内容区域：文本预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 文本预览区域 */}
-        <div className="flex-1 min-h-0">
-          {text && !loading && (
-            <div className="w-full h-full min-h-[80px] bg-[#1a1a1a] rounded p-2 overflow-auto">
-              <p className="text-[10px] text-neutral-300 whitespace-pre-wrap break-words">
-                {text.length > 300 ? text.substring(0, 300) + '...' : text}
-              </p>
-            </div>
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 提示词输入 - 增加高度 */}
-          <textarea
-            value={prompt}
-            onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
-            placeholder="输入文本描述..."
-            className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
-            rows={3}
-          />
-
-          {showNodeModelSettings && (
-            <ProviderModelSelector
-              type="text"
-              selectedChannelId={selectedChannelId}
-              selectedModel={selectedModel}
-              onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
-              onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
-            />
-          )}
-
-          {/* autoSplit 选项 */}
-          <label className="flex items-center gap-1 text-[10px] text-neutral-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoSplit}
-              onChange={(e) => updateNodeData(id, { autoSplit: e.target.checked })}
-              className="accent-blue-500"
-            />
-            自动拆分输出
-          </label>
-
-          {/* 生成按钮 */}
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !prompt.trim()}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-[#333] disabled:cursor-not-allowed text-white text-xs py-1.5 rounded font-medium"
-          >
-            {loading ? '生成中...' : '生成文本'}
-          </button>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* 文本预览区域 */}
+      <div className="flex-1 min-h-0">
+        {text && !loading && (
+          <div className="w-full h-full min-h-[80px] bg-[#1a1a1a] rounded p-2 overflow-auto">
+            <p className="text-[10px] text-neutral-300 whitespace-pre-wrap break-words">
+              {text.length > 300 ? text.substring(0, 300) + '...' : text}
+            </p>
+          </div>
+        )}
       </div>
       
-      {/* 输出 Handle (33%) */}
-      <Handle type="source" position={Position.Right} id="text" style={{ top: '33%', zIndex: 10 }} data-handletype="text" />
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 提示词输入 - 增加高度 */}
+        <textarea
+          value={prompt}
+          onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
+          placeholder="输入文本描述..."
+          className="w-full bg-[#1a1a1a] text-white text-xs rounded p-1.5 resize-none border border-[#333] focus:border-blue-500 outline-none"
+          rows={3}
+        />
+
+        {showNodeModelSettings && (
+          <ProviderModelSelector
+            type="text"
+            selectedChannelId={selectedChannelId}
+            selectedModel={selectedModel}
+            onChannelChange={(channelId) => updateNodeData(id, { selectedChannelId: channelId })}
+            onModelChange={(model) => updateNodeData(id, { selectedModel: model })}
+          />
+        )}
+
+        {/* autoSplit 选项 */}
+        <label className="flex items-center gap-1 text-[10px] text-neutral-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoSplit}
+            onChange={(e) => updateNodeData(id, { autoSplit: e.target.checked })}
+            className="accent-blue-500"
+          />
+          自动拆分输出
+        </label>
+
+        {/* 生成按钮 */}
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !prompt.trim()}
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-[#333] disabled:cursor-not-allowed text-white text-xs py-1.5 rounded font-medium"
+        >
+          {loading ? '生成中...' : '生成文本'}
+        </button>
+      </div>
+    </div>
   );
 
   return (
@@ -208,6 +204,7 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
       showHoverHeader
       onRun={handleGenerate}
       hoverContent={fullContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

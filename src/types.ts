@@ -189,30 +189,36 @@ export interface GenerateAudioNodeData extends BaseNodeData {
 
 // §3.8 九宫格分拆节点
 export interface GridSplitNodeData extends BaseNodeData {
-  gridCount: number;
-  /** 行数（默认等于 gridCount） */
-  gridRows?: number;
-  /** 列数（默认等于 gridCount） */
-  gridCols?: number;
+  /** 行数 */
+  gridRows: number;
+  /** 列数 */
+  gridCols: number;
+  /** 单元格最大输出尺寸（可选，0 = 保持原图宽高比） */
   cellSize: number;
-  aspectRatio: string;
-  titlePattern: string;
+  /** 预设布局 key，如 "2x2"、"2x3" */
+  presetKey: string;
+  /** 拆分结果 DataURL 数组 */
   splitResults?: string[];
-  /** 要创建的子节点组数（默认 = gridRows * gridCols） */
-  targetCount?: number;
-  /** 参考连接的子节点 ID 列表（拆分后自动创建的 ImageInput 节点） */
+  /** 参考连接的子 ImageInput 节点 ID 列表（可选创建） */
   childNodeIds?: Array<{ imageInputId: string }>;
-  /** 是否已配置子节点 */
-  isConfigured?: boolean;
+  /** 是否已创建子节点 */
+  hasChildNodes?: boolean;
   [key: string]: unknown;
 }
 
 // §3.9 九宫格合拼节点
 export interface GridMergeNodeData extends BaseNodeData {
-  gridCount: number;
+  /** 行数 */
+  gridRows: number;
+  /** 列数 */
+  gridCols: number;
+  /** 单元格尺寸 */
   cellSize: number;
-  aspectRatio: string;
+  /** 合并结果 DataURL */
   mergedImageUrl?: string;
+  /** 预设布局 key */
+  presetKey: string;
+  [key: string]: unknown;
 }
 
 // §3.10 万能节点配置

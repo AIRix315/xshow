@@ -219,15 +219,17 @@ export async function executeImageCompare(ctx: NodeExecutionContext): Promise<vo
 
 /**
  * GridSplitNode 执行器
- * 从上游获取图片并进行九宫格拆分，将结果写入 splitResults。
- * 如果 childNodeIds 已配置（子节点已创建），则将拆分结果填充到子 ImageInput 节点。
+ * 从上游获取图片并按 rows×cols 网格拆分，将结果写入 splitResults。
+ * 保留原图宽高比，不再强制输出正方形。
+ * 如果 hasChildNodes 为 true，将拆分结果填充到子 ImageInput 节点。
  */
 export async function executeGridSplit(ctx: NodeExecutionContext): Promise<void> {
   const { node, getConnectedInputs, updateNodeData } = ctx;
 
   const nodeData = node.data as Record<string, unknown>;
-  const gridCount = (nodeData.gridCount as number) ?? 3;
-  const cellSize = (nodeData.cellSize as number) ?? 512;
+  const gridRows = (nodeData.gridRows as number) ?? 3;
+  const gridCols = (nodeData.gridCols as number) ?? 3;
+  const cellSize = (nodeData.cellSize as number) ?? 0;
 
   updateNodeData(node.id, { loading: true, errorMessage: '' });
 
@@ -242,26 +244,91 @@ export async function executeGridSplit(ctx: NodeExecutionContext): Promise<void>
     // 动态导入图片处理工具（避免 Canvas API 在非浏览器环境的直接引用）
     const { loadImage, splitImageToGrid } = await import('@/utils/imageProcessing');
     const img = await loadImage(images[0]!);
-    const splitResults = splitImageToGrid(img, gridCount, cellSize);
+    const splitResults = cellSize > 0
+      ? splitImageToGrid(img, gridRows, gridCols, cellSize)
+      : splitImageToGrid(img, gridRows, gridCols);
 
     // 写入拆分结果
     updateNodeData(node.id, { splitResults, loading: false });
 
-    // 如果子节点已配置，将拆分结果填充到子 ImageInput 节点
+    // 如果子节点已创建，将拆分结果填充到子 ImageInput 节点
     const childNodeIds = nodeData.childNodeIds as Array<{ imageInputId: string }> | undefined;
-    if (childNodeIds && childNodeIds.length > 0) {
+    const hasChildNodes = nodeData.hasChildNodes as boolean | undefined;
+    if (hasChildNodes && childNodeIds && childNodeIds.length > 0) {
       for (let i = 0; i < childNodeIds.length; i++) {
         const imageInputId = childNodeIds[i]!.imageInputId;
         if (splitResults[i]) {
           updateNodeData(imageInputId, {
             imageUrl: splitResults[i],
-            filename: `split-${Math.floor(i / gridCount) + 1}-${(i % gridCount) + 1}.png`,
+            filename: `split-${Math.floor(i / gridCols) + 1}-${(i % gridCols) + 1}.png`,
           });
         }
       }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : '图片分拆失败';
+    updateNodeData(node.id, { loading: false, errorMessage: msg });
+  }
+}
+
+/**
+ * GridMergeNode 执行器
+ * 通过 getInputsByHandle 收集 image-01~image-NN 上游数据，
+ * 合并为一张网格大图。
+ */
+export async function executeGridMerge(ctx: NodeExecutionContext): Promise<void> {
+  const { node, nodes, edges, updateNodeData } = ctx;
+
+  const nodeData = node.data as Record<string, unknown>;
+  const gridRows = (nodeData.gridRows as number) ?? 3;
+  const gridCols = (nodeData.gridCols as number) ?? 3;
+  const cellSize = (nodeData.cellSize as number) ?? 512;
+  const totalCells = gridRows * gridCols;
+
+  updateNodeData(node.id, { loading: true, errorMessage: '' });
+
+  try {
+    // 通过 getInputsByHandle 收集 image-01~image-NN 的上游数据
+    const { getInputsByHandle } = await import('@/utils/connectedInputs');
+    const inputsByHandle = getInputsByHandle(node.id, nodes, edges);
+
+    // 构建按编号排序的 cellImages 数组
+    const cellImages: Array<string | undefined> = Array.from(
+      { length: totalCells },
+      () => undefined,
+    );
+
+    for (const [handleId, urls] of Object.entries(inputsByHandle)) {
+      if (!handleId.startsWith('image-')) continue;
+      // 从 handle 编号提取 index: image-01 → 0, image-02 → 1, ...
+      const num = parseInt(handleId.replace('image-', ''), 10);
+      const idx = num - 1; // 1-based → 0-based
+      if (idx >= 0 && idx < totalCells && urls[0]) {
+        cellImages[idx] = urls[0];
+      }
+    }
+
+    // 也兼容通用 image handle（无编号）
+    const { images } = ctx.getConnectedInputs(node.id);
+    for (let i = 0; i < Math.min(images.length, totalCells); i++) {
+      if (!cellImages[i] && images[i]) {
+        cellImages[i] = images[i];
+      }
+    }
+
+    const hasImages = cellImages.some((url) => url !== undefined);
+    if (!hasImages) {
+      updateNodeData(node.id, { mergedImageUrl: undefined, loading: false });
+      return;
+    }
+
+    // 动态导入图片处理工具
+    const { mergeImagesFromGrid } = await import('@/utils/imageProcessing');
+    const mergedImageUrl = await mergeImagesFromGrid(cellImages, gridRows, gridCols, cellSize);
+
+    updateNodeData(node.id, { mergedImageUrl, loading: false });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '图片合拼失败';
     updateNodeData(node.id, { loading: false, errorMessage: msg });
   }
 }

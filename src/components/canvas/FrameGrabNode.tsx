@@ -109,13 +109,22 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
     updateNodeData(id, { framePosition: val });
   }, [updateNodeData, id]);
 
-  // minimalContent - 最小预览模式，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
       
+      {/* 输出 Handle (50%) */}
+      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
+    </>
+  );
+
+  // minimalContent - 最小预览模式，无边距
+  const minimalContent = (
+    <>
       {/* 帧预览 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {resultImageUrl ? (
@@ -128,85 +137,70 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         )}
       </div>
-      
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
   // hoverContent - 悬停时显示完整参数，参数在底部
   const hoverContent = (
-    <>
-      {/* 输入 Handle (50%) */}
-      <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
-      
-      {/* 内容区域：预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 预览区域 */}
-        <div className="flex-1 min-h-0">
-          {sourceVideoUrl && (
-            <video
-              src={sourceVideoUrl}
-              controls
-              className="w-full rounded border border-border"
-              style={{ maxHeight: '80px' }}
-            />
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 隐藏的视频元素用于捕获帧 */}
+    <div className="flex flex-col h-full">
+      {/* 预览区域 */}
+      <div className="flex-1 min-h-0">
+        {sourceVideoUrl && (
           <video
-            ref={videoRef}
-            className="hidden"
-            crossOrigin="anonymous"
+            src={sourceVideoUrl}
+            controls
+            className="w-full rounded border border-border"
+            style={{ maxHeight: '80px' }}
           />
-          <canvas ref={canvasRef} className="hidden" />
-          
-          {/* 位置滑块 */}
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-text-secondary w-8 shrink-0">位置</label>
-            <input
-              type="range"
-              value={framePosition}
-              onChange={handlePositionChange}
-              min={0}
-              max={100}
-              className="flex-1"
-            />
-            <span className="text-[10px] text-text-muted w-12 text-right">{framePosition}%</span>
-          </div>
-
-          {/* 时间信息 */}
-          {duration > 0 && (
-            <div className="text-[9px] text-text-muted">
-              视频时长: {duration.toFixed(1)}秒 | 提取位置: {actualTime.toFixed(1)}秒
-            </div>
-          )}
-
-          {/* 提取按钮 */}
-          <button
-            onClick={handleGrab}
-            disabled={loading || !sourceVideoUrl}
-            className="w-full bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
-          >
-            {loading ? '提取中...' : '提取帧'}
-          </button>
-
-          {/* 提示 */}
-          <div className="text-[9px] text-text-muted">
-            从视频中提取指定时间的帧作为图片输出
-          </div>
-        </div>
+        )}
       </div>
       
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 隐藏的视频元素用于捕获帧 */}
+        <video
+          ref={videoRef}
+          className="hidden"
+          crossOrigin="anonymous"
+        />
+        <canvas ref={canvasRef} className="hidden" />
+        
+        {/* 位置滑块 */}
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-secondary w-8 shrink-0">位置</label>
+          <input
+            type="range"
+            value={framePosition}
+            onChange={handlePositionChange}
+            min={0}
+            max={100}
+            className="flex-1"
+          />
+          <span className="text-[10px] text-text-muted w-12 text-right">{framePosition}%</span>
+        </div>
+
+        {/* 时间信息 */}
+        {duration > 0 && (
+          <div className="text-[9px] text-text-muted">
+            视频时长: {duration.toFixed(1)}秒 | 提取位置: {actualTime.toFixed(1)}秒
+          </div>
+        )}
+
+        {/* 提取按钮 */}
+        <button
+          onClick={handleGrab}
+          disabled={loading || !sourceVideoUrl}
+          className="w-full bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1.5 rounded font-medium"
+        >
+          {loading ? '提取中...' : '提取帧'}
+        </button>
+
+        {/* 提示 */}
+        <div className="text-[9px] text-text-muted">
+          从视频中提取指定时间的帧作为图片输出
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -214,6 +208,7 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
       title="帧提取"
       showHoverHeader
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

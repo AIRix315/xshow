@@ -1,8 +1,8 @@
 // Ref: node-banana BaseNode.tsx + @xyflow/react NodeResizer
 // Ref: 对标 node-banana 样式 — 背景 #262626, 边框 #333, 圆角 8px
 // Ref: 悬停展开模式 - 默认精简内容，hover 显示完整参数
-import { memo, type ReactNode, useState } from 'react';
-import { NodeResizer } from '@xyflow/react';
+import { memo, type ReactNode, useEffect, useState } from 'react';
+import { NodeResizer, useNodeId, useUpdateNodeInternals } from '@xyflow/react';
 import { Loader2, Check, XCircle, Settings, Play } from 'lucide-react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 
@@ -30,6 +30,12 @@ export interface BaseNodeWrapperProps {
   children: ReactNode;
   /** 悬停时显示的完整参数内容（替代 children） */
   hoverContent?: ReactNode;
+  /**
+   * Handle 元素（与 children/hoverContent 平级渲染）。
+   * 使用 hoverContent 的节点必须将 Handle 放在此处，
+   * 而非 children 或 hoverContent 内部，避免 Handle 重复渲染导致连线漂移。
+   */
+  handles?: ReactNode;
   /** 点击设置按钮后显示的扩展面板（外部展开） */
   settingsPanel?: ReactNode;
   /** 最小宽度 */
@@ -61,6 +67,7 @@ function BaseNodeWrapper({
   debugInfo,
   children,
   hoverContent,
+  handles,
   settingsPanel,
   minWidth = 180,
   minHeight = 100,
@@ -80,6 +87,16 @@ function BaseNodeWrapper({
   // 生成类节点默认展开，处理类节点默认收起
   const [expanded, setExpanded] = useState(true);
   const toggleExpanded = () => setExpanded(!expanded);
+
+  // 当 expanded 状态切换时，节点渲染高度变化，
+  // 必须通知 React Flow 重新计算 Handle 位置，否则连线端点漂移
+  const nodeId = useNodeId();
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    if (nodeId) {
+      updateNodeInternals(nodeId);
+    }
+  }, [expanded, nodeId, updateNodeInternals]);
 
   return (
     <div className="relative w-full h-full group">
@@ -202,6 +219,13 @@ function BaseNodeWrapper({
         {hoverContent && (
           <div className={`flex-1 min-h-0 overflow-hidden rounded-lg flex-col ${expanded ? '' : 'hidden'}`}>
             {hoverContent}
+          </div>
+        )}
+
+        {/* Handle 容器 - 与 children/hoverContent 平级，避免重复渲染导致连线漂移 */}
+        {handles && (
+          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 5 }}>
+            {handles}
           </div>
         )}
       </div>

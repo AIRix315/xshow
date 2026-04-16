@@ -9,7 +9,7 @@ import type { Node, Edge } from '@xyflow/react';
  * getSourceOutput 的返回类型，支持多值输出
  */
 export interface SourceOutput {
-  type: 'image' | 'video' | 'audio' | 'text' | '3d';
+  type: 'image' | 'video' | 'audio' | 'text' | '3d' | 'reference';
   value: string | null;
   /** 多值输出（如 OmniNode 的 outputUrls 数组、GridSplitNode 的 splitResults） */
   additionalValues?: string[];
@@ -29,7 +29,17 @@ export interface ConnectedInputs {
 }
 
 /**
+ * 判断 Handle 是否为引用类型（视觉关联，非数据流）
+ * reference 边不传输数据，仅表示父子节点关系
+ */
+export function isReferenceHandle(handleId: string | null | undefined): boolean {
+  return handleId === 'reference' || handleId?.startsWith('reference-') === true;
+}
+
+/**
  * 判断 Handle 是否为图片类型
+ * 支持: image, image-*, image-\d\d (GridSplit/Merge), source-image, cropped-image, cell-*
+ * 排除: reference 类型
  */
 function isImageHandle(handleId: string | null | undefined): boolean {
   if (!handleId) return false;
@@ -70,9 +80,12 @@ export function isAudioHandle(handleId: string | null | undefined): boolean {
 /**
  * 从 handle ID 推断目标 handle 的数据类型
  * 用于 getSourceOutput 按下游需要分发数据
+ * 支持: image-\d\d (GridSplit/Merge 01-based编号), image-* (OmniNode等)
  */
-function inferHandleType(handleId: string | null | undefined): 'image' | 'video' | 'audio' | 'text' | 'any' {
+function inferHandleType(handleId: string | null | undefined): 'image' | 'video' | 'audio' | 'text' | 'reference' | 'any' {
   if (!handleId) return 'any';
+  // reference 是视觉关联边，不参与数据流
+  if (isReferenceHandle(handleId)) return 'reference';
   if (handleId === 'image' || handleId.startsWith('image-') || handleId.startsWith('cell-') || handleId === 'source-image' || handleId === 'cropped-image') return 'image';
   if (handleId === 'video' || handleId.startsWith('video-')) return 'video';
   if (handleId === 'audio' || handleId.startsWith('audio-')) return 'audio';
@@ -95,7 +108,7 @@ function inferMediaOutput(
   outputUrls: string[] | undefined,
   textOutput: string | undefined,
   outputType: string,
-  targetHandleType: 'image' | 'video' | 'audio' | 'text' | 'any',
+  targetHandleType: 'image' | 'video' | 'audio' | 'text' | 'reference' | 'any',
   outputUrlTypes?: string[],
 ): SourceOutput {
   // ─── 辅助：根据 URL 推断媒体类型 ───
@@ -117,6 +130,8 @@ function inferMediaOutput(
     if (/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(lower)) return 'audio';
     if (lower.includes('/view?') || lower.includes('/view?filename=')) return 'image';
     if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?|$)/i.test(lower)) return 'image';
+    // ZIP 文件应识别为 text（供 RhZipNode 正确提取）
+    if (/\.zip(\?|$)/i.test(lower)) return 'text';
     if (outputType === 'video') return 'video';
     if (outputType === 'audio') return 'audio';
     return 'image';
@@ -133,6 +148,9 @@ function inferMediaOutput(
 
   // ─── 显式类型模式 ───
   if (outputType !== 'auto') {
+    if (outputType === 'reference') {
+      return { type: 'reference', value: null };
+    }
     if (outputType === 'text') {
       return { type: 'text', value: textOutput || null };
     }
@@ -154,6 +172,11 @@ function inferMediaOutput(
 
   // ─── auto 模式：万能分发 ───
   const want = targetHandleType ?? 'any';
+
+  // reference 类型不传输数据
+  if (want === 'reference') {
+    return { type: 'reference', value: null };
+  }
 
   if (want === 'text') {
     if (textOutput) return { type: 'text', value: textOutput };
@@ -216,7 +239,7 @@ function inferMediaOutput(
 function getSourceOutput(
   sourceNode: Node,
   _sourceHandle?: string | null,
-  targetHandleType?: 'image' | 'video' | 'audio' | 'text' | 'any'
+  targetHandleType?: 'image' | 'video' | 'audio' | 'text' | 'reference' | 'any'
 ): SourceOutput {
   const data = sourceNode.data as Record<string, unknown>;
   const nodeType = sourceNode.type;
@@ -257,10 +280,20 @@ function getSourceOutput(
     case 'gridMergeNode':
       return { type: 'image', value: (data.mergedImageUrl as string) || null };
 
-    // 九宫格拆分节点：多图输出
+    // 九宫格拆分节点：多图输出，按 image-01~image-NN handle 分发
     case 'gridSplitNode': {
       const splitResults = data.splitResults as string[] | undefined;
       if (splitResults && splitResults.length > 0) {
+        // 如果下游 targetHandle 是 image-01~image-NN，按编号分发对应图片
+        if (targetHandleType === 'image' && _sourceHandle) {
+          const match = _sourceHandle.match(/^image-(\d+)$/);
+          if (match) {
+            const idx = parseInt(match[1]!, 10) - 1; // 1-based → 0-based
+            const value = splitResults[idx] ?? null;
+            return { type: 'image', value };
+          }
+        }
+        // 兜底：返回第一张 + additionalValues
         return {
           type: 'image',
           value: splitResults[0] || null,
@@ -408,9 +441,9 @@ export function getConnectedInputs(
   // 缓存 passthrough 节点的结果
   const passthroughCache = new Map<string, ConnectedInputs>();
 
-  // 遍历所有指向当前节点的边
+  // 遍历所有指向当前节点的边（排除 reference 视觉关联边）
   edges
-    .filter((edge) => edge.target === nodeId)
+    .filter((edge) => edge.target === nodeId && edge.type !== 'reference')
     .forEach((edge) => {
       const sourceNode = nodes.find((n) => n.id === edge.source);
       if (!sourceNode) return;
@@ -524,9 +557,24 @@ export function getConnectedInputs(
         text = typeof value === 'string' ? value : String(value);
       } else if (isTextHandle(handleId)) {
         text = typeof value === 'string' ? value : String(value);
-      } else if (isImageHandle(handleId) || !handleId) {
+      } else if (isImageHandle(handleId)) {
+        // 未识别类型的 handle，默认按 image 处理
+        // 但 text 类型（包含 .zip）不进入 images
         images.push(value);
         additionalValues?.forEach((v) => images.push(v));
+      } else if (!handleId) {
+        // handleId 为空时（边直接连接），按 sourceHandle 类型分发
+        // image 类型进入 images
+        if (type === 'image') {
+          images.push(value);
+          additionalValues?.forEach((v) => images.push(v));
+        } else if (type === 'video') {
+          videos.push(value);
+          additionalValues?.forEach((v) => videos.push(v));
+        } else if (type === 'audio') {
+          audio.push(value);
+          additionalValues?.forEach((v) => audio.push(v));
+        }
       }
     });
 
@@ -565,9 +613,9 @@ export function getInputsByHandle(
 ): Record<string, string[]> {
   const result: Record<string, string[]> = {};
 
-  // 遍历所有指向当前节点的边
+  // 遍历所有指向当前节点的边（排除 reference 视觉关联边）
   edges
-    .filter((e) => e.target === nodeId && e.targetHandle)
+    .filter((e) => e.target === nodeId && e.targetHandle && e.type !== 'reference')
     .forEach((edge) => {
       const handleId = edge.targetHandle!;
       // 只处理 image-*, video-*, audio-* 类型的 handle

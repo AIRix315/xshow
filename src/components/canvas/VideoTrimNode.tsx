@@ -95,13 +95,22 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
     updateNodeData(id, { endTime: val });
   }, [id, updateNodeData]);
 
-  // minimalContent - 最小预览模式，无边距
-  const minimalContent = (
+  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  const handles = (
     <>
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
       
+      {/* 输出 Handle (50%) */}
+      <Handle type="source" position={Position.Right} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
+    </>
+  );
+
+  // minimalContent - 最小预览模式，无边距
+  const minimalContent = (
+    <>
       {/* 视频状态 - 全屏无间隙 */}
       <div className="flex-1 flex items-center justify-center min-h-[80px]">
         {resultUrl ? (
@@ -114,100 +123,85 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         )}
       </div>
-      
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
     </>
   );
 
   // hoverContent - 悬停时显示完整参数，参数在底部
   const hoverContent = (
-    <>
-      {/* 输入 Handle (50%) */}
-      <Handle type="target" position={Position.Left} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
-      
-      {/* 内容区域：预览在上，参数在底部 */}
-      <div className="flex flex-col h-full">
-        {/* 预览区域 */}
-        <div className="flex-1 min-h-0">
-          {sourceVideoUrl && (
-            <video
-              ref={videoRef}
-              className="w-full rounded border border-border"
-              style={{ maxHeight: '100px' }}
-            />
-          )}
-        </div>
-        
-        {/* 参数区域 - 在底部 */}
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
-          {/* 时间范围设置 */}
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-text-secondary w-8 shrink-0">开始</label>
-            <input
-              type="number"
-              value={startTime}
-              onChange={handleStartTimeChange}
-              min={0}
-              max={duration}
-              step={0.1}
-              className="flex-1 bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
-            />
-            <span className="text-[10px] text-text-muted">秒</span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-text-secondary w-8 shrink-0">结束</label>
-            <input
-              type="number"
-              value={endTime}
-              onChange={handleEndTimeChange}
-              min={0}
-              max={duration || 999}
-              step={0.1}
-              className="flex-1 bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
-            />
-            <span className="text-[10px] text-text-muted">秒</span>
-          </div>
-
-          {/* 时长信息 */}
-          {duration > 0 && (
-            <div className="text-[9px] text-text-muted">
-              视频总时长: {duration.toFixed(1)}秒 | 裁剪: {(endTime - startTime).toFixed(1)}秒
-            </div>
-          )}
-
-          {/* 操作按钮 */}
-          <div className="flex gap-1">
-            <button
-              onClick={handlePreviewStart}
-              disabled={!sourceVideoUrl}
-              className="flex-1 px-2 py-1 text-[10px] bg-surface hover:bg-surface-hover disabled:opacity-50 rounded"
-            >
-              预览
-            </button>
-            <button
-              onClick={handleTrim}
-              disabled={loading || !sourceVideoUrl || startTime >= endTime}
-              className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1 rounded font-medium"
-            >
-              {loading ? '裁剪中...' : '裁剪'}
-            </button>
-          </div>
-
-          {/* 提示 */}
-          <div className="text-[9px] text-text-muted">
-            浏览器本地裁剪需 ffmpeg.wasm。当前使用原始视频。
-          </div>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* 预览区域 */}
+      <div className="flex-1 min-h-0">
+        {sourceVideoUrl && (
+          <video
+            ref={videoRef}
+            className="w-full rounded border border-border"
+            style={{ maxHeight: '100px' }}
+          />
+        )}
       </div>
       
-      {/* 输出 Handle (50%) */}
-      <Handle type="source" position={Position.Right} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
-    </>
+      {/* 参数区域 - 在底部 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+        {/* 时间范围设置 */}
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-secondary w-8 shrink-0">开始</label>
+          <input
+            type="number"
+            value={startTime}
+            onChange={handleStartTimeChange}
+            min={0}
+            max={duration}
+            step={0.1}
+            className="flex-1 bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
+          />
+          <span className="text-[10px] text-text-muted">秒</span>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-secondary w-8 shrink-0">结束</label>
+          <input
+            type="number"
+            value={endTime}
+            onChange={handleEndTimeChange}
+            min={0}
+            max={duration || 999}
+            step={0.1}
+            className="flex-1 bg-surface text-text text-xs rounded px-2 py-1 border border-border focus:border-primary outline-none"
+          />
+          <span className="text-[10px] text-text-muted">秒</span>
+        </div>
+
+        {/* 时长信息 */}
+        {duration > 0 && (
+          <div className="text-[9px] text-text-muted">
+            视频总时长: {duration.toFixed(1)}秒 | 裁剪: {(endTime - startTime).toFixed(1)}秒
+          </div>
+        )}
+
+        {/* 操作按钮 */}
+        <div className="flex gap-1">
+          <button
+            onClick={handlePreviewStart}
+            disabled={!sourceVideoUrl}
+            className="flex-1 px-2 py-1 text-[10px] bg-surface hover:bg-surface-hover disabled:opacity-50 rounded"
+          >
+            预览
+          </button>
+          <button
+            onClick={handleTrim}
+            disabled={loading || !sourceVideoUrl || startTime >= endTime}
+            className="flex-1 bg-primary hover:bg-primary-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text text-xs py-1 rounded font-medium"
+          >
+            {loading ? '裁剪中...' : '裁剪'}
+          </button>
+        </div>
+
+        {/* 提示 */}
+        <div className="text-[9px] text-text-muted">
+          浏览器本地裁剪需 ffmpeg.wasm。当前使用原始视频。
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -215,6 +209,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
       title="裁剪"
       showHoverHeader
       hoverContent={hoverContent}
+      handles={handles}
     >
       {minimalContent}
     </BaseNodeWrapper>

@@ -22,6 +22,7 @@ export {
   executeVideoStitch,
   executeImageCompare,
   executeGridSplit,
+  executeGridMerge,
 } from './simpleNodeExecutors';
 
 // 生成节点执行器
@@ -55,6 +56,7 @@ import {
   executeVideoStitch,
   executeImageCompare,
   executeGridSplit,
+  executeGridMerge,
 } from './simpleNodeExecutors';
 import {
   executeImageNode,
@@ -108,6 +110,7 @@ export const nodeExecutors: NodeExecutorRegistry = {
   videoStitchNode: executeVideoStitch,
   imageCompareNode: executeImageCompare,
   gridSplitNode: executeGridSplit,
+  gridMergeNode: executeGridMerge,
 
   // 万能节点
   omniNode: executeOmniNode,
