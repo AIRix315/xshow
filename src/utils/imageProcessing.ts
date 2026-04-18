@@ -1,4 +1,4 @@
-// Ref: §6.7 + §6.8 — 九宫格拆图/合图 Canvas 工具函数
+// Ref: 宫格拆图/合图 Canvas 工具函数
 // Ref: node-banana gridSplitter.ts — 保留原图宽高比分割
 
 /**

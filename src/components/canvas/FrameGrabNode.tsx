@@ -144,19 +144,18 @@ function FrameGrabNode({ id, data, selected }: NodeProps<FrameGrabNodeType>) {
   const hoverContent = (
     <div className="flex flex-col h-full">
       {/* 预览区域 */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {sourceVideoUrl && (
           <video
             src={sourceVideoUrl}
             controls
             className="w-full rounded border border-border"
-            style={{ maxHeight: '80px' }}
           />
         )}
       </div>
-      
-      {/* 参数区域 - 在底部 */}
-      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333]">
+
+      {/* 参数区域 - 在底部，z-10确保在最上层 */}
+      <div className="flex flex-col gap-1.5 pt-2 border-t border-[#333] z-10 bg-[#262626]">
         {/* 隐藏的视频元素用于捕获帧 */}
         <video
           ref={videoRef}

@@ -1,4 +1,4 @@
-// Ref: §7.3 + chrome-extension-boilerplate-react-vite — 双层持久化适配器
+// chrome-extension-boilerplate-react-vite — 双层持久化适配器
 // localStorage 作同步层（Zustand persist 即时读写）
 // chrome.storage.local 作异步权威层（跨浏览器会话持久化）
 import { createJSONStorage } from 'zustand/middleware';

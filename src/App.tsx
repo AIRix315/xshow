@@ -1,4 +1,4 @@
-// Ref: §七 — 顶部栏布局（对标原型三段式：左Logo+项目+新建/保存 | 中空 | 右节点+设置+快捷键）
+// 顶部栏布局（三段式：左Logo+项目+新建/保存 | 中空 | 右节点+设置+快捷键）
 import { useState, useEffect, useRef } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Settings, Plus, Save, Keyboard, Upload, FolderOpen, ChevronDown, Check } from 'lucide-react';
@@ -49,7 +49,7 @@ function App() {
 
   const hasProjectDir = fsManager.hasProjectDirectory();
 
-  /** 初始化文件系统管理器（页面加载时验证已保存的目录句柄） */
+  /** 初始化文件系统管理器 - 页面加载时验证已保存的目录句柄 */
   const initRef = useRef(false);
   useEffect(() => {
     fsManager.initialize().then(async ({ settingsDirOk }) => {

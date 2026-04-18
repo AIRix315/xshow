@@ -1,4 +1,4 @@
-// Ref: §6.15 + §7.3 — sendToActiveTab 双窗口交互
+// sendToActiveTab 双窗口交互
 import type { TransitResource } from '@/types';
 
 async function urlToFile(url: string, filename: string): Promise<File> {

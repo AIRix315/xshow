@@ -1,4 +1,4 @@
-// Ref: §6.15 + §7.3 — chromeHelpers 测试
+// chromeHelpers 测试
 import { describe, it, expect } from 'vitest';
 
 describe('chromeHelpers — base64ToFile', () => {

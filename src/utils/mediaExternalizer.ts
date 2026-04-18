@@ -1,5 +1,5 @@
 // Ref: node-banana mediaStorage.ts — 媒体数据序列化
-// Ref: §3.5-3.15 节点媒体字段规范
+// Ref: 节点媒体字段规范
 // 负责将节点数据中的 blob/http URL 转换为可序列化的 base64 data URL
 // 以及在导出前移除不可 JSON 序列化的回调函数
 
@@ -77,6 +77,8 @@ function stripCallbacks(data: Record<string, unknown>): Record<string, unknown> 
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (typeof value === 'function') continue;
+    // 移除生成历史数据（纯内存，不跨会话保留）
+    if (key === 'imageHistory' || key === 'videoHistory' || key === 'selectedHistoryIndex' || key === 'selectedVideoHistoryIndex') continue;
     if (value && typeof value === 'object') {
       // 递归清理嵌套对象
       result[key] = stripCallbacks(value as Record<string, unknown>);

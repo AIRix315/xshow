@@ -1,8 +1,7 @@
-// Ref: §三 — 核心数据结构定义 + @xyflow/react Node 类型
-// 所有接口与类型均对照 01-1-reverse-engineering-plan-v2.md §3.1-3.15
+// 核心数据结构定义 + @xyflow/react Node 类型
 import type { Node, Edge } from '@xyflow/react';
 
-// §3.1 通道配置与全局 API 配置
+// 通道配置与全局 API 配置
 export type ComfyUISubType = 'local' | 'cloud';
 
 // 模型条目（单个模型配置）
@@ -48,8 +47,24 @@ export interface ChannelConfig {
   name: string;             // 供应商名称
   url: string;              // API 端点地址
   key: string;              // API 密钥
-  protocol: 'openai' | 'gemini' | 'anthropic' | 'custom' | 'comfyui';  // 协议类型
+  protocol: 'openai' | 'gemini' | 'anthropic' | 'custom' | 'comfyui' | 'rhapi';  // 协议类型
   comfyuiSubType?: ComfyUISubType;  // 仅 protocol='comfyui' 时有效
+}
+
+// 动态模型参数规范
+export interface ModelParams {
+  // 图片参数
+  aspectRatio?: { options: string[]; default: string; };  // 画面比例
+  size?: { options: string[]; default: string; };        // 尺寸
+  quality?: { options: string[]; default: string; };      // 质量
+  // 图片专用
+  imageGenerationMode?: ('text-to-image' | 'image-to-image')[];  // 支持的生成模式
+  // 视频参数
+  duration?: { options: string[]; default: string; };     // 视频时长
+  // 音频参数
+  voice?: { options: string[]; default: string; };        // 音色
+  // 3D 参数
+  format?: { options: string[]; default: string; };        // 格式
 }
 
 export interface ApiConfig {
@@ -66,6 +81,7 @@ export interface ApiConfig {
   model3D: string;                  // 3D模型（兼容旧版，新版用 modelEntries）
   ttsVoice: string;                 // TTS 语音标识，用户自定义填入
   videoDurations: string;           // 视频时长选项，换行分隔
+  audioDurations: string;           // 音频时长选项，换行分隔
   presetPrompts: PresetPrompt[];    // 预设词
   // 模型列表（新版：每个类型的模型列表）
   modelEntries: Record<string, ModelEntry[]>;  // key: 'text'|'image'|'video'|'audio'|'3d'
@@ -75,7 +91,7 @@ export interface ApiConfig {
   comfyuiRunninghubWorkflows: string;
 }
 
-// §3.2 资源中转站
+// 资源中转站
 export interface TransitResource {
   id: string;
   url: string;
@@ -86,7 +102,7 @@ export interface TransitResource {
   isFavorite?: boolean;        // 收藏标记
 }
 
-// §3.3 预设词
+// 预设词
 export interface PresetPrompt {
   title: string;
   prompt: string;
@@ -94,36 +110,36 @@ export interface PresetPrompt {
   enabled: boolean;
 }
 
-// §3.4 节点基础数据 (Ref: node-banana BaseNodeData)
+// 节点基础数据 (Ref: node-banana BaseNodeData)
 export interface BaseNodeData extends Record<string, unknown> {
   label?: string;
   loading?: boolean;
   errorMessage?: string;
 }
 
-// §3.5 图片节点数据
+// 图片节点数据
 export interface ImageNodeData extends BaseNodeData {
   imageUrl?: string;
   prompt: string;
   aspectRatio: string;     // '16:9', '1:1' 等
   imageSize: string;        // '1K', '2K' 等
+  customWidth?: string;     // 自定义宽度
+  customHeight?: string;    // 自定义高度
   selectedModel?: string;
   drawingModel: string;     // 换行分隔多模型
   selectedContextResources: TransitResource[];
   loading: boolean;
   errorMessage?: string;
   presetPrompts: PresetPrompt[];
-  onGenerate?: (nodeId: string, prompt: string, size: string, model?: string) => void;
-  onCrop?: (nodeId: string, imageUrl: string) => void;
-  onZoom?: (imageUrl: string) => void;
-  onEdit?: (nodeId: string, imageUrl: string) => void;
-  onAddImage?: (nodeId: string, dataUrl: string) => void;
-  onStop?: (nodeId: string) => void;
-  onShowToast?: (msg: string) => void;
-  onSendToActiveTab?: (resource: string | { url: string; type: string }) => void;
+  // rhapi 协议字段
+  imageGenerationMode?: 'text-to-image' | 'image-to-image';  // 文生图/图生图切换
+  modelParams?: ModelParams;  // 动态模型参数规范
+  // 历史轮播
+  imageHistory?: Array<{ imageUrl: string; prompt: string; timestamp: number }>;
+  selectedHistoryIndex?: number;
 }
 
-// §3.5 文本节点数据
+// 文本节点数据
 export interface TextNodeData extends BaseNodeData {
   text?: string;
   prompt: string;
@@ -143,16 +159,21 @@ export interface TextNodeData extends BaseNodeData {
   onShowToast?: (msg: string) => void;
 }
 
-// §3.6 视频节点数据
+// 视频节点数据
 export interface VideoNodeData extends BaseNodeData {
   videoUrl?: string;
   thumbnailUrl?: string;
   prompt: string;
   size: string;
+  imageSize?: string;        // 兼容 imageSize 字段
+  aspectRatio?: string;     // '16:9', '1:1' 等
+  customWidth?: string;     // 自定义宽度
+  customHeight?: string;    // 自定义高度
   selectedModel?: string;
   videoModel: string;
   videoDurations: string;
   selectedSeconds?: string;
+  customDuration?: string; // 自定义时长
   selectedContextResources: TransitResource[];
   loading: boolean;
   progress?: number;
@@ -162,9 +183,14 @@ export interface VideoNodeData extends BaseNodeData {
   onAddImage?: (nodeId: string, dataUrl: string) => void;
   onStop?: (nodeId: string) => void;
   onShowToast?: (msg: string) => void;
+  // rhapi 协议字段
+  videoGenerationMode?: 'text-to-video' | 'image-to-video';  // 文生视频/图生视频切换
+  // 历史轮播
+  videoHistory?: Array<{ videoUrl: string; thumbnailUrl: string; prompt: string; timestamp: number }>;
+  selectedVideoHistoryIndex?: number;
 }
 
-// §3.7 音频输入节点数据（audioInputNode）
+// 音频输入节点数据（audioInputNode）
 export interface AudioNodeData extends BaseNodeData {
   audioUrl?: string;
   audioName?: string;
@@ -178,16 +204,19 @@ export interface AudioNodeData extends BaseNodeData {
   onShowToast?: (msg: string) => void;
 }
 
-// §3.7.1 音频生成节点数据（audioNode - TTS）
-export interface GenerateAudioNodeData extends BaseNodeData { 
-  text?: string; 
+// 音频生成节点数据（audioNode - TTS）
+export interface GenerateAudioNodeData extends BaseNodeData {
+  text?: string;
   voice?: string;
   audioUrl?: string;
   loading?: boolean;
   errorMessage?: string;
+  selectedChannelId?: string;
+  selectedModel?: string;
+  audioDuration?: string;
 }
 
-// §3.8 九宫格分拆节点
+// 宫格分拆节点
 export interface GridSplitNodeData extends BaseNodeData {
   /** 行数 */
   gridRows: number;
@@ -206,7 +235,7 @@ export interface GridSplitNodeData extends BaseNodeData {
   [key: string]: unknown;
 }
 
-// §3.9 九宫格合拼节点
+// 宫格合拼节点
 export interface GridMergeNodeData extends BaseNodeData {
   /** 行数 */
   gridRows: number;
@@ -221,7 +250,7 @@ export interface GridMergeNodeData extends BaseNodeData {
   [key: string]: unknown;
 }
 
-// §3.10 万能节点配置
+// 万能节点配置
 export interface OmniNodeConfig {
   apiUrl: string;
   method: string;
@@ -256,7 +285,7 @@ export interface OmniNodeConfig {
   nodeInfoList?: ComfyUINodeInfo[];
 }
 
-// §3.10.1 RunningHub APP 节点配置
+// RunningHub APP 节点配置
 export interface RhAppNodeConfig {
   /** 选中的 APP ID（webappId） */
   appId?: string;
@@ -277,7 +306,7 @@ export interface RhAppNodeConfig {
   }>;
 }
 
-// §3.10.2 RunningHub Workflow 节点配置
+// RunningHub Workflow 节点配置
 export interface RhWfNodeConfig {
   /** 选中的 Workflow ID */
   workflowId?: string;
@@ -323,7 +352,7 @@ export interface OmniNodeData extends BaseNodeData {
   onStop?: (nodeId: string) => void;
 }
 
-// §3.10.1 RunningHub APP 节点数据
+// RunningHub APP 节点数据
 export interface RhAppNodeData extends BaseNodeData {
   label: string;
   configMode: boolean;
@@ -340,7 +369,7 @@ export interface RhAppNodeData extends BaseNodeData {
   nodeValues?: Record<string, Record<string, unknown>>;
 }
 
-// §3.10.2 RunningHub Workflow 节点数据
+// RunningHub Workflow 节点数据
 export interface RhWfNodeData extends BaseNodeData {
   label: string;
   configMode: boolean;
@@ -357,13 +386,13 @@ export interface RhWfNodeData extends BaseNodeData {
   nodeValues?: Record<string, Record<string, unknown>>;
 }
 
-// §3.10.3 ZIP 解压节点配置
+// ZIP 解压节点配置
 export interface RhZipNodeConfig {
   /** 输出类型 */
   outputType?: 'auto' | 'image' | 'video' | 'audio';
 }
 
-// §3.10.3 ZIP 解压节点数据
+// ZIP 解压节点数据
 export interface RhZipNodeData extends BaseNodeData {
   label: string;
   /** 输入的 ZIP URL（上游传入或手动输入） */
@@ -381,7 +410,7 @@ export interface RhZipNodeData extends BaseNodeData {
   extractedInfo?: string;
 }
 
-// §3.11 全局任务追踪
+// 全局任务追踪
 export interface GlobalTask {
   id: string;
   type: 'video' | 'custom';
@@ -394,19 +423,19 @@ export interface GlobalTask {
   thumbnailUrl?: string;
 }
 
-// §3.12 裁剪节点数据
+// 裁剪节点数据
 export interface CropNodeData extends BaseNodeData {
   sourceImageUrl?: string;
   onCropComplete?: (nodeId: string, croppedDataUrl: string) => void;
   onCancel?: (nodeId: string) => void;
 }
 
-// §3.13 输入节点数据
+// 输入节点数据
 export interface TextInputNodeData extends BaseNodeData { text?: string; filename?: string; }
 export interface VideoInputNodeData extends BaseNodeData { videoUrl?: string; filename?: string; }
 export interface ImageInputNodeData extends BaseNodeData { imageUrl?: string; filename?: string; isOptional?: boolean; dimensions?: { width: number; height: number }; }
-// §3.14.1 3D 节点数据
-export interface Generate3DNodeData extends BaseNodeData { prompt?: string; modelUrl?: string; progress?: number; }
+// 3D 节点数据
+export interface Generate3DNodeData extends BaseNodeData { prompt?: string; modelUrl?: string; progress?: number; selectedChannelId?: string; selectedModel?: string; }
 export interface Viewer3DNodeData extends BaseNodeData { modelUrl?: string; }
 export interface PromptConstructorNodeData extends BaseNodeData { parts?: Array<{ id: string; text: string; enabled: boolean }>; }
 export interface AnnotateNodeData extends BaseNodeData { inputImageUrl?: string; annotations?: Array<{ id: string; type: 'text' | 'rect' | 'arrow' | 'circle'; x: number; y: number; width?: number; height?: number; endX?: number; endY?: number; text?: string; fontSize: number; color: string }>; fontSize?: number; color?: string; annotationText?: string; }
@@ -429,13 +458,13 @@ export interface SwitchNodeData extends BaseNodeData { enabled?: boolean; }
 export interface VideoStitchNodeData extends BaseNodeData { videoUrls?: string[]; resultUrl?: string; }
 export interface VideoTrimNodeData extends BaseNodeData { inputVideoUrl?: string; startTime?: number; endTime?: number; resultUrl?: string; }
 
-// §3.14 画布项目
+// 画布项目
 export interface Project {
   id: string;          // 默认 "default"
   name: string;        // 项目名
 }
 
-// §3.16 项目文件格式（导出/导入 JSON）
+// 项目文件格式（导出/导入 JSON）
 // 用于项目完整保存和跨设备迁移
 export interface XShowWorkflowFile {
   version: 1;
@@ -448,14 +477,14 @@ export interface XShowWorkflowFile {
   xshowVersion: string; // XShow 版本号
 }
 
-// §3.14 自定义节点模板
+// 自定义节点模板
 export interface CustomNodeTemplate {
   id: string;
   name: string;
   config: OmniNodeConfig;
 }
 
-// §3.15 ReactFlow Node 类型别名
+// ReactFlow Node 类型别名
 // 命名规范：功能 + 类型 + NodeType（如 ImageNodeType, AudioInputNodeType）
 // Input 后缀 = 输入节点，无后缀 = 生成节点
 export type ImageNodeType = Node<ImageNodeData, 'imageNode'>;
@@ -514,8 +543,9 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   model3D: '',
   ttsVoice: '',
   videoDurations: '',
+  audioDurations: '',
   presetPrompts: [],
-  modelEntries: {},  // 新版模型列表
+  modelEntries: {},  // 模型列表
   comfyuiLocalWorkflows: '',
   comfyuiCloudWorkflows: '',
   comfyuiRunninghubWorkflows: '',

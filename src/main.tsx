@@ -1,4 +1,4 @@
-// Ref: Vite React+TS template entry point + §7.3 — 启动时迁移 chrome.storage → localStorage
+// Ref: Vite React+TS template entry point + 启动时迁移 chrome.storage → localStorage
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';

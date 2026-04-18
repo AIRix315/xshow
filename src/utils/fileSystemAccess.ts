@@ -1,5 +1,5 @@
 // Ref: Chrome File System Access API + Excalidraw 持久化模式
-// Ref: §3.16 — 目录句柄持久化管理 + 文件读写
+// Ref: 目录句柄持久化管理 + 文件读写
 // 管理 settingsDirHandle 的生命周期：
 // 1. showDirectoryPicker 让用户选择根目录（仅一次）
 // 2. 句柄存入 IndexedDB（idb-keyval）

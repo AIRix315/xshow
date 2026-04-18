@@ -88,7 +88,7 @@ async function decompressDeflate(data: Uint8Array): Promise<Uint8Array> {
     try {
       const ds = new DecompressionStream('deflate');
       const writer = ds.writable.getWriter();
-      writer.write(data);
+      writer.write(new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength));
       writer.close();
       const response = await new Response(ds.readable).arrayBuffer();
       return new Uint8Array(response);
@@ -214,7 +214,7 @@ export async function extractZipContents(
     for (const [filename, file] of files) {
       const mediaType = getMediaType(filename);
 
-      const blob = new Blob([file.data], { type: getMimeType(filename) });
+      const blob = new Blob([file.data.buffer as ArrayBuffer], { type: getMimeType(filename) });
       const url = URL.createObjectURL(blob);
 
       mediaFiles.push({
@@ -258,7 +258,7 @@ export async function extractZipFromFile(
     for (const [filename, fileData] of files) {
       const mediaType = getMediaType(filename);
 
-      const blob = new Blob([fileData.data], { type: getMimeType(filename) });
+      const blob = new Blob([fileData.data.buffer as ArrayBuffer], { type: getMimeType(filename) });
       const url = URL.createObjectURL(blob);
 
       mediaFiles.push({

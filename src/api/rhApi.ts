@@ -387,7 +387,7 @@ export async function fetchRhWorkflowJson(
 
 /**
  * 上传文件到 RunningHub
- * POST /task/openapi/upload
+ * POST /openapi/v2/media/upload/binary
  *
  * 注意：FormData 无法通过 extensionFetch（chrome.runtime.sendMessage）序列化，
  * 因此保持原生 fetch 直连（RunningHub 启用了 CORS）。
@@ -403,59 +403,77 @@ export async function uploadFileToRunningHub(
   fileType: 'input' | 'output' = 'input',
   signal?: AbortSignal,
 ): Promise<string> {
-  let blob: Blob;
-  let filename: string;
-
-  if (typeof file === 'string') {
-    // data URL，需要先下载
-    if (file.startsWith('data:')) {
-      const response = await fetch(file, { signal });
-      blob = await response.blob();
-      // 从 data URL 提取扩展名
-      const extMatch = file.match(/data:image\/(\w+);/);
-      const ext = extMatch?.[1] === 'jpeg' ? 'jpg' : extMatch?.[1] ?? 'png';
-      filename = `upload_${Date.now()}.${ext}`;
-    } else {
-      // 远程 URL
-      const response = await fetch(file, { signal });
-      blob = await response.blob();
-      // 从 URL 提取扩展名
-      const urlExt = file.split('?')[0]?.split('.').pop()?.toLowerCase() ?? 'png';
-      filename = `upload_${Date.now()}.${urlExt}`;
-    }
-  } else {
-    blob = file;
-    filename = `upload_${Date.now()}.bin`;
-  }
-
-  const formData = new FormData();
-  formData.append('apiKey', apiKey);
-  formData.append('fileType', fileType);
-  formData.append('file', blob, filename);
-
-  // FormData 无法序列化通过 extensionFetch，保持原生 fetch
-  const response = await fetch(`${RH_BASE_URL}/task/openapi/upload`, {
-    method: 'POST',
-    body: formData,
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`上传文件失败: ${response.status}`);
-  }
-
-  const json = await response.json();
-  if (json.code !== 0) {
-    throw new Error(`上传文件失败: ${json.msg}`);
-  }
-
-  const fileName = json.data?.fileName;
-  if (!fileName) {
-    throw new Error('上传文件失败: 未返回 fileName');
-  }
-
-  return fileName;
+  const result = await uploadFileToRunningHubWithUrl(apiKey, file, fileType, signal);
+  return result.fileName;
 }
+
+  /**
+   * 上传文件到 RunningHub（返回完整信息）
+   * POST /openapi/v2/media/upload/binary
+   * 使用 Bearer token 认证
+   */
+  export async function uploadFileToRunningHubWithUrl(
+    apiKey: string,
+    file: Blob | string,
+    fileType: 'input' | 'output' = 'input',
+    signal?: AbortSignal,
+  ): Promise<{ fileName: string; downloadUrl: string }> {
+    let blob: Blob;
+    let filename: string;
+
+    if (typeof file === 'string') {
+      // data URL，需要先下载
+      if (file.startsWith('data:')) {
+        const response = await fetch(file, { signal });
+        blob = await response.blob();
+        // 从 data URL 提取扩展名
+        const extMatch = file.match(/data:image\/(\w+);/);
+        const ext = extMatch?.[1] === 'jpeg' ? 'jpg' : extMatch?.[1] ?? 'png';
+        filename = `upload_${Date.now()}.${ext}`;
+      } else {
+        // 远程 URL
+        const response = await fetch(file, { signal });
+        blob = await response.blob();
+        // 从 URL 提取扩展名
+        const urlExt = file.split('?')[0]?.split('.').pop()?.toLowerCase() ?? 'png';
+        filename = `upload_${Date.now()}.${urlExt}`;
+      }
+    } else {
+      blob = file;
+      filename = `upload_${Date.now()}.bin`;
+    }
+
+    const formData = new FormData();
+    formData.append('fileType', fileType);
+    formData.append('file', blob, filename);
+
+    // /openapi/v2/media/upload/binary 使用 Bearer token 认证
+    const response = await fetch(`${RH_BASE_URL}/openapi/v2/media/upload/binary`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: formData,
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`上传文件失败: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (json.code !== 0) {
+      throw new Error(`上传文件失败: ${json.msg}`);
+    }
+
+    const fileName = json.data?.fileName;
+    const downloadUrl = json.data?.download_url;
+    if (!fileName) {
+      throw new Error('上传文件失败: 未返回 fileName');
+    }
+
+    return { fileName, downloadUrl: downloadUrl || '' };
+  }
 
 // ============================================================================
 // 执行 RunningHub APP（快捷创作）
@@ -541,4 +559,135 @@ export async function executeRhWorkflowApi(
 
   // 2. 轮询任务结果
   return pollRhTaskResult(apiKey, taskId, onProgress, signal);
+}
+
+// ============================================================================
+// RunningHub 标准模型 API（rhart-* 系列）
+// ============================================================================
+
+/**
+ * 标准模型 API 轮询间隔（5秒）
+ */
+const MODEL_POLL_INTERVAL = 5000;
+
+/**
+ * 标准模型 API 总超时（3分钟）
+ */
+const MODEL_MAX_ELAPSED_MS = 3 * 60 * 1000;
+
+/**
+ * 提交 RunningHub 标准模型任务
+ * POST /openapi/v2/{model}/{operation}
+ */
+export async function submitRhModelTask(
+  apiKey: string,
+  submitUrl: string,
+  params: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ taskId: string }> {
+  const response = await extensionFetch(submitUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(params),
+    signal,
+  });
+
+  const json = await response.json();
+
+  // RH 标准模型 API 返回 taskId 表示提交成功，不是 code: 0
+  if (!json.taskId) {
+    throw new Error(`提交任务失败: ${json.errorMessage || json.errorCode || json.msg || '无 taskId'}`);
+  }
+
+  return { taskId: json.taskId };
+}
+
+/**
+ * 轮询 RunningHub 标准模型任务结果
+ * POST /openapi/v2/query
+ */
+export async function pollRhModelTaskResult(
+  apiKey: string,
+  taskId: string,
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<RhApiResult> {
+  const startTime = Date.now();
+
+  while (true) {
+    if (signal?.aborted) throw new Error('任务已取消');
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= MODEL_MAX_ELAPSED_MS) {
+      throw new Error(`任务超时: 超过${Math.round(MODEL_MAX_ELAPSED_MS / 60000)}分钟`);
+    }
+
+    // 5秒间隔
+    await new Promise(r => setTimeout(r, MODEL_POLL_INTERVAL));
+
+    // 进度：基于时间比例 0-90%
+    if (onProgress) {
+      onProgress(Math.min(elapsed / MODEL_MAX_ELAPSED_MS, 0.9));
+    }
+
+    const resultResponse = await extensionFetch(`${RH_BASE_URL}/openapi/v2/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ taskId }),
+      signal,
+    });
+
+    if (resultResponse.ok) {
+      const resultJson = await resultResponse.json();
+
+      // 成功
+      if (resultJson.status === 'SUCCESS') {
+        const results = resultJson.results || [];
+        const allUrls: string[] = results
+          .map((r: { url?: string }) => r.url)
+          .filter((url: string | undefined): url is string => !!url);
+
+        if (allUrls.length > 0) {
+          return { outputUrl: allUrls[0]!, outputUrls: allUrls };
+        }
+        throw new Error('任务成功但无返回结果');
+      }
+
+      // 失败
+      if (resultJson.status === 'FAILED') {
+        throw new Error(`任务失败: ${resultJson.errorMessage || resultJson.failedReason?.exception_message || '未知错误'}`);
+      }
+
+      // RUNNING / QUEUED → 继续轮询
+      if (resultJson.status === 'RUNNING' || resultJson.status === 'QUEUED') {
+        continue;
+      }
+
+      // 其他状态
+      throw new Error(`任务异常: status=${resultJson.status}`);
+    } else {
+      // 网络错误，继续等待
+      console.warn(`[rhApi] 轮询网络错误 ${resultResponse.status}，继续等待`);
+    }
+  }
+}
+
+/**
+ * 执行 RunningHub 标准模型任务（提交 + 轮询）
+ */
+export async function executeRhModelApi(
+  apiKey: string,
+  submitUrl: string,
+  params: Record<string, unknown>,
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<RhApiResult> {
+  const { taskId } = await submitRhModelTask(apiKey, submitUrl, params, signal);
+  return pollRhModelTaskResult(apiKey, taskId, onProgress, signal);
 }

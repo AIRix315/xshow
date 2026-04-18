@@ -1,7 +1,12 @@
-https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287339.md
-https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287340.md
-https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287342.md
-https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287341.md
+1. https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287339.md
+2. https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287340.md
+3. https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287342.md
+4. https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287341.md
+
+5. > text-to-video > 全能视频V3.1 [全能视频V3.1-fast-文生视频-低价渠道版](https://www.runninghub.cn/runninghub-api-doc-cn/api-425766719.md)
+6. > image-to-video > 全能视频V3.1 [全能视频V3.1-fast-图生视频-官方稳定版](https://www.runninghub.cn/runninghub-api-doc-cn/api-425766688.md)
+7. > image-to-video > 全能视频V3.1 [全能视频V3.1-fast-首尾帧生视频-低价渠道版](https://www.runninghub.cn/runninghub-api-doc-cn/api-425766687.md)
+
 
 RH 消费会员key： 13f84abb028e4503bd82507d68e22715
 RH 企业共享Key： 15e8ca9a46114109bdc09856d7961b6f

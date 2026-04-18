@@ -60,8 +60,8 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     return fetchedNodeInfoList.filter(n => n.fieldType === 'IMAGE').length;
   }, [fetchedNodeInfoList]);
 
-  // 对齐 OmniNode: 仅当 IMAGE 字段数量 > 2 时，才显示额外 handle（>2 意味着有3+个，默认 any 不够用）
-  const extraImageHandleCount = imageFieldCount > 2 ? imageFieldCount : 0;
+  // 对齐 OmniNode: 仅当 IMAGE 字段数量 > 1 时，才显示额外 handle（默认 any handle 在 50% 位置，多图时需要分散）
+  const extraImageHandleCount = imageFieldCount > 1 ? imageFieldCount : 0;
 
   // 监听 handles 变化 + 配置模式切换（内容高度变化导致 Handle 位置偏移）
   useEffect(() => {

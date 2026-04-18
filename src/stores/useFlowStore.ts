@@ -312,6 +312,15 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
           }));
         },
 
+        // 节点被跳过（fail-fast 上游失败）
+        onNodeSkipped: (nodeId, reason) => {
+          console.warn(`[executeWorkflow] 节点 ${nodeId} 被跳过:`, reason);
+          get().updateNodeData(nodeId, { loading: false });
+          set((state) => ({
+            currentNodeIds: state.currentNodeIds.filter((id) => id !== nodeId),
+          }));
+        },
+
         // 层开始
         onLayerStart: (layerIndex, nodeIds) => {
           console.log(`[executeWorkflow] 层 ${layerIndex} 开始:`, nodeIds);

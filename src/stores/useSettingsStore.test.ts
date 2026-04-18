@@ -1,5 +1,5 @@
 // Ref: §1.5 — useSettingsStore 测试
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSettingsStore } from './useSettingsStore';
 import type { ChannelConfig, PresetPrompt } from '@/types';
 
@@ -22,6 +22,7 @@ describe('useSettingsStore', () => {
         modelEntries: {},
         ttsVoice: '',
         videoDurations: '',
+        audioDurations: '',
         presetPrompts: [],
         comfyuiLocalWorkflows: '',
         comfyuiCloudWorkflows: '',
@@ -113,9 +114,12 @@ describe('useSettingsStore', () => {
       expect(projects).toHaveLength(1);
     });
 
-    it('renames a project', () => {
+    it('renames a project', async () => {
       useSettingsStore.getState().renameProject('default', '新名称');
-      expect(useSettingsStore.getState().projects[0]!.name).toBe('新名称');
+      // renameProject 是 async 函数（有文件系统操作），需要等待状态更新
+      await vi.waitFor(() => {
+        expect(useSettingsStore.getState().projects[0]!.name).toBe('新名称');
+      });
     });
 
     it('sets current project', () => {

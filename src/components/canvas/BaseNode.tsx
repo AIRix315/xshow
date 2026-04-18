@@ -204,20 +204,20 @@ function BaseNodeWrapper({
           </div>
         )}
 
-        {/* 精简内容 - 默认显示（图片预览等）- 无边距填充 */}
+        {/* 精简内容 - 默认显示（图片预览等）- 底部留间隔 */}
         {hoverContent ? (
-          <div className={`flex-1 min-h-0 overflow-hidden rounded-lg ${expanded ? 'hidden' : ''}`}>
+          <div className={`flex-1 min-h-0 overflow-hidden rounded-lg mb-2 ${expanded ? 'hidden' : ''}`}>
             {children}
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-hidden rounded-lg">
+          <div className="flex-1 min-h-0 overflow-hidden rounded-lg mb-2">
             {children}
           </div>
         )}
 
         {/* 悬停完整内容 - 仅展开时显示，参数在底部 */}
         {hoverContent && (
-          <div className={`flex-1 min-h-0 overflow-hidden rounded-lg flex-col ${expanded ? '' : 'hidden'}`}>
+          <div className={`flex-1 min-h-0 overflow-hidden rounded-lg mb-2 flex-col ${expanded ? '' : 'hidden'}`}>
             {hoverContent}
           </div>
         )}

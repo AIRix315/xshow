@@ -1,17 +1,71 @@
 // Ref: node-banana GenerateImageNode.tsx + 悬停展开模式
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // 模式：默认只显示图片预览，hover 显示标题栏（带切换和运行按钮）+ 完整参数
-import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { memo, useCallback, useMemo } from 'react';
+import { Handle, Position, type NodeProps, type Node, type Edge } from '@xyflow/react';
 import type { ImageNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { generateImage } from '@/api/imageApi';
+import { executeImageNode } from '@/store/execution/generateNodeExecutors';
+import type { NodeExecutionContext } from '@/store/execution/types';
+import { getConnectedInputs } from '@/utils/connectedInputs';
+import { useAdaptiveHeight } from '@/hooks/useAdaptiveHeight';
 import BaseNodeWrapper from './BaseNode';
 import ProviderModelSelector from './ProviderModelSelector';
+import type { ImageProtocol } from '@/api/imageApi';
+
+// 获取当前 channel
+function useCurrentChannel(channelId: string | undefined) {
+  const channels = useSettingsStore((s) => s.apiConfig.channels);
+  const imageChannelId = useSettingsStore((s) => s.apiConfig.imageChannelId);
+  const currentChannelId = channelId || imageChannelId;
+  return channels.find((c) => c.id === currentChannelId);
+}
+
+// 根据协议和模型获取动态参数选项
+function getImageParamsForModel(protocol: ImageProtocol | undefined, model: string) {
+  if (protocol === 'rhapi') {
+    // RH API 模型参数
+    if (model.includes('official')) {
+      // 官方稳定版
+      return {
+        aspectRatioOptions: null,  // 不使用 aspectRatio
+        sizeOptions: ['1024*1024', '1024*1536', '1536*1024'],
+        qualityOptions: ['low', 'medium', 'high'],
+        defaultSize: '1024*1024',
+        defaultQuality: 'medium',
+        supportedModes: ['text-to-image', 'image-to-image'] as const,
+      };
+    } else {
+      // 低价渠道版
+      return {
+        aspectRatioOptions: ['auto', '1:1', '2:3', '3:2'],
+        sizeOptions: null,
+        qualityOptions: null,
+        defaultAspectRatio: 'auto',
+        supportedModes: ['text-to-image', 'image-to-image'] as const,
+      };
+    }
+  }
+  // OpenAI / Gemini 默认参数
+  return {
+    aspectRatioOptions: ['1:1', '16:9', '9:16', '4:3', '3:4'],
+    sizeOptions: ['1K', '2K', '4K'],
+    defaultAspectRatio: '1:1',
+    defaultSize: '1K',
+    supportedModes: null,
+  };
+}
 
 function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  const edges = useFlowStore((s) => s.edges);
+  const nodes = useFlowStore((s) => s.nodes);
+
+  // 查找连入的 text Handle
+  const incomingTextEdge = edges.find((e) => e.target === id && e.targetHandle === 'text');
+  const textSourceNode = incomingTextEdge ? nodes.find((n) => n.id === incomingTextEdge.source) : undefined;
+  const textFromHandle = textSourceNode?.data?.text as string | undefined;
 
   // 直接从 data 读取业务数据
   const prompt = data.prompt ?? '';
@@ -20,10 +74,17 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const errorMessage = data.errorMessage ?? '';
   const aspectRatio = data.aspectRatio ?? '1:1';
   const imageSize = data.imageSize ?? '1K';
+  const customWidth = data.customWidth ?? '';
+  const customHeight = data.customHeight ?? '';
   const selectedModel = data.selectedModel ?? '';
-  const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
+  
+  // Read history when current index is set
+  const imageHistory = (data.imageHistory as Array<{ imageUrl: string; prompt: string; timestamp: number }>) ?? [];
+  const selectedHistoryIndex = data.selectedHistoryIndex ?? (imageHistory.length > 0 ? imageHistory.length - 1 : undefined);
 
-  const channels = useSettingsStore((s) => s.apiConfig.channels);
+  const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
+  const imageGenerationMode = data.imageGenerationMode ?? 'text-to-image';
+
   const imageChannelId = useSettingsStore((s) => s.apiConfig.imageChannelId);
   const drawingModel = useSettingsStore((s) => s.apiConfig.drawingModel);
   const showNodeModelSettings = useSettingsStore((s) => s.systemSettings.showNodeModelSettings);
@@ -33,31 +94,80 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
 
   // 使用节点选择的 channel（如果有）否则用默认的
   const currentChannelId = selectedChannelId || imageChannelId;
+  const channel = useCurrentChannel(currentChannelId);
+
+  // 获取动态参数选项
+  const paramsConfig = useMemo(() => {
+    return getImageParamsForModel(channel?.protocol as ImageProtocol | undefined, currentModel);
+  }, [channel?.protocol, currentModel]);
+
+  // 优先使用连线数据，其次用 textarea
+  const effectivePrompt = textFromHandle || prompt;
+
+  const historyNav = (
+    imageHistory && imageHistory.length > 1 && (
+      <div className="history-nav flex items-center gap-1 justify-center py-1 bg-[#1a1a1a]">
+        <button
+          onClick={() => {
+            const newIndex = (selectedHistoryIndex ?? imageHistory.length - 1) - 1;
+            if (newIndex >= 0) {
+              updateNodeData(id, { selectedHistoryIndex: newIndex, imageUrl: imageHistory[newIndex]!.imageUrl });
+            }
+          }}
+          disabled={(selectedHistoryIndex ?? imageHistory.length - 1) === 0}
+          className="px-2 py-1 text-neutral-400 hover:text-white disabled:opacity-30"
+        >
+          ◀
+        </button>
+        <span className="text-[10px] text-neutral-500">
+          {(selectedHistoryIndex ?? imageHistory.length - 1) + 1}/{imageHistory.length}
+        </span>
+        <button
+          onClick={() => {
+            const currentIndex = selectedHistoryIndex ?? imageHistory.length - 1;
+            if (currentIndex < imageHistory.length - 1) {
+              const newIndex = currentIndex + 1;
+              updateNodeData(id, { selectedHistoryIndex: newIndex, imageUrl: imageHistory[newIndex]!.imageUrl });
+            }
+          }}
+          disabled={(selectedHistoryIndex ?? imageHistory.length - 1) >= imageHistory.length - 1}
+          className="px-2 py-1 text-neutral-400 hover:text-white disabled:opacity-30"
+        >
+          ▶
+        </button>
+      </div>
+    )
+  );
+
+  // 自适应高度 hook
+  const { containerRef, handleMediaLoad, containerStyle } = useAdaptiveHeight(400);
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || loading) return;
-    const channel = channels.find((c) => c.id === currentChannelId);
+    if (!effectivePrompt?.trim() || loading) return;
     if (!channel) {
       updateNodeData(id, { errorMessage: '未选择图片供应商' });
       return;
     }
-    updateNodeData(id, { loading: true, errorMessage: '', prompt: prompt.trim(), selectedChannelId: currentChannelId, selectedModel: currentModel });
+    const abortController = new AbortController();
+    updateNodeData(id, { loading: true, errorMessage: '', prompt: effectivePrompt.trim(), selectedChannelId: currentChannelId, selectedModel: currentModel });
     try {
-      const dataUrl = await generateImage({
-        channelUrl: channel.url,
-        channelKey: channel.key,
-        protocol: channel.protocol as 'openai' | 'gemini',
-        model: currentModel,
-        prompt: prompt.trim(),
-        aspectRatio,
-        imageSize,
-      });
-      updateNodeData(id, { imageUrl: dataUrl, loading: false });
+      const ctx: NodeExecutionContext = {
+        node: { id, type: 'imageNode', position: { x: 0, y: 0 }, data } as Node,
+        nodes: nodes as Node[],
+        edges: edges as Edge[],
+        getConnectedInputs: (nodeId: string) => getConnectedInputs(nodeId, nodes as Node[], edges as Edge[]),
+        updateNodeData: (nodeId: string, patch: Record<string, unknown>) => {
+          useFlowStore.getState().updateNodeData(nodeId, patch);
+        },
+        getFreshNode: (nodeId: string) => useFlowStore.getState().nodes.find((n) => n.id === nodeId),
+        signal: abortController.signal,
+      };
+      await executeImageNode(ctx);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '图片生成失败';
       updateNodeData(id, { loading: false, errorMessage: msg });
     }
-  }, [prompt, loading, channels, imageChannelId, currentModel, aspectRatio, imageSize, id, updateNodeData]);
+  }, [effectivePrompt, loading, channel, currentChannelId, currentModel, aspectRatio, imageSize, imageGenerationMode, id, updateNodeData, nodes, edges]);
 
   // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
   const handles = (
@@ -78,12 +188,16 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
 
   // 精简内容：只显示图片预览，无边距
   const minimalContent = (
-    <>
+    <div className="flex flex-col h-full">
       {imageUrl && !loading ? (
-        <div className="relative w-full h-full min-h-[120px] flex items-center justify-center bg-[#1a1a1a]">
+        <div
+          ref={containerRef}
+          style={{ ...containerStyle, backgroundColor: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
           <img
             src={imageUrl}
             alt="生成结果"
+            onLoad={handleMediaLoad}
             className="max-w-full max-h-full object-contain"
           />
         </div>
@@ -102,23 +216,31 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
           <span className="text-neutral-500 text-[10px]">运行生成</span>
         </div>
       )}
-    </>
+      {historyNav}
+    </div>
   );
 
   // 悬停完整参数内容 - 参数在底部（不含生成按钮）
   const fullContent = (
     <div className="flex flex-col h-full">
       {/* 图片预览区域 */}
-      <div className="flex-1 min-h-0">
-        {imageUrl && !loading && (
-          <div className="relative w-full h-full min-h-[80px] flex items-center justify-center bg-[#1a1a1a] rounded">
-            <img
-              src={imageUrl}
-              alt="生成结果"
-              className="max-w-full max-h-full object-contain"
-            />
-          </div>
-        )}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 relative h-full">
+          {imageUrl && !loading && (
+            <div
+              ref={containerRef}
+              style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a1a', borderRadius: '8px' }}
+            >
+              <img
+                src={imageUrl}
+                alt="生成结果"
+                onLoad={handleMediaLoad}
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+          )}
+        </div>
+        {historyNav}
       </div>
       
       {/* 参数区域 - 在底部 */}
@@ -142,29 +264,78 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
           />
         )}
 
-        {/* 尺寸选项 */}
-        <div className="flex gap-1">
-          {['1:1', '16:9', '9:16'].map((ar) => (
-            <button
-              key={ar}
-              onClick={() => updateNodeData(id, { aspectRatio: ar })}
-              className={`px-1.5 py-0.5 text-[10px] rounded border ${
-                aspectRatio === ar ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-[#333] text-neutral-400 bg-[#1a1a1a] hover:bg-[#262626]'
-              }`}
+        {/* 文生图/图生图切换 - runninghub 供应商时显示 */}
+        {channel?.url?.includes('runninghub.cn') && paramsConfig.supportedModes && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-neutral-400 whitespace-nowrap">模式：</span>
+            <select
+              value={imageGenerationMode}
+              onChange={(e) => updateNodeData(id, { imageGenerationMode: e.target.value as 'text-to-image' | 'image-to-image' })}
+              className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
             >
-              {ar}
-            </button>
-          ))}
-          <select
-            value={imageSize}
-            onChange={(e) => updateNodeData(id, { imageSize: e.target.value })}
-            className="bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333]"
-          >
-            {['1K', '2K'].map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+              {paramsConfig.supportedModes.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode === 'text-to-image' ? '文生图' : '图生图'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 画面比例 - 下拉框（rhapi 低价渠道版有值） */}
+        {paramsConfig.aspectRatioOptions && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-neutral-400 whitespace-nowrap">画面比例：</span>
+            <select
+              value={aspectRatio}
+              onChange={(e) => updateNodeData(id, { aspectRatio: e.target.value })}
+              className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
+            >
+              {paramsConfig.aspectRatioOptions.map((ar) => (
+                <option key={ar} value={ar}>{ar}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 尺寸/清晰度 - 下拉框（rhapi 官方版有值，或非 rhapi 默认） */}
+        {paramsConfig.sizeOptions && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-neutral-400 whitespace-nowrap">尺寸：</span>
+            <select
+              value={imageSize}
+              onChange={(e) => updateNodeData(id, { imageSize: e.target.value })}
+              className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
+            >
+              {paramsConfig.sizeOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 自定义尺寸 - 默认隐藏 */}
+        {(customWidth || customHeight) && (
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[10px] text-neutral-400 whitespace-nowrap">自定义：</span>
+            <span className="text-[10px] text-neutral-500">W:</span>
+            <input
+              type="text"
+              value={customWidth}
+              onChange={(e) => updateNodeData(id, { customWidth: e.target.value, imageSize: '' })}
+              placeholder="__"
+              className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
+            />
+            <span className="text-[10px] text-neutral-500">H:</span>
+            <input
+              type="text"
+              value={customHeight}
+              onChange={(e) => updateNodeData(id, { customHeight: e.target.value, imageSize: '' })}
+              placeholder="__"
+              className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-// Ref: §3.16 + node-banana workflowStore.ts saveToFile/loadWorkflow
+// Ref: node-banana workflowStore.ts saveToFile/loadWorkflow
 // 项目文件导出/导入核心模块
 // 使用 chrome.downloads API 导出 + 隐藏 <input type="file"> 导入
 

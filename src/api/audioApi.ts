@@ -1,6 +1,8 @@
 // Ref: §5.4 — 语音处理双模式 (Whisper 断句 + TTS)
 
-export type AudioProtocol = 'openai' | 'gemini';
+import { executeRhModelApi } from './rhApi';
+
+export type AudioProtocol = 'openai' | 'gemini' | 'rhapi';
 
 export interface TranscriptChunk {
   start: number;
@@ -219,6 +221,9 @@ export async function generateTTS(params: {
   if (protocol === 'gemini') {
     return generateTTSGemini(params);
   }
+  if (protocol === 'rhapi') {
+    return generateTTSRhapi(params);
+  }
   return generateTTSOpenAI(params);
 }
 
@@ -273,4 +278,44 @@ interface TTSGeminiParams {
 
 async function generateTTSGemini(_params: TTSGeminiParams): Promise<string> {
   throw new Error('Gemini 协议暂不支持 TTS 功能，请使用 OpenAI 兼容协议');
+}
+
+// ============================================================================
+// RunningHub 标准模型 API（rhapi 协议）- TTS
+// ============================================================================
+
+interface TTSRhapiParams {
+  channelUrl: string;
+  channelKey: string;
+  model: string;
+  input: string;
+  voice: string;
+}
+
+/**
+ * RunningHub 标准模型 API（rhapi 协议）- TTS
+ * URL 格式：{channelUrl}/{model}/text-to-audio
+ */
+async function generateTTSRhapi({
+  channelUrl,
+  channelKey,
+  model,
+  input,
+  voice,
+}: TTSRhapiParams): Promise<string> {
+  // 拼接 URL：去掉尾部斜杠 + 模型名 + 操作类型
+  const baseUrl = channelUrl.replace(/\/$/, '');
+  const submitUrl = `${baseUrl}/${model}/text-to-audio`;
+
+  // 构建请求参数
+  const params: Record<string, unknown> = {
+    text: input,
+    voice: voice || 'default',
+  };
+
+  // 调用 RH 标准模型 API
+  const result = await executeRhModelApi(channelKey, submitUrl, params);
+
+  // 返回音频 URL
+  return result.outputUrl;
 }

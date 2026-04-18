@@ -2,6 +2,71 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.2.0] - 2026-04-18
+
+### RunningHub 标准模型 API（rhapi 协议）
+
+**API 统一升级**
+- 上传接口更新为 `/openapi/v2/media/upload/binary`，改用 Bearer Token 认证
+- 新增 `uploadFileToRunningHubWithUrl()` 返回 `{ fileName, downloadUrl }`
+- 新增 `submitRhModelTask()` / `pollRhModelTaskResult()` 标准模型任务提交与轮询
+
+**图片生成**
+- 新增 `generateImageRhapi()` 支持 rhapi 协议
+- 文生图/图生图模式切换（`imageGenerationMode`）
+- 参考图片上传后通过 `imageUrls` 传入
+
+**视频生成**
+- 新增 `generateVideoRhapi()` 支持 rhapi 协议
+- 文生视频/图生视频/首尾帧模式（`videoGenerationMode`）
+- 参考图片支持多图上传
+
+### 生成节点重构
+
+**ImageNode / VideoNode / TextNode 执行器化**
+- 统一改用 `executeImageNode()` / `executeVideoNode()` / `executeTextNode()` 执行器
+- 通过 `NodeExecutionContext` 传递上下文，替代原有回调
+- 支持 `getConnectedInputs()` 自动获取上游数据
+
+**历史轮播**
+- 新增 `imageHistory` / `videoHistory` 字段，最多保存 10 条记录
+- 生成成功后自动追加历史，支持左右导航切换
+- `selectedHistoryIndex` / `selectedVideoHistoryIndex` 追踪当前浏览位置
+
+**Text Handle 支持**
+- ImageNode / VideoNode 新增 Text 输入 handle
+- 可从上游 TextNode 自动获取 prompt，优先于本地输入
+
+### 执行引擎优化
+
+- 新增 `MAX_CONCURRENT = 3` 每层最大并发控制
+- 新增 fail-fast 机制：上游节点失败时自动跳过下游
+- 新增 `onNodeSkipped` 回调
+
+### ProviderModelSelector 升级
+
+- 支持 `'3d'` 类型（3D 模型渠道选择）
+- 新增 `modelEntries` 驱动（新版模型列表）
+- `ChannelConfig.protocol` 新增 `'rhapi'` 选项
+- 优先使用 `modelEntries` 中 `isDefault=true` 的模型
+
+### RhWfNode 多图模式
+
+- 统计 `LoadImage` 类型节点的所有 IMAGE 字段
+- IMAGE 字段 >1 时动态渲染 `image-0` / `image-1` / ... 多个 handle
+
+### 类型扩展
+
+| 类型 | 新增字段 |
+|------|----------|
+| `ChannelConfig.protocol` | `'rhapi'` |
+| `ModelParams` | 动态模型参数规范（aspectRatio/size/quality 等） |
+| `ImageNodeData` | `imageGenerationMode`, `modelParams`, `imageHistory`, `customWidth/Height` |
+| `VideoNodeData` | `videoGenerationMode`, `videoHistory`, `customDuration`, `customWidth/Height` |
+| `GenerateAudioNodeData` | `selectedChannelId`, `selectedModel`, `audioDuration` |
+| `Generate3DNodeData` | `selectedChannelId`, `selectedModel` |
+| `ApiConfig` | `audioDurations` |
+
 ## [0.1.9] - 2026-04-16
 
 ### UI 重构：节点标题栏 + 悬停交互 + 浮动栏优化

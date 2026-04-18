@@ -11,7 +11,7 @@
  * - ZIP 解压处理
  */
 
-import { memo, useCallback, useRef, useState, useEffect } from 'react';
+import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
 import type { RhWfNodeType, RhWfNodeConfig } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -54,10 +54,21 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
   // 工作流节点解析结果
   const [parsedNodes, setParsedNodes] = useState<RhWorkflowNode[]>([]);
 
+  // 统计 IMAGE 字段数量，用于动态显示 handles
+  const imageFieldCount = useMemo(() => {
+    return parsedNodes
+      .filter((n) => n.classType === 'LoadImage')
+      .reduce((count, node) => {
+        return count + Object.entries(node.inputs).filter(
+          ([, fieldInfo]) => fieldInfo?.type === 'IMAGE'
+        ).length;
+      }, 0);
+  }, [parsedNodes]);
+
   // 监听 handles 变化 + 配置模式切换，通知 React Flow 更新
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, updateNodeInternals, configMode]);
+  }, [id, updateNodeInternals, configMode, imageFieldCount]);
 
   // 监听 handles 变化，通知 React Flow 更新
   useEffect(() => {
@@ -362,6 +373,46 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
       >
         Any
       </div>
+
+      {/* 多图模式：IMAGE 字段数量 > 1 时，额外显示 image handles */}
+      {imageFieldCount > 1 && (
+        <>
+          {Array.from({ length: imageFieldCount }, (_, i) => {
+            const totalSlots = imageFieldCount + 1;
+            let position = ((i + 1) / totalSlots) * 100;
+            if (Math.abs(position - 50) < 15) {
+              position = position < 50 ? position - 10 : position + 10;
+            }
+            return (
+              <Handle
+                key={`image-${i}`}
+                type="target"
+                position={Position.Left}
+                id={`image-${i}`}
+                data-handletype="image"
+                style={{ top: `${position}%`, zIndex: 10, backgroundColor: '#10b981', width: 10, height: 10, border: '2px solid #1e1e1e' }}
+              />
+            );
+          })}
+          {Array.from({ length: imageFieldCount }, (_, i) => {
+            const totalSlots = imageFieldCount + 1;
+            let position = ((i + 1) / totalSlots) * 100;
+            if (Math.abs(position - 50) < 15) {
+              position = position < 50 ? position - 10 : position + 10;
+            }
+            return (
+              <div
+                key={`image-label-${i}`}
+                className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+                data-type="image"
+                style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+              >
+                Image {i}
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {/* 输出 Handle */}
       <Handle

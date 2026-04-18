@@ -15,7 +15,7 @@ import type {
   RhZipNodeData,
 } from '@/types';
 
-// Ref: §6.11 — 懒加载节点组件
+// Ref: 懒加载节点组件
 const ImageNode = lazy(() => import('@/components/canvas/ImageNode'));
 const TextNode = lazy(() => import('@/components/canvas/TextNode'));
 const CropNode = lazy(() => import('@/components/canvas/CropNode'));
@@ -92,7 +92,7 @@ export const nodeTypes: Record<string, ComponentType<NodeProps>> = {
   videoTrimNode: VideoTrimNode as unknown as ComponentType<NodeProps>,
 };
 
-// Ref: §6.11 — 默认尺寸
+// Ref: 默认尺寸
 const NODE_DEFAULTS: Record<string, { width: number; height: number }> = {
   // 生成节点
   imageNode: { width: 260, height: 380 },
@@ -243,7 +243,7 @@ function getDefaultData(type: string): Record<string, unknown> {
         loading: false,
       } as RhZipNodeData;
     
-    // 九宫格拆分
+    // 宫格拆分
     case 'gridSplitNode':
       return {
         gridRows: 3,
@@ -252,7 +252,7 @@ function getDefaultData(type: string): Record<string, unknown> {
         presetKey: '3x3',
       } as GridSplitNodeData;
     
-    // 九宫格合并
+    // 宫格合并
     case 'gridMergeNode':
       return {
         gridRows: 3,

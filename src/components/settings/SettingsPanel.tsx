@@ -1,4 +1,4 @@
-// Ref: §7.2 — SettingsPanel 5 Tab 结构（项目/模型/提示词/画布/系统）
+// Ref: SettingsPanel 5 Tab 结构（项目/模型/提示词/画布/系统）
 // Ref: 原型 xshow-canvas-prototype.html 设置面板
 import { useState, useCallback, useEffect } from 'react';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -245,11 +245,13 @@ function ChannelSection() {
               </div>
               <input value={ch.url} onChange={(e) => updateChannel(ch.id, { url: e.target.value })} placeholder="API 端点地址" className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border focus:border-primary outline-none" />
               <input type="password" value={ch.key} onChange={(e) => updateChannel(ch.id, { key: e.target.value })} placeholder="API Key" className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border focus:border-primary outline-none" />
-              <select value={ch.protocol} onChange={(e) => updateChannel(ch.id, { protocol: e.target.value as 'openai' | 'gemini' | 'anthropic' | 'custom' })} className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border">
+              <select value={ch.protocol} onChange={(e) => updateChannel(ch.id, { protocol: e.target.value as 'openai' | 'gemini' | 'anthropic' | 'custom' | 'comfyui' | 'rhapi' })} className="w-full bg-surface text-text text-[10px] rounded px-1.5 py-0.5 border border-border">
                 <option value="openai">协议: OpenAI 兼容</option>
                 <option value="gemini">协议: Gemini</option>
                 <option value="anthropic">协议: Anthropic</option>
                 <option value="custom">协议: 自定义</option>
+                <option value="comfyui">协议: ComfyUI</option>
+                <option value="rhapi">协议: RunningHub</option>
               </select>
             </div>
           ))}

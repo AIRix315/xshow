@@ -2,19 +2,28 @@
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // 模式：默认只显示文本输出，hover 显示完整参数
 import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { TextNodeType } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { generateText } from '@/api/textApi';
+import { executeTextNode } from '@/store/execution/generateNodeExecutors';
+import type { NodeExecutionContext } from '@/store/execution/types';
+import { getConnectedInputs } from '@/utils/connectedInputs';
+import type { Node, Edge } from '@xyflow/react';
 import BaseNodeWrapper from './BaseNode';
 import ProviderModelSelector from './ProviderModelSelector';
 
 function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   const nodes = useFlowStore((s) => s.nodes);
+  const edges = useFlowStore((s) => s.edges);
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const addNodes = useFlowStore((s) => s.addNodes);
   const addEdge = useFlowStore((s) => s.addEdge);
+
+  // 查找连入的 text Handle
+  const incomingTextEdge = edges.find((e) => e.target === id && e.targetHandle === 'text');
+  const textSourceNode = incomingTextEdge ? nodes.find((n) => n.id === incomingTextEdge.source) : undefined;
+  const textFromHandle = textSourceNode?.data?.text as string | undefined;
 
   // 直接从 data 读取业务数据
   const prompt = data.prompt ?? '';
@@ -36,66 +45,68 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   // 使用节点选择的 channel（如果有）否则用默认的
   const currentChannelId = selectedChannelId || textChannelId;
 
+  // 优先使用连线数据，其次用 textarea
+  const effectivePrompt = textFromHandle || prompt;
+
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || loading) return;
+    if (!effectivePrompt?.trim() || loading) return;
     const channel = channels.find((c) => c.id === currentChannelId);
     if (!channel) {
       updateNodeData(id, { errorMessage: '未选择文本供应商' });
       return;
     }
-    updateNodeData(id, { loading: true, errorMessage: '', prompt: prompt.trim() });
+    const abortController = new AbortController();
+    updateNodeData(id, { loading: true, errorMessage: '', prompt: effectivePrompt.trim() });
     try {
-      const result = await generateText({
-        channelUrl: channel.url,
-        channelKey: channel.key,
-        protocol: channel.protocol as 'openai' | 'gemini',
-        model: currentModel,
-        messages: [{ role: 'user', content: prompt.trim() }],
-        autoSplit,
-      });
-      updateNodeData(id, { text: result.text, loading: false });
+      const ctx: NodeExecutionContext = {
+        node: { id, type: 'textNode', position: { x: 0, y: 0 }, data } as Node,
+        nodes: nodes as Node[],
+        edges: edges as Edge[],
+        getConnectedInputs: (nodeId: string) => getConnectedInputs(nodeId, nodes as Node[], edges as Edge[]),
+        updateNodeData: (nodeId: string, patch: Record<string, unknown>) => {
+          useFlowStore.getState().updateNodeData(nodeId, patch);
+        },
+        getFreshNode: (nodeId: string) => useFlowStore.getState().nodes.find((n) => n.id === nodeId),
+        signal: abortController.signal,
+      };
+      await executeTextNode(ctx);
 
-      // autoSplit: 自动创建子节点并连线
-      if (autoSplit && result.splitItems && result.splitItems.length > 0) {
-        const parentNode = nodes.find((n) => n.id === id);
-        if (parentNode) {
-          const childNodes: Node[] = result.splitItems.map((item, index) => ({
-            id: `textNode-split-${Date.now()}-${index}`,
-            type: 'textNode',
-            position: {
-              x: parentNode.position.x + 250,
-              y: parentNode.position.y + index * 100,
-            },
-            data: {
-              label: item.title,
-              text: item.content,
-              prompt: '',
-              expanded: true,
-              autoSplit: false,
-              textModel: data.textModel,
-              loading: false,
-              selectedContextResources: [],
-              presetPrompts: [],
-            },
-            style: { width: 400, height: 240 },
-          }));
-
-          addNodes(childNodes);
-
-          childNodes.forEach((child) => {
-            addEdge({
-              id: `${id}-${child.id}`,
-              source: id,
-              target: child.id,
+      // autoSplit: 检查执行器写入的 splitItems，后置创建子节点
+      if (autoSplit) {
+        const freshNode = useFlowStore.getState().nodes.find((n) => n.id === id);
+        const splitItems = freshNode?.data?.splitItems as Array<{ title: string; content: string }> | undefined;
+        if (splitItems?.length) {
+          const parentNode = nodes.find((n) => n.id === id);
+          if (parentNode) {
+            const childNodes: Node[] = splitItems.map((item, index) => ({
+              id: `textNode-split-${Date.now()}-${index}`,
+              type: 'textNode',
+              position: { x: parentNode.position.x + 250, y: parentNode.position.y + index * 100 },
+              data: {
+                label: item.title,
+                text: item.content,
+                prompt: '',
+                expanded: true,
+                autoSplit: false,
+                textModel: data.textModel,
+                loading: false,
+                selectedContextResources: [],
+                presetPrompts: [],
+              },
+              style: { width: 400, height: 240 },
+            }));
+            addNodes(childNodes);
+            childNodes.forEach((child) => {
+              addEdge({ id: `${id}-${child.id}`, source: id, target: child.id });
             });
-          });
+          }
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '文本生成失败';
       updateNodeData(id, { loading: false, errorMessage: msg });
     }
-  }, [prompt, loading, channels, textChannelId, currentModel, autoSplit, id, updateNodeData]);
+  }, [effectivePrompt, loading, channels, textChannelId, currentModel, autoSplit, id, updateNodeData, nodes, edges, addNodes, addEdge]);
 
   // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
   const handles = (
@@ -181,23 +192,14 @@ function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
           />
           自动拆分输出
         </label>
-
-        {/* 生成按钮 */}
-        <button
-          onClick={handleGenerate}
-          disabled={loading || !prompt.trim()}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-[#333] disabled:cursor-not-allowed text-white text-xs py-1.5 rounded font-medium"
-        >
-          {loading ? '生成中...' : '生成文本'}
-        </button>
       </div>
     </div>
   );
 
   return (
-    <BaseNodeWrapper 
-      selected={!!selected} 
-      loading={loading} 
+    <BaseNodeWrapper
+      selected={!!selected}
+      loading={loading}
       errorMessage={errorMessage}
       title="生成文本"
       minWidth={280}
