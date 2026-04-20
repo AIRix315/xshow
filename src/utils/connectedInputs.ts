@@ -86,7 +86,7 @@ function inferHandleType(handleId: string | null | undefined): 'image' | 'video'
   if (!handleId) return 'any';
   // reference 是视觉关联边，不参与数据流
   if (isReferenceHandle(handleId)) return 'reference';
-  if (handleId === 'image' || handleId.startsWith('image-') || handleId.startsWith('cell-') || handleId === 'source-image' || handleId === 'cropped-image') return 'image';
+  if (handleId === 'image' || handleId.startsWith('image-') || handleId.startsWith('cell-') || handleId === 'source-image' || handleId === 'cropped-image' || handleId.includes('frame')) return 'image';
   if (handleId === 'video' || handleId.startsWith('video-')) return 'video';
   if (handleId === 'audio' || handleId.startsWith('audio-')) return 'audio';
   if (handleId === 'text' || handleId.startsWith('text-') || handleId.includes('prompt')) return 'text';
@@ -616,15 +616,33 @@ export function getInputsByHandle(
 ): Record<string, string[]> {
   const result: Record<string, string[]> = {};
 
+  // 获取目标节点的 customInputHandles 声明（一次性查找）
+  const targetNode = nodes.find((n) => n.id === nodeId);
+  const customHandles = (targetNode?.data as Record<string, unknown>)?.customInputHandles as
+    Array<{ id: string; type: string }> | undefined;
+  const customHandleMap = new Map<string, string>();
+  if (customHandles) {
+    for (const ch of customHandles) {
+      customHandleMap.set(ch.id, ch.type);
+    }
+  }
+
   // 遍历所有指向当前节点的边（排除 reference 视觉关联边）
   edges
     .filter((e) => e.target === nodeId && e.targetHandle && e.type !== 'reference')
     .forEach((edge) => {
       const handleId = edge.targetHandle!;
-      // 只处理 image-*, video-*, audio-* 类型的 handle
-      if (!handleId.startsWith('image-') &&
-          !handleId.startsWith('video-') &&
-          !handleId.startsWith('audio-')) return;
+
+      // 路由 Step 1: 从 customInputHandles 声明中查找类型
+      let handleType = customHandleMap.get(handleId);
+
+      // 路由 Step 2: 降级到 inferHandleType 推断（覆盖裸 image, first-frame, image-N 等预定义模式）
+      if (!handleType) {
+        handleType = inferHandleType(handleId);
+      }
+
+      // 过滤：只接受 image / video / audio（排除 text, any, reference）
+      if (handleType !== 'image' && handleType !== 'video' && handleType !== 'audio') return;
 
       if (!result[handleId]) result[handleId] = [];
 
@@ -632,8 +650,7 @@ export function getInputsByHandle(
       if (!sourceNode) return;
 
       // 推断 targetHandle 类型用于 getSourceOutput
-      const targetHandleType = inferHandleType(handleId);
-      const sourceOutput = getSourceOutput(sourceNode, edge.sourceHandle, targetHandleType);
+      const sourceOutput = getSourceOutput(sourceNode, edge.sourceHandle, handleType);
 
       if (sourceOutput.value) {
         const arr = result[handleId] ?? [];

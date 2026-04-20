@@ -758,5 +758,193 @@ describe('connectedInputs', () => {
       // any-input 不应被收录
       expect(result['any-input']).toBeUndefined();
     });
+
+    // ========================================================================
+    // P0 Bug fix — bare handle IDs (image, first-frame, last-frame)
+    // ========================================================================
+    it('collects bare "image" handle input (no dash suffix)', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/ref.png' }),
+        makeNode('n2', 'videoNode', {}),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image', 'image')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['image']).toBeDefined();
+      expect(result['image']).toHaveLength(1);
+      expect(result['image']![0]).toBe('https://example.com/ref.png');
+    });
+
+    it('collects "first-frame" handle input (image-to-video mode)', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/first.png' }),
+        makeNode('n2', 'videoNode', {}),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image', 'first-frame')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['first-frame']).toBeDefined();
+      expect(result['first-frame']).toHaveLength(1);
+      expect(result['first-frame']![0]).toBe('https://example.com/first.png');
+    });
+
+    it('collects "last-frame" handle input (start-end-to-video mode)', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/last.png' }),
+        makeNode('n2', 'videoNode', {}),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image', 'last-frame')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['last-frame']).toBeDefined();
+      expect(result['last-frame']).toHaveLength(1);
+      expect(result['last-frame']![0]).toBe('https://example.com/last.png');
+    });
+
+    it('excludes "text" handle from getInputsByHandle', () => {
+      const nodes = [
+        makeNode('n1', 'textNode', { text: 'hello' }),
+        makeNode('n2', 'videoNode', {}),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'text', 'text')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['text']).toBeUndefined();
+    });
+
+    it('complete image-to-video scenario: imageNode(image) → videoNode(image)', () => {
+      const nodes = [
+        makeNode('img', 'imageNode', { imageUrl: 'https://example.com/ref.png' }),
+        makeNode('txt', 'textNode', { text: 'A cat walking' }),
+        makeNode('vid', 'videoNode', {}),
+      ];
+      const edges = [
+        makeEdge('e1', 'img', 'vid', 'image', 'image'),
+        makeEdge('e2', 'txt', 'vid', 'text', 'text'),
+      ];
+
+      const byHandle = getInputsByHandle('vid', nodes, edges);
+
+      // image handle should collect reference image
+      expect(byHandle['image']).toBeDefined();
+      expect(byHandle['image']).toHaveLength(1);
+      expect(byHandle['image']![0]).toBe('https://example.com/ref.png');
+      // text handle should be excluded
+      expect(byHandle['text']).toBeUndefined();
+    });
+
+    it('complete start-end-to-video scenario: two imageNodes → videoNode', () => {
+      const nodes = [
+        makeNode('img1', 'imageNode', { imageUrl: 'https://example.com/first.png' }),
+        makeNode('img2', 'imageNode', { imageUrl: 'https://example.com/last.png' }),
+        makeNode('txt', 'textNode', { text: 'Transition' }),
+        makeNode('vid', 'videoNode', {}),
+      ];
+      const edges = [
+        makeEdge('e1', 'img1', 'vid', 'image', 'first-frame'),
+        makeEdge('e2', 'img2', 'vid', 'image', 'last-frame'),
+        makeEdge('e3', 'txt', 'vid', 'text', 'text'),
+      ];
+
+      const byHandle = getInputsByHandle('vid', nodes, edges);
+
+      expect(byHandle['first-frame']).toBeDefined();
+      expect(byHandle['first-frame']![0]).toBe('https://example.com/first.png');
+      expect(byHandle['last-frame']).toBeDefined();
+      expect(byHandle['last-frame']![0]).toBe('https://example.com/last.png');
+      // text excluded
+      expect(byHandle['text']).toBeUndefined();
+    });
+
+    // ========================================================================
+    // P1 — CustomInputHandle declarative routing
+    // ========================================================================
+    it('routes "custom-image-0" handle via customInputHandles declaration', () => {
+      const nodes = [
+        makeNode('n1', 'imageNode', { imageUrl: 'https://example.com/custom.png' }),
+        makeNode('n2', 'videoNode', {
+          customInputHandles: [{ id: 'custom-image-0', type: 'image' }],
+        }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'image', 'custom-image-0')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['custom-image-0']).toBeDefined();
+      expect(result['custom-image-0']).toHaveLength(1);
+      expect(result['custom-image-0']![0]).toBe('https://example.com/custom.png');
+    });
+
+    it('routes "custom-audio-0" handle via customInputHandles declaration', () => {
+      const nodes = [
+        makeNode('n1', 'audioInputNode', { audioUrl: 'https://example.com/ref.mp3' }),
+        makeNode('n2', 'audioNode', {
+          customInputHandles: [{ id: 'custom-audio-0', type: 'audio' }],
+        }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'audio', 'custom-audio-0')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['custom-audio-0']).toBeDefined();
+      expect(result['custom-audio-0']).toHaveLength(1);
+      expect(result['custom-audio-0']![0]).toBe('https://example.com/ref.mp3');
+    });
+
+    it('routes "custom-video-0" handle via customInputHandles declaration', () => {
+      const nodes = [
+        makeNode('n1', 'videoNode', { videoUrl: 'https://example.com/ref.mp4' }),
+        makeNode('n2', 'videoNode', {
+          customInputHandles: [{ id: 'custom-video-0', type: 'video' }],
+        }),
+      ];
+      const edges = [makeEdge('e1', 'n1', 'n2', 'video', 'custom-video-0')];
+
+      const result = getInputsByHandle('n2', nodes, edges);
+
+      expect(result['custom-video-0']).toBeDefined();
+      expect(result['custom-video-0']).toHaveLength(1);
+      expect(result['custom-video-0']![0]).toBe('https://example.com/ref.mp4');
+    });
+
+    it('omniNode(any-output) → videoNode(custom-image-0): declarative routing handles any→image', () => {
+      const nodes = [
+        makeNode('omni', 'omniNode', {
+          outputUrl: 'https://example.com/omni-out.png',
+          config: { outputType: 'auto' },
+        }),
+        makeNode('vid', 'videoNode', {
+          customInputHandles: [{ id: 'custom-image-0', type: 'image', label: '参考图' }],
+        }),
+      ];
+      const edges = [makeEdge('e1', 'omni', 'vid', 'custom-output', 'custom-image-0')];
+
+      const result = getInputsByHandle('vid', nodes, edges);
+
+      expect(result['custom-image-0']).toBeDefined();
+      expect(result['custom-image-0']).toHaveLength(1);
+      expect(result['custom-image-0']![0]).toBe('https://example.com/omni-out.png');
+    });
+
+    it('rhAppNode(any-output) → videoNode(image): any→image routing', () => {
+      const nodes = [
+        makeNode('app', 'rhAppNode', {
+          outputUrl: 'https://rh.cn/app-out.png',
+          config: { outputType: 'image' },
+        }),
+        makeNode('vid', 'videoNode', {}),
+      ];
+      const edges = [makeEdge('e1', 'app', 'vid', 'any-output', 'image')];
+
+      const result = getInputsByHandle('vid', nodes, edges);
+
+      expect(result['image']).toBeDefined();
+      expect(result['image']).toHaveLength(1);
+      expect(result['image']![0]).toBe('https://rh.cn/app-out.png');
+    });
   });
 });

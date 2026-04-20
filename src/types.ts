@@ -110,11 +110,23 @@ export interface PresetPrompt {
   enabled: boolean;
 }
 
+// 自定义输入 Handle 配置（用户手动添加的额外输入接口）
+export interface CustomInputHandle {
+  /** 唯一 ID，自动生成，如 "custom-image-0" */
+  id: string;
+  /** 数据类型 */
+  type: 'image' | 'audio' | 'video' | 'text';
+  /** 可选自定义标签，如 "参考图"、"参考音频" */
+  label?: string;
+}
+
 // 节点基础数据 (Ref: node-banana BaseNodeData)
 export interface BaseNodeData extends Record<string, unknown> {
   label?: string;
   loading?: boolean;
   errorMessage?: string;
+  /** 用户手动添加的自定义输入 Handle 配置 */
+  customInputHandles?: CustomInputHandle[];
 }
 
 // 图片节点数据
@@ -184,7 +196,7 @@ export interface VideoNodeData extends BaseNodeData {
   onStop?: (nodeId: string) => void;
   onShowToast?: (msg: string) => void;
   // rhapi 协议字段
-  videoGenerationMode?: 'text-to-video' | 'image-to-video';  // 文生视频/图生视频切换
+  videoGenerationMode?: 'text-to-video' | 'image-to-video' | 'start-end-to-video';  // 文生视频/图生视频/首尾帧生视频切换
   // 历史轮播
   videoHistory?: Array<{ videoUrl: string; thumbnailUrl: string; prompt: string; timestamp: number }>;
   selectedVideoHistoryIndex?: number;

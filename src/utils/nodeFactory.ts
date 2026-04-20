@@ -270,6 +270,11 @@ function getDefaultData(type: string): Record<string, unknown> {
   }
 }
 
+// E2E 测试辅助：将 createNode 挂载到 window 上，便于 Playwright page.evaluate() 创建带默认值的节点
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__createNode = createNode;
+}
+
 export function createNode(
   type: string,
   position: { x: number; y: number },
