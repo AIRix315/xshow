@@ -1,5 +1,5 @@
 // 顶部栏布局（三段式：左Logo+项目+新建/保存 | 中空 | 右节点+设置+快捷键）
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Settings, Plus, Save, Keyboard, Upload, FolderOpen, ChevronDown, Check } from 'lucide-react';
 import FlowCanvas from './components/canvas/FlowCanvas';
@@ -49,6 +49,29 @@ function App() {
 
   const hasProjectDir = fsManager.hasProjectDirectory();
 
+  /** 加载当前项目的画布数据（优先从文件系统读，无则从 IndexedDB 读） */
+  const loadCurrentProjectCanvas = useCallback(async () => {
+    const projectId = useSettingsStore.getState().currentProjectId;
+    const project = useSettingsStore.getState().projects.find((p) => p.id === projectId);
+    const safeName = project?.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'project';
+
+    if (fsManager.hasProjectDirectory()) {
+      // 有工作路径 → 优先从文件系统读
+      const fsResult = await loadProjectFromFs(safeName);
+      if (fsResult) {
+        useFlowStore.getState().loadProject(fsResult.file.nodes, fsResult.file.edges, fsResult.file.savedAt);
+        return;
+      }
+    }
+    // 无文件系统记录 → 从 IndexedDB 读
+    const data = await loadCanvasState(projectId);
+    if (data) {
+      useFlowStore.getState().loadProject(data.nodes, data.edges, data.timestamp);
+    } else {
+      useFlowStore.getState().clearCanvas();
+    }
+  }, []);
+
   /** 初始化文件系统管理器 - 页面加载时验证已保存的目录句柄 */
   const initRef = useRef(false);
   useEffect(() => {
@@ -71,30 +94,7 @@ function App() {
       initRef.current = true;
       await loadCurrentProjectCanvas();
     });
-  }, []);
-
-  /** 加载当前项目的画布数据（优先从文件系统读，无则从 IndexedDB 读） */
-  const loadCurrentProjectCanvas = async () => {
-    const projectId = useSettingsStore.getState().currentProjectId;
-    const project = useSettingsStore.getState().projects.find((p) => p.id === projectId);
-    const safeName = project?.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'project';
-
-    if (fsManager.hasProjectDirectory()) {
-      // 有工作路径 → 优先从文件系统读
-      const fsResult = await loadProjectFromFs(safeName);
-      if (fsResult) {
-        useFlowStore.getState().loadProject(fsResult.file.nodes, fsResult.file.edges, fsResult.file.savedAt);
-        return;
-      }
-    }
-    // 无文件系统记录 → 从 IndexedDB 读
-    const data = await loadCanvasState(projectId);
-    if (data) {
-      useFlowStore.getState().loadProject(data.nodes, data.edges, data.timestamp);
-    } else {
-      useFlowStore.getState().clearCanvas();
-    }
-  };
+  }, [loadCurrentProjectCanvas]);
 
   /** 监听 currentProjectId 变化（项目切换时），加载对应项目的画布数据 */
   useEffect(() => {
@@ -104,7 +104,7 @@ function App() {
     if (fsManager.hasProjectDirectory()) {
       listProjectsFromFs();
     }
-  }, [currentProjectId]);
+  }, [currentProjectId, loadCurrentProjectCanvas]);
 
   /** 点击外部关闭下拉框 */
   useEffect(() => {

@@ -116,7 +116,9 @@ function NodeSidebar({ open, onClose }: NodeSidebarProps) {
       // 使用 nativeEvent 获取原生的 DataTransfer 对象
       const nativeEvent = event.nativeEvent as DragEvent;
       nativeEvent.dataTransfer?.setData('application/reactflow', nodeType);
-      nativeEvent.dataTransfer && (nativeEvent.dataTransfer.effectAllowed = 'move');
+      if (nativeEvent.dataTransfer) {
+        nativeEvent.dataTransfer.effectAllowed = 'move';
+      }
     },
     [],
   );

@@ -17,7 +17,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/<your-username>/XShow/releases) 下载最新 `xshow-v*.zip`
+1. 从 [Releases](https://github.com/AIRix315/XShow/releases) 下载最新 `xshow-v*.zip`
 2. 解压到本地目录
 3. Chrome → `chrome://extensions/` → 开启「开发者模式」
 4. 点击「加载已解压的扩展程序」→ 选择解压目录

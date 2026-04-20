@@ -224,8 +224,8 @@ export async function executeRhWfNode(ctx: NodeExecutionContext): Promise<void> 
     );
 
     // 处理返回结果
-    let finalOutputUrl = result.outputUrl;
-    let finalOutputUrls = result.outputUrls;
+    const finalOutputUrl = result.outputUrl;
+    const finalOutputUrls = result.outputUrls;
 
     // 判断是否为 ZIP 结果：URL 后缀 + API fileType 字段
     const isZipResult =

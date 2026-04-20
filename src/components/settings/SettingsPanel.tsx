@@ -783,7 +783,7 @@ function ProjectTab() {
       } else {
         setIoStatus(`加载失败: ${result.error}`);
       }
-    } catch (err) {
+    } catch (_err) {
       setIoStatus('加载失败');
     }
   }, [hasUnsavedChanges, loadProject, projects, addProject, setCurrentProject]);
@@ -1386,7 +1386,7 @@ function SystemTab() {
               }
               showMessage('success', '缓存已清除，页面将重新加载');
               setTimeout(() => window.location.reload(), 1500);
-            } catch (err) {
+    } catch (err) {
               showMessage('error', `清除失败: ${err instanceof Error ? err.message : String(err)}`);
             }
           }}

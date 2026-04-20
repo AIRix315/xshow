@@ -334,7 +334,9 @@ function FlowCanvasInner() {
     event.preventDefault();
     // 使用 nativeEvent 获取原生的 DataTransfer 对象
     const nativeEvent = event.nativeEvent as DragEvent;
-    nativeEvent.dataTransfer && (nativeEvent.dataTransfer.dropEffect = 'move');
+    if (nativeEvent.dataTransfer) {
+      nativeEvent.dataTransfer.dropEffect = 'move';
+    }
   }, []);
 
   // 监听原生 DOM 事件处理拖拽（React onDrop 有时无法获取 DataTransfer）

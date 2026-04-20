@@ -73,7 +73,7 @@ function VideoTrimNode({ id, data, selected }: NodeProps<VideoTrimNodeType>) {
         endTime,
       });
       
-    } catch (err) {
+    } catch (_err) {
       updateNodeData(id, { loading: false, errorMessage: '视频裁剪失败' });
     }
   }, [sourceVideoUrl, startTime, endTime, updateNodeData, id]);

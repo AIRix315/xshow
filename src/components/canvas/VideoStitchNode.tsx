@@ -71,7 +71,7 @@ function VideoStitchNode({ id, data, selected }: NodeProps<VideoStitchNodeType>)
       // 此处设置占位结果
       updateNodeData(id, { resultUrl: inputVideos[0]?.url, loading: false });
       
-    } catch (err) {
+    } catch (_err) {
       updateNodeData(id, { loading: false, errorMessage: '视频拼接失败' });
     }
   }, [inputVideos, updateNodeData, id]);

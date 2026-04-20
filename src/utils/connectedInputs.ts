@@ -565,15 +565,15 @@ export function getConnectedInputs(
       } else if (!handleId) {
         // handleId 为空时（边直接连接），按 sourceHandle 类型分发
         // image 类型进入 images
-        // @ts-ignore - TS 窄缩问题：type 在此处被窄缩为 'reference'，但实际可能有其他值
+        // @ts-ignore TS 窄缩问题：type 在此处被窄缩为 'reference'，但实际可能有其他值
         if (type === 'image') {
           images.push(value);
           additionalValues?.forEach((v) => images.push(v));
-          // @ts-ignore
+          // @ts-ignore TS 窄缩问题：同上，type 实际值超出窄缩范围
         } else if (type === 'video') {
           videos.push(value);
           additionalValues?.forEach((v) => videos.push(v));
-          // @ts-ignore
+          // @ts-ignore TS 窄缩问题：同上，type 实际值超出窄缩范围
         } else if (type === 'audio') {
           audio.push(value);
           additionalValues?.forEach((v) => audio.push(v));
