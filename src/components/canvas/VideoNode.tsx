@@ -1,12 +1,12 @@
 // Ref: node-banana GenerateVideoNode.tsx + 悬停展开模式
 // 功能：通过 API 生成视频
-import { memo, useCallback, useMemo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { VideoNodeType } from '@/types';
+import { memo, useCallback, useEffect, useMemo, Fragment } from 'react';
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
+import type { VideoNodeType, CustomInputHandle } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { executeVideoNode } from '@/store/execution/generateNodeExecutors';
-import type { NodeExecutionContext } from '@/store/execution/types';
+import { executeVideoNode } from '@/execution/generateNodeExecutors';
+import type { NodeExecutionContext } from '@/execution/types';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import { useAdaptiveHeight } from '@/hooks/useAdaptiveHeight';
 import type { Node, Edge } from '@xyflow/react';
@@ -39,6 +39,13 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
   const customHeight = data.customHeight ?? '';
   const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
   const videoGenerationMode = data.videoGenerationMode ?? 'text-to-video';
+  const customInputHandles = (data.customInputHandles as CustomInputHandle[] | undefined) ?? [];
+
+  // Handle 数量/类型变化时通知 React Flow 重新计算位置
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [videoGenerationMode, customInputHandles?.length, id, updateNodeInternals]);
 
   // History data reads
   const videoHistory = (data.videoHistory as Array<{ videoUrl: string; thumbnailUrl: string; prompt: string; timestamp: number }>) ?? [];
@@ -112,20 +119,69 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
     }
   }, [effectivePrompt, loading, currentChannel, currentChannelId, currentModel, id, updateNodeData, nodes, edges, videoGenerationMode, data]);
 
-  // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
+  // ---- Handles: 根据视频生成模式动态渲染 ----
   const handles = (
     <>
-      {/* 输入 Handle (33%) */}
-      <Handle type="target" position={Position.Left} id="video" style={{ top: '33%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="video" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Video</div>
-      
-      {/* 输入 Handle - Text (67%) */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
-      
-      {/* 输出 Handle (67%) */}
-      <Handle type="source" position={Position.Right} id="video" style={{ top: '67%', zIndex: 10 }} data-handletype="video" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Video</div>
+      {/* text-to-video: 仅 Text 输入 */}
+      {videoGenerationMode === 'text-to-video' && (
+        <>
+          <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
+        </>
+      )}
+
+      {/* image-to-video: Image + Text 输入 */}
+      {videoGenerationMode === 'image-to-video' && (
+        <>
+          <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
+
+          <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
+        </>
+      )}
+
+       {/* start-end-to-video: 首帧 + Text + 尾帧 输入 */}
+       {videoGenerationMode === 'start-end-to-video' && (
+         <>
+           <Handle type="target" position={Position.Left} id="first-frame" style={{ top: '25%', zIndex: 10 }} data-handletype="image" />
+           <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(25% - 8px)', zIndex: 10 }}>首帧</div>
+
+           <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+           <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
+
+           <Handle type="target" position={Position.Left} id="last-frame" style={{ top: '75%', zIndex: 10 }} data-handletype="image" />
+           <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(75% - 8px)', zIndex: 10 }}>尾帧</div>
+         </>
+       )}
+
+       {/* 自定义输入 Handle */}
+       {customInputHandles.map((ch, idx) => {
+         const totalCustomHandles = customInputHandles.length;
+         const position = ((idx + 1) / (totalCustomHandles + 1)) * 100;
+         return (
+           <Fragment key={ch.id}>
+             <Handle
+               type="target"
+               position={Position.Left}
+               id={ch.id}
+               style={{ top: `${position}%`, zIndex: 10 }}
+               data-handletype={ch.type}
+             />
+             <div
+               className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+               data-type={ch.type}
+               style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+             >
+               {ch.label || ch.type}
+             </div>
+           </Fragment>
+         );
+       })}
+
+       {/* 输出 Handle - 始终显示 */}
+       <Handle type="source" position={Position.Right} id="video" style={{ top: '50%', zIndex: 10 }} data-handletype="video" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="video" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Video</div>
     </>
   );
 
@@ -227,20 +283,59 @@ function VideoNodeComponent({ id, data, selected }: NodeProps<VideoNodeType>) {
             />
           )}
 
-          {/* 文生视频/图生视频切换 - runninghub 供应商时显示 */}
-          {currentChannel?.url?.includes('runninghub.cn') && (
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-neutral-400 whitespace-nowrap">模式：</span>
-              <select
-                value={videoGenerationMode}
-                onChange={(e) => updateNodeData(id, { videoGenerationMode: e.target.value as 'text-to-video' | 'image-to-video' })}
-                className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
-              >
-                <option value="text-to-video">文生视频</option>
-                <option value="image-to-video">图生视频</option>
-              </select>
-            </div>
-          )}
+           {/* 文生视频/图生视频切换 - runninghub 供应商时显示 */}
+           {currentChannel?.url?.includes('runninghub.cn') && (
+             <div className="flex flex-col gap-1">
+               <div className="flex items-center gap-1">
+                 <span className="text-[10px] text-neutral-400 whitespace-nowrap">模式：</span>
+                 <select
+                   value={videoGenerationMode}
+                   onChange={(e) => updateNodeData(id, { videoGenerationMode: e.target.value as 'text-to-video' | 'image-to-video' | 'start-end-to-video' })}
+                   className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
+                 >
+                   <option value="text-to-video">文生视频</option>
+                   <option value="image-to-video">图生视频</option>
+                   <option value="start-end-to-video">首尾帧生视频</option>
+                 </select>
+               </div>
+
+               {/* 自定义输入管理 */}
+               <div className="flex items-center gap-1 pt-1">
+                 <select
+                   value=""
+                   onChange={(e) => {
+                     if (!e.target.value) return;
+                     const type = e.target.value as CustomInputHandle['type'];
+                     const handles = [...customInputHandles];
+                     const handleId = `custom-${type}-${Date.now()}`;
+                     handles.push({ 
+                       id: handleId, 
+                       type, 
+                       label: type === 'image' ? '图片' : type === 'audio' ? '音频' : type === 'video' ? '视频' : '文本' 
+                     });
+                     updateNodeData(id, { customInputHandles: handles });
+                     e.target.value = '';
+                   }}
+                   className="flex-1 min-w-0 text-[10px] py-1 px-2 bg-surface-hover text-text rounded border border-border focus:outline-none focus:border-primary"
+                 >
+                   <option value="">+ 添加自定义输入</option>
+                   <option value="image">图片</option>
+                   <option value="audio">音频</option>
+                   <option value="video">视频</option>
+                   <option value="text">文本</option>
+                 </select>
+                 {customInputHandles.length > 0 && (
+                   <button
+                     onClick={() => updateNodeData(id, { customInputHandles: [] })}
+                     className="text-text-muted hover:text-error text-[10px] px-1"
+                     title="清除所有自定义输入"
+                   >
+                     ✕
+                   </button>
+                 )}
+               </div>
+             </div>
+           )}
 
           {/* 画面比例选项 - 下拉框 */}
           <div className="flex items-center gap-1">

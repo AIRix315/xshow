@@ -15,7 +15,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { RhZipNodeType } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
 import BaseNodeWrapper from './BaseNode';
-import { executeRhZipLocal, executeRhZipNode } from '@/store/execution/rhZipExecutor';
+import { executeRhZipLocal, executeRhZipNode } from '@/execution/rhZipExecutor';
 import { revokeMediaUrls } from '@/utils/zipExtractor';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 
@@ -53,8 +53,10 @@ function RhZipNodeComponent({ id, data, selected }: NodeProps<RhZipNodeType>) {
     if (currentZipUrl && currentZipUrl !== prevZipUrlRef.current) {
       prevZipUrlRef.current = currentZipUrl;
       // 调用画布级执行器处理远程 URL
+      const currentNode = nodes.find((n) => n.id === id);
+      if (!currentNode) return;
       executeRhZipNode({
-        node: { id, data: { ...data, zipUrl: currentZipUrl } } as any,
+        node: { ...currentNode, data: { ...currentNode.data, zipUrl: currentZipUrl } },
         nodes,
         edges,
         updateNodeData,

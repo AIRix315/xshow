@@ -76,7 +76,7 @@ vi.mock('@/api/rhApi', () => ({
   parseRhWorkflowNodes: (...args: any[]) => mockParseRhWorkflowNodes(...args),
 }));
 
-vi.mock('@/store/execution/rhWfExecutor', () => ({
+vi.mock('@/execution/rhWfExecutor', () => ({
   executeRhWfNode: (...args: any[]) => mockExecuteRhWfNode(...args),
 }));
 

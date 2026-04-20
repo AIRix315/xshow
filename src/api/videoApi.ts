@@ -2,6 +2,7 @@
 // Ref: node-banana GenerateVideoNode.tsx + generateVideoExecutor.ts
 
 import { uploadFileToRunningHubWithUrl } from './rhApi';
+import { RH_BASE_URL } from '@/config';
 
 export interface VideoSubmitParams {
   channelUrl: string;
@@ -96,7 +97,6 @@ export async function pollRhVideoTaskResult(
   onProgress?: (progress: number) => void,
   signal?: AbortSignal,
 ): Promise<VideoPollResult> {
-  const RH_BASE_URL = 'https://www.runninghub.cn';
   const startTime = Date.now();
 
   while (true) {
@@ -206,6 +206,16 @@ export async function generateVideoRhapi(
       'input'
     );
     requestParams.imageUrl = uploadResult.downloadUrl;
+  }
+
+  // 图生视频模式：可选尾帧上传
+  if (videoGenerationMode === 'image-to-video' && lastFrameImage) {
+    const lastUpload = await uploadFileToRunningHubWithUrl(
+      channelKey,
+      lastFrameImage.data,
+      'input'
+    );
+    requestParams.lastImageUrl = lastUpload.downloadUrl;
   }
 
   // 首尾帧模式：需要上传首尾两张图片

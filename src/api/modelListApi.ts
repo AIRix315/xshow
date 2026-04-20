@@ -1,6 +1,7 @@
 // Ref: 模型列表获取 + 连接速度测试
 // 支持 OpenAI 兼容 API、Ollama、Anthropic、Gemini
 import type { ChannelConfig } from '@/types';
+import { GOOGLE_AI_BASE_URL } from '@/config';
 
 /**
  * 获取模型列表（根据供应商协议）
@@ -35,7 +36,7 @@ export async function fetchModelList(channel: ChannelConfig): Promise<string[]> 
       // Gemini 模型列表需要通过特定端点
       const apiKey = channel.key;
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+        `${GOOGLE_AI_BASE_URL}/v1beta/models?key=${apiKey}`
       );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();

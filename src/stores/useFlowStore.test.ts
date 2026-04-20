@@ -8,7 +8,7 @@ vi.mock('@/utils/executionEngine', () => ({
   executeCanvas: vi.fn(),
 }));
 
-vi.mock('@/store/execution', () => ({
+vi.mock('@/execution', () => ({
   getNodeExecutor: vi.fn(),
 }));
 

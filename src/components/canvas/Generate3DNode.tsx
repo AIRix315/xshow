@@ -1,13 +1,21 @@
 // Ref: node-banana Generate 3D Node + 本地实现
 // 3D 生成需要后端服务，此处使用本地 Canvas 3D 预览占位
 import { memo, useCallback, useRef, useEffect } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { D3NodeType } from '@/types';
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
+import type { D3NodeType, CustomInputHandle } from '@/types';
 import { useFlowStore } from '@/stores/useFlowStore';
+import React from 'react';
 import BaseNodeWrapper from './BaseNode';
 
 function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
+
+  const updateNodeInternals = useUpdateNodeInternals();
+  const customInputHandles = (data.customInputHandles as CustomInputHandle[] | undefined) ?? [];
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [customInputHandles?.length, id, updateNodeInternals]);
 
   // Business data from store
   const prompt = data.prompt ?? '';
@@ -95,6 +103,30 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
   // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
   const handles = (
     <>
+      {/* 自定义输入 Handle */}
+      {customInputHandles.map((ch, idx) => {
+        const totalCustomHandles = customInputHandles.length;
+        const position = ((idx + 1) / (totalCustomHandles + 1)) * 100;
+        return (
+          <React.Fragment key={ch.id}>
+            <Handle
+              type="target"
+              position={Position.Left}
+              id={ch.id}
+              style={{ top: `${position}%`, zIndex: 10 }}
+              data-handletype={ch.type}
+            />
+            <div
+              className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+              data-type={ch.type}
+              style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+            >
+              {ch.label || ch.type}
+            </div>
+          </React.Fragment>
+        );
+      })}
+
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
@@ -186,13 +218,45 @@ function Generate3DNode({ id, data, selected }: NodeProps<D3NodeType>) {
           </div>
         )}
 
-        {/* 提示 */}
-        <div className="text-[9px] text-text-muted">
-          当前为本地预览模式。实际 3D 模型生成需连接 Meshy/Tripo3D 等 API。
-        </div>
-      </div>
-    </div>
-  );
+         {/* 提示 */}
+         <div className="text-[9px] text-text-muted">
+           当前为本地预览模式。实际 3D 模型生成需连接 Meshy/Tripo3D 等 API。
+         </div>
+
+         {/* 自定义输入管理 */}
+         <div className="flex items-center gap-1 pt-1">
+           <select
+             value=""
+             onChange={(e) => {
+               if (!e.target.value) return;
+               const type = e.target.value as CustomInputHandle['type'];
+               const handles = [...customInputHandles];
+               const handleId = `custom-${type}-${Date.now()}`;
+               handles.push({ id: handleId, type, label: type === 'image' ? '图片' : type === 'audio' ? '音频' : type === 'video' ? '视频' : '文本' });
+               updateNodeData(id, { customInputHandles: handles });
+               e.target.value = '';
+             }}
+             className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+           >
+             <option value="">+ 添加输入</option>
+             <option value="image">图片</option>
+             <option value="audio">音频</option>
+             <option value="video">视频</option>
+             <option value="text">文本</option>
+           </select>
+           {customInputHandles.length > 0 && (
+             <button
+               onClick={() => updateNodeData(id, { customInputHandles: [] })}
+               className="text-text-muted hover:text-error text-[10px] px-1"
+               title="清除所有自定义输入"
+             >
+               ✕
+             </button>
+           )}
+         </div>
+       </div>
+     </div>
+   );
 
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}

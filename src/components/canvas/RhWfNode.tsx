@@ -160,7 +160,7 @@ function RhWfNodeComponent({ id, data, selected }: NodeProps<RhWfNodeType>) {
     abortRef.current = new AbortController();
 
     // 动态导入 executor，构造执行上下文
-    const { executeRhWfNode } = await import('@/store/execution/rhWfExecutor');
+    const { executeRhWfNode } = await import('@/execution/rhWfExecutor');
     const currentNodes = useFlowStore.getState().nodes;
     const currentEdges = useFlowStore.getState().edges;
     const freshNode = currentNodes.find(n => n.id === id);

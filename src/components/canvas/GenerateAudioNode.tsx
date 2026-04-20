@@ -1,14 +1,15 @@
 // Ref: node-banana Generate Audio Node + 渠道商 API 实现
 // 使用渠道商 API 进行 TTS 生成
-import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { AudioNodeType } from '@/types';
+import { memo, useCallback, useEffect } from 'react';
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from '@xyflow/react';
+import type { AudioNodeType, CustomInputHandle } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { executeAudioNode } from '@/store/execution/generateNodeExecutors';
-import type { NodeExecutionContext } from '@/store/execution/types';
+import { executeAudioNode } from '@/execution/generateNodeExecutors';
+import type { NodeExecutionContext } from '@/execution/types';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import type { Node, Edge } from '@xyflow/react';
+import React from 'react';
 import BaseNodeWrapper from './BaseNode';
 import ProviderModelSelector from './ProviderModelSelector';
 
@@ -16,6 +17,13 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const edges = useFlowStore((s) => s.edges);
   const nodes = useFlowStore((s) => s.nodes);
+
+  const updateNodeInternals = useUpdateNodeInternals();
+  const customInputHandles = (data.customInputHandles as CustomInputHandle[] | undefined) ?? [];
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [customInputHandles?.length, id, updateNodeInternals]);
 
   // 查找连入的 text Handle
   const incomingTextEdge = edges.find((e) => e.target === id && e.targetHandle === 'text');
@@ -78,10 +86,34 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
   // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
   const handles = (
     <>
+      {/* 自定义输入 Handle */}
+      {customInputHandles.map((ch, idx) => {
+        const totalCustomHandles = customInputHandles.length;
+        const position = ((idx + 1) / (totalCustomHandles + 1)) * 100;
+        return (
+          <React.Fragment key={ch.id}>
+            <Handle
+              type="target"
+              position={Position.Left}
+              id={ch.id}
+              style={{ top: `${position}%`, zIndex: 10 }}
+              data-handletype={ch.type}
+            />
+            <div
+              className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+              data-type={ch.type}
+              style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+            >
+              {ch.label || ch.type}
+            </div>
+          </React.Fragment>
+        );
+      })}
+
       {/* 输入 Handle (50%) */}
       <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
-
+ 
       {/* 输出 Handle (50%) */}
       <Handle type="source" position={Position.Right} id="audio" style={{ top: '50%', zIndex: 10 }} data-handletype="audio" />
       <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="audio" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Audio</div>
@@ -149,21 +181,53 @@ function GenerateAudioNode({ id, data, selected }: NodeProps<AudioNodeType>) {
           />
         )}
 
-        {/* 时长选项 - 自行输入 */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-neutral-400 whitespace-nowrap">时长：</span>
-          <input
-            type="text"
-            value={audioDuration}
-            onChange={(e) => updateNodeData(id, { audioDuration: e.target.value })}
-            placeholder="输入秒数"
-            className="w-20 bg-[#1a1a1a] text-white text-[10px] rounded p-1 border border-[#333] focus:border-blue-500 outline-none"
-          />
-          <span className="text-[10px] text-neutral-500">秒</span>
-        </div>
-      </div>
-    </div>
-  );
+         {/* 时长选项 - 自行输入 */}
+         <div className="flex items-center gap-1">
+           <span className="text-[10px] text-neutral-400 whitespace-nowrap">时长：</span>
+           <input
+             type="text"
+             value={audioDuration}
+             onChange={(e) => updateNodeData(id, { audioDuration: e.target.value })}
+             placeholder="输入秒数"
+             className="w-20 bg-[#1a1a1a] text-white text-[10px] rounded p-1 border border-[#333] focus:border-blue-500 outline-none"
+           />
+           <span className="text-[10px] text-neutral-500">秒</span>
+         </div>
+
+         {/* 自定义输入管理 */}
+         <div className="flex items-center gap-1 pt-1">
+           <select
+             value=""
+             onChange={(e) => {
+               if (!e.target.value) return;
+               const type = e.target.value as CustomInputHandle['type'];
+               const handles = [...customInputHandles];
+               const handleId = `custom-${type}-${Date.now()}`;
+               handles.push({ id: handleId, type, label: type === 'image' ? '图片' : type === 'audio' ? '音频' : type === 'video' ? '视频' : '文本' });
+               updateNodeData(id, { customInputHandles: handles });
+               e.target.value = '';
+             }}
+             className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+           >
+             <option value="">+ 添加输入</option>
+             <option value="image">图片</option>
+             <option value="audio">音频</option>
+             <option value="video">视频</option>
+             <option value="text">文本</option>
+           </select>
+           {customInputHandles.length > 0 && (
+             <button
+               onClick={() => updateNodeData(id, { customInputHandles: [] })}
+               className="text-text-muted hover:text-error text-[10px] px-1"
+               title="清除所有自定义输入"
+             >
+               ✕
+             </button>
+           )}
+         </div>
+       </div>
+     </div>
+   );
 
   return (
     <BaseNodeWrapper selected={!!selected} loading={loading} errorMessage={errorMessage}

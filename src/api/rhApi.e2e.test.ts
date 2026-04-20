@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 
 // RunningHub API 地址
-const RH_BASE_URL = 'https://www.runninghub.cn';
+import { RH_BASE_URL } from '@/config';
 
 // API Key 从环境变量读取
 const RH_API_KEY = process.env.RH_API_KEY || '';

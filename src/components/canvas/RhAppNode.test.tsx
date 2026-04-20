@@ -74,7 +74,7 @@ vi.mock('@/api/rhApi', () => ({
   fetchRhAppNodeInfo: (...args: any[]) => mockFetchRhAppNodeInfo(...args),
 }));
 
-vi.mock('@/store/execution/rhAppExecutor', () => ({
+vi.mock('@/execution/rhAppExecutor', () => ({
   executeRhAppNode: (...args: any[]) => mockExecuteRhAppNode(...args),
 }));
 

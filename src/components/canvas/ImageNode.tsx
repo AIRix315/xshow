@@ -1,13 +1,13 @@
 // Ref: node-banana GenerateImageNode.tsx + 悬停展开模式
 // Ref: §4.2 — 节点数据回写 Store（数据流闭环）
 // 模式：默认只显示图片预览，hover 显示标题栏（带切换和运行按钮）+ 完整参数
-import { memo, useCallback, useMemo } from 'react';
-import { Handle, Position, type NodeProps, type Node, type Edge } from '@xyflow/react';
-import type { ImageNodeType } from '@/types';
+import React, { memo, useCallback, useMemo, useEffect } from 'react';
+import { Handle, Position, type NodeProps, type Node, type Edge, useUpdateNodeInternals } from '@xyflow/react';
+import type { ImageNodeType, CustomInputHandle } from '@/types';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useFlowStore } from '@/stores/useFlowStore';
-import { executeImageNode } from '@/store/execution/generateNodeExecutors';
-import type { NodeExecutionContext } from '@/store/execution/types';
+import { executeImageNode } from '@/execution/generateNodeExecutors';
+import type { NodeExecutionContext } from '@/execution/types';
 import { getConnectedInputs } from '@/utils/connectedInputs';
 import { useAdaptiveHeight } from '@/hooks/useAdaptiveHeight';
 import BaseNodeWrapper from './BaseNode';
@@ -62,6 +62,14 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const edges = useFlowStore((s) => s.edges);
   const nodes = useFlowStore((s) => s.nodes);
 
+  const updateNodeInternals = useUpdateNodeInternals();
+  const customInputHandles = (data.customInputHandles as CustomInputHandle[] | undefined) ?? [];
+  const imageGenerationMode = data.imageGenerationMode ?? 'text-to-image';
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [imageGenerationMode, customInputHandles?.length, id, updateNodeInternals]);
+
   // 查找连入的 text Handle
   const incomingTextEdge = edges.find((e) => e.target === id && e.targetHandle === 'text');
   const textSourceNode = incomingTextEdge ? nodes.find((n) => n.id === incomingTextEdge.source) : undefined;
@@ -83,7 +91,6 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const selectedHistoryIndex = data.selectedHistoryIndex ?? (imageHistory.length > 0 ? imageHistory.length - 1 : undefined);
 
   const selectedChannelId = (data as { selectedChannelId?: string }).selectedChannelId;
-  const imageGenerationMode = data.imageGenerationMode ?? 'text-to-image';
 
   const imageChannelId = useSettingsStore((s) => s.apiConfig.imageChannelId);
   const drawingModel = useSettingsStore((s) => s.apiConfig.drawingModel);
@@ -172,17 +179,52 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   // ---- Handles: 渲染在内容区域之外，避免重复导致连线漂移 ----
   const handles = (
     <>
-      {/* 输入 Handle 1 - Image (33%) */}
-      <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
-      
-      {/* 输入 Handle 2 - Text (67%) - only visible in expanded mode */}
-      <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
+      {/* 自定义输入 Handle */}
+      {customInputHandles.map((ch, idx) => {
+        const totalCustomHandles = customInputHandles.length;
+        const position = ((idx + 1) / (totalCustomHandles + 1)) * 100;
+        return (
+          <React.Fragment key={ch.id}>
+            <Handle
+              type="target"
+              position={Position.Left}
+              id={ch.id}
+              style={{ top: `${position}%`, zIndex: 10 }}
+              data-handletype={ch.type}
+            />
+            <div
+              className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right"
+              data-type={ch.type}
+              style={{ right: 'calc(100% + 8px)', top: `calc(${position}% - 8px)`, zIndex: 10 }}
+            >
+              {ch.label || ch.type}
+            </div>
+          </React.Fragment>
+        );
+      })}
 
-      {/* 输出 Handle (67%) */}
-      <Handle type="source" position={Position.Right} id="image" style={{ top: '67%', zIndex: 10 }} data-handletype="image" />
-      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Image</div>
+      {/* text-to-image: 仅 Text 输入 */}
+      {imageGenerationMode === 'text-to-image' && (
+        <>
+          <Handle type="target" position={Position.Left} id="text" style={{ top: '50%', zIndex: 10 }} data-handletype="text" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Text</div>
+        </>
+      )}
+
+      {/* image-to-image: Image + Text 输入 */}
+      {imageGenerationMode === 'image-to-image' && (
+        <>
+          <Handle type="target" position={Position.Left} id="image" style={{ top: '33%', zIndex: 10 }} data-handletype="image" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="image" style={{ right: 'calc(100% + 8px)', top: 'calc(33% - 8px)', zIndex: 10 }}>Image</div>
+          
+          <Handle type="target" position={Position.Left} id="text" style={{ top: '67%', zIndex: 10 }} data-handletype="text" />
+          <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none text-right" data-type="text" style={{ right: 'calc(100% + 8px)', top: 'calc(67% - 8px)', zIndex: 10 }}>Text</div>
+        </>
+      )}
+  
+      {/* 输出 Handle */}
+      <Handle type="source" position={Position.Right} id="image" style={{ top: '50%', zIndex: 10 }} data-handletype="image" />
+      <div className="handle-label absolute text-[9px] font-medium whitespace-nowrap pointer-events-none" data-type="image" style={{ left: 'calc(100% + 8px)', top: 'calc(50% - 8px)', zIndex: 10 }}>Image</div>
     </>
   );
 
@@ -315,30 +357,62 @@ function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
         )}
 
         {/* 自定义尺寸 - 默认隐藏 */}
-        {(customWidth || customHeight) && (
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-[10px] text-neutral-400 whitespace-nowrap">自定义：</span>
-            <span className="text-[10px] text-neutral-500">W:</span>
-            <input
-              type="text"
-              value={customWidth}
-              onChange={(e) => updateNodeData(id, { customWidth: e.target.value, imageSize: '' })}
-              placeholder="__"
-              className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
-            />
-            <span className="text-[10px] text-neutral-500">H:</span>
-            <input
-              type="text"
-              value={customHeight}
-              onChange={(e) => updateNodeData(id, { customHeight: e.target.value, imageSize: '' })}
-              placeholder="__"
-              className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
+         {(customWidth || customHeight) && (
+           <div className="flex items-center gap-1 flex-wrap">
+             <span className="text-[10px] text-neutral-400 whitespace-nowrap">自定义：</span>
+             <span className="text-[10px] text-neutral-500">W:</span>
+             <input
+               type="text"
+               value={customWidth}
+               onChange={(e) => updateNodeData(id, { customWidth: e.target.value, imageSize: '' })}
+               placeholder="__"
+               className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
+             />
+             <span className="text-[10px] text-neutral-500">H:</span>
+             <input
+               type="text"
+               value={customHeight}
+               onChange={(e) => updateNodeData(id, { customHeight: e.target.value, imageSize: '' })}
+               placeholder="__"
+               className="w-12 bg-[#1a1a1a] text-white text-[10px] rounded p-0.5 border border-[#333] focus:border-blue-500 outline-none"
+             />
+           </div>
+         )}
+
+         {/* 自定义输入管理 */}
+         <div className="flex items-center gap-1 pt-1">
+           <select
+             value=""
+             onChange={(e) => {
+               if (!e.target.value) return;
+               const type = e.target.value as CustomInputHandle['type'];
+               const handles = [...customInputHandles];
+               const handleId = `custom-${type}-${Date.now()}`;
+               handles.push({ id: handleId, type, label: type === 'image' ? '图片' : type === 'audio' ? '音频' : type === 'video' ? '视频' : '文本' });
+               updateNodeData(id, { customInputHandles: handles });
+               e.target.value = '';
+             }}
+             className="bg-surface text-text text-[10px] rounded px-1 py-0.5 border border-border"
+           >
+             <option value="">+ 添加输入</option>
+             <option value="image">图片</option>
+             <option value="audio">音频</option>
+             <option value="video">视频</option>
+             <option value="text">文本</option>
+           </select>
+           {customInputHandles.length > 0 && (
+             <button
+               onClick={() => updateNodeData(id, { customInputHandles: [] })}
+               className="text-text-muted hover:text-error text-[10px] px-1"
+               title="清除所有自定义输入"
+             >
+               ✕
+             </button>
+           )}
+         </div>
+       </div>
+     </div>
+   );
 
   return (
     <BaseNodeWrapper

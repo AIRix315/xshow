@@ -147,7 +147,7 @@ function RhAppNodeComponent({ id, data, selected }: NodeProps<RhAppNodeType>) {
     abortRef.current = new AbortController();
 
     // 动态导入 executor，构造执行上下文
-    const { executeRhAppNode } = await import('@/store/execution/rhAppExecutor');
+    const { executeRhAppNode } = await import('@/execution/rhAppExecutor');
     const currentNodes = useFlowStore.getState().nodes;
     const currentEdges = useFlowStore.getState().edges;
     const freshNode = currentNodes.find(n => n.id === id);

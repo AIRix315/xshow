@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges, type OnNodesChange, type OnEdgesChange, type Node, type Edge } from '@xyflow/react';
 import { executeCanvas } from '@/utils/executionEngine';
 import { getConnectedInputs } from '@/utils/connectedInputs';
-import { getNodeExecutor } from '@/store/execution';
+import { getNodeExecutor } from '@/execution';
 import { exportProjectFile } from '@/utils/projectManager';
 import { saveProjectWithPatch } from '@/utils/patchManager';
 import { fsManager } from '@/utils/fileSystemAccess';
@@ -406,6 +406,11 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
  * 在组件中使用：const upstream = useFlowStore(useFlowStore.getState().getUpstreamNodes);
  * 或直接调用：getUpstreamNodes(nodeId)
  */
+// E2E 测试辅助：将 store 挂载到 window 上，便于 Playwright page.evaluate() 直接访问
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__flowStore = useFlowStore;
+}
+
 export function getUpstreamNodes(nodeId: string): Array<{ edge: Edge; node: Node }> {
   const { nodes, edges } = useFlowStore.getState();
   const incomingEdges = edges.filter((e: Edge) => e.target === nodeId);

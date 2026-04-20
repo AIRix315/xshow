@@ -37,7 +37,7 @@ export interface RhNodeInfo {
 // 动态轮询策略
 // ============================================================================
 
-const RH_BASE_URL = 'https://www.runninghub.cn';
+import { RH_BASE_URL } from '@/config';
 
 /** 前5分钟轮询间隔（毫秒）— 快速响应，适合3分钟内生图 */
 const POLL_INTERVAL_FAST = 3000;
