@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Validate Chrome Extension package
+        run: |
+          # manifest.json 合法性 + 版本号一致性
+          PKG_VER=$(node -p "require('./package.json').version")
+          MANIFEST_VER=$(node -p "require('./dist/manifest.json').version")
+          echo "package.json: $PKG_VER, manifest.json: $MANIFEST_VER"
+          [ "$PKG_VER" = "$MANIFEST_VER" ] || { echo "ERROR: Version mismatch!"; exit 1; }
+
+          # 必需文件完整性
+          for f in icon16.png icon48.png icon128.png background.js; do
+            [ -f "dist/$f" ] || { echo "ERROR: Missing dist/$f"; exit 1; }
+          done
+
+          # side_panel 入口
+          SIDE_PANEL=$(node -p "require('./dist/manifest.json').side_panel.default_path")
+          [ -f "dist/$SIDE_PANEL" ] || { echo "ERROR: Missing side panel entry"; exit 1; }
+
+          # 确保无 sourcemap 残留
+          MAP_COUNT=$(find dist -name "*.map" | wc -l)
+          [ "$MAP_COUNT" -eq 0 ] || { echo "ERROR: Found sourcemap files in dist!"; exit 1; }
+
+          echo "✅ Chrome Extension validation passed"
+
+      - name: Package extension for Chrome Web Store
+        run: |
+          cd dist
+          zip -r ../xshow-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: xshow-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          body: |
+            ## Chrome Extension 安装
+
+            1. 下载 `xshow-${{ github.ref_name }}.zip`
+            2. 解压到本地目录
+            3. Chrome → `chrome://extensions/` → 开启「开发者模式」
+            4. 点击「加载已解压的扩展程序」→ 选择解压目录

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Validate Chrome Extension
+        run: |
+          # 1. manifest.json 必须存在且是合法 JSON
+          node -e "const m=require('./dist/manifest.json'); console.log('manifest.json valid:', m.name, 'v' + m.version)"
+          
+          # 2. 版本号必须与 package.json 一致
+          PKG_VER=$(node -p "require('./package.json').version")
+          MANIFEST_VER=$(node -p "require('./dist/manifest.json').version")
+          echo "package.json: $PKG_VER, manifest.json: $MANIFEST_VER"
+          [ "$PKG_VER" = "$MANIFEST_VER" ] || { echo "ERROR: Version mismatch!"; exit 1; }
+          
+          # 3. 必需图标文件必须存在
+          for icon in icon16.png icon48.png icon128.png; do
+            [ -f "dist/$icon" ] || { echo "ERROR: Missing icon dist/$icon"; exit 1; }
+          done
+          
+          # 4. background.js (service worker) 必须存在
+          [ -f "dist/background.js" ] || { echo "ERROR: Missing background.js"; exit 1; }
+          
+          # 5. side_panel 入口 HTML 必须存在
+          SIDE_PANEL_PATH=$(node -p "require('./dist/manifest.json').side_panel.default_path")
+          [ -f "dist/$SIDE_PANEL_PATH" ] || { echo "ERROR: Missing side panel entry dist/$SIDE_PANEL_PATH"; exit 1; }
+          
+          # 6. 发布包中不应包含 sourcemap
+          MAP_COUNT=$(find dist -name "*.map" | wc -l)
+          [ "$MAP_COUNT" -eq 0 ] || { echo "ERROR: Found $MAP_COUNT sourcemap files in dist (should be 0 for release)"; exit 1; }
+          
+          echo "✅ Chrome Extension validation passed"
