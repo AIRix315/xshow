@@ -2,6 +2,50 @@
 
 All notable changes to XShow will be documented in this file.
 
+## [0.2.1] - 2026-04-20
+
+### GitHub 发布准备 & 项目治理
+
+**安全修复**
+- 移除 `rhExecutor.e2e.test.ts` 中硬编码的 RunningHub API Key，改为纯环境变量读取
+- 移除 `__APP_VERSION__` 过时 fallback 值 `'0.1.9'`（`projectManager.ts` / `patchManager.ts`）
+
+**架构重构**
+- `src/store/execution/` → `src/execution/` 重命名，消除与 `src/stores/` 的命名混淆
+- 外部 URL 常量统一提取到 `src/config.ts`（`RH_BASE_URL` / `GOOGLE_AI_BASE_URL`），消除 4 处重复硬编码
+- 修复 `RhZipNode.tsx` 中 `as any` 类型断言，改用完整 `Node` 对象
+
+**构建优化（Chrome Extension 专用）**
+- 生产构建关闭 sourcemap（`sourcemap: false`），Chrome Web Store 不接受 .map 文件
+- 新增 `stripBackgroundConsole` Vite 插件：构建后剥离 `background.js` 中 `console.log/debug`（保留 `error/warn`）
+- `esbuild.drop` 在生产构建自动剥离 `console` / `debugger`
+- `manualChunks` 分割：`three-vendor` / `xyflow` / `vendor` 独立 chunk，主 bundle 从 674KB 降至 286KB
+- 新增 `syncManifestVersion` Vite 插件：构建后自动同步 `package.json` 版本号到 `manifest.json`
+
+**开源规范**
+- 新增 `LICENSE` (MIT)
+- 精简 `README.md`（介绍/特性/安装/贡献/License），安装基于 Releases zip 解压加载
+- 新增 `CONTRIBUTING.md` — 技术规范指南（开发环境/技术栈/项目结构/架构/代码规范/测试/CI/CD）
+
+**CI/CD（GitHub Actions）**
+- `.github/workflows/ci.yml` — PR/push 自动 CI：typecheck → lint → test → build → Chrome Extension 完整性验证（manifest/图标/入口/版本号/sourcemap 检查）
+- `.github/workflows/release.yml` — tag `v*` 触发：验证 + 打包 `xshow-v*.zip` + GitHub Release（含安装说明）
+
+**代码规范工具**
+- ESLint 9 flat config (`eslint.config.js`)：`no-console` / `no-explicit-any` 规则 + React Hooks / Refresh 插件
+- Prettier 配置 (`.prettierrc`)
+- EditorConfig (`.editorconfig`)
+- `package.json` 新增 `lint` / `lint:fix` / `format` / `format:check` / `test:coverage` 脚本
+
+**.gitignore 完善**
+- 排除 `Docs/`（内部文档）、`coverage/`、`.vscode`/`.idea`、OS 产物
+- 从 Git 索引移除 `Docs/*`（12 个内部文档）和 `src/store/execution/*`（旧路径 14 文件）
+- 删除空目录 `src/components/common/`
+
+**依赖修复**
+- 安装缺失的 `@testing-library/dom` peer dependency（恢复测试可运行性）
+- `@vitest/coverage-v8` 降级到 v3 匹配 vitest 3.x
+
 ## [0.2.0] - 2026-04-18
 
 ### RunningHub 标准模型 API（rhapi 协议）
