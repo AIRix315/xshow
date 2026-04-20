@@ -191,7 +191,7 @@ export async function saveProjectWithPatch(
     nodes: processedNodes,
     edges,
     savedAt: Date.now(),
-    xshowVersion: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.1.9',
+    xshowVersion: __APP_VERSION__,
   };
 
   const json = JSON.stringify(file, null, 2);
