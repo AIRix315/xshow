@@ -1,13 +1,37 @@
+# Dependencies
 node_modules
+
+# Build output
 dist
 dist-zip
+
+# Environment & secrets
 *.local
 .env
 .env.*
 !.env.example
+
+# IDE & editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
 nul
+
+# Test output
 test-results
 playwright-report
+coverage
+
+# Tool caches & debug sessions
 .playwright-mcp
 *.tsbuildinfo
 .ruff_cache
+
+# Internal docs — not for public release
+Docs/
